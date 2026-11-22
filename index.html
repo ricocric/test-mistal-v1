@@ -396,18 +396,23 @@ document.getElementById('clearBtn').addEventListener('click', () => {
 
 document.getElementById('saveProjBtn').addEventListener('click', () => {
   closeFileMenu();
-  const imported = objects.filter(o => o.userData.kind === 'import');
+  const round = v => Math.round(v * 10000) / 10000;
   const data = objects.filter(o => o.userData.kind !== 'import').map(o => ({
     kind: o.userData.kind, color: '#' + o.material.color.getHexString(),
     position: o.position.toArray(), scale: o.scale.toArray()
   }));
-  const blob = new Blob([JSON.stringify({ app: 'Sketch3D', v: 2, name: 'projet', objects: data }, null, 2)], { type: 'application/json' });
+  const imports = objects.filter(o => o.userData.kind === 'import').map(o => ({
+    color: '#' + o.material.color.getHexString(),
+    scale: o.scale.toArray(), position: o.position.toArray(),
+    positions: Array.from(o.geometry.attributes.position.array, v => round(v))
+  }));
+  const blob = new Blob([JSON.stringify({ app: 'Sketch3D', v: 3, name: 'projet', objects: data, imports }, null, imports.length ? 0 : 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'projet-sketch3d.json';
   a.click();
   URL.revokeObjectURL(a.href);
-  setStatus(imported.length ? 'Projet enregistré (' + imported.length + ' objet(s) importé(s) non inclus — exportez-les en OBJ/STL)' : 'Projet enregistré');
+  setStatus('Projet enregistré (' + data.length + ' objet(s) créé(s), ' + imports.length + ' importé(s) — géométrie incluse)');
 });
 
 /* ------------------------------------------------------------------ */
@@ -439,9 +444,22 @@ function loadProject(json) {
     m.position.fromArray(d.position);
     add(m);
   }
+  let nImports = 0;
+  if (json.imports) {
+    for (const d of json.imports) {
+      const attr = d.positions;
+      if (!attr || attr.length < 9 || attr.length % 9 !== 0) continue;
+      const m = makeImportMesh(new Float32Array(attr));
+      m.material = importMatFor(d.color || color);
+      m.scale.fromArray(d.scale || [1, 1, 1]);
+      m.position.fromArray(d.position || [0, 0, 0]);
+      add(m);
+      nImports++;
+    }
+  }
   undoStack = [];
   select(null);
-  setStatus(json.objects.length + ' objet(s) chargé(s) depuis le projet');
+  setStatus('Projet chargé : ' + (json.objects.length + nImports) + ' objet(s) (' + json.objects.length + ' créé(s), ' + nImports + ' importé(s))');
 }
 
 document.getElementById('openProjBtn').addEventListener('click', () => {
