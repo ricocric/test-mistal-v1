@@ -35,6 +35,18 @@
   }
   .btn:hover { background: #40465440; border-color: #ffffff30; }
   .btn.active { background: var(--accent); border-color: #ffffff55; color: #fff; }
+  .menu { position: relative; }
+  .dropdown {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0;
+    background: var(--panel); border: 1px solid #ffffff22; border-radius: 8px;
+    min-width: 260px; box-shadow: 0 8px 24px #00000066; padding: 4px; z-index: 50;
+  }
+  .dropdown.open { display: block; }
+  .mi { padding: 7px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px; user-select: none; }
+  .mi:hover { background: var(--panel-light); }
+  .mi-hint { color: var(--muted); font-size: 11px; }
+  .mi-sep { height: 1px; background: #ffffff22; margin: 4px 6px; }
+  .mi-quit:hover { background: #ff5c5c33; color: #ffb3b3; }
   .btn kbd {
     font-family: inherit; font-size: 10px; opacity: 0.7;
     border: 1px solid #ffffff30; border-radius: 4px; padding: 0 4px;
@@ -71,6 +83,20 @@
   <div id="topbar">
     <div class="logo">✏️ <span>Sketch3D</span></div>
 
+    <div class="menu">
+      <button class="btn" id="fileMenuBtn">📁 Fichier ▾</button>
+      <div class="dropdown" id="fileMenu">
+        <div class="mi" id="openProjBtn">📂 Ouvrir un projet… <span class="mi-hint">.json</span></div>
+        <div class="mi" id="saveProjBtn">💾 Enregistrer le projet… <span class="mi-hint">.json</span></div>
+        <div class="mi-sep"></div>
+        <div class="mi" id="importObjBtn">⬇️ Importer un objet… <span class="mi-hint">.obj / .stl</span></div>
+        <div class="mi" id="exportObjBtn">📤 Exporter en OBJ…</div>
+        <div class="mi" id="exportStlBtn">🖨️ Exporter en STL…</div>
+        <div class="mi-sep"></div>
+        <div class="mi mi-quit" id="quitBtn">❌ Quitter</div>
+      </div>
+    </div>
+
     <button class="btn mode" data-mode="select" title="Sélection et déplacement">🖱️ Sélection <kbd>S</kbd></button>
     <button class="btn mode" data-mode="rect" title="Rectangle à plat au sol">▭ Rectangle <kbd>R</kbd></button>
     <button class="btn mode" data-mode="circle" title="Disque / cylindre au sol">◯ Cercle <kbd>C</kbd></button>
@@ -92,11 +118,8 @@
     <button class="btn" id="undoBtn" title="Annuler la dernière action">↩️ Annuler <kbd>Ctrl+Z</kbd></button>
     <button class="btn" id="snapBtn" title="Aimantation sur la grille">🧲 Aimantation <kbd>G</kbd></button>
     <button class="btn" id="clearBtn" title="Tout effacer">🗑️ Effacer tout</button>
-    <button class="btn" id="saveBtn" title="Télécharger le modèle (.json)">💾 Enregistrer</button>
-    <button class="btn" id="loadBtn" title="Charger un modèle (.json)">📂 Ouvrir</button>
-    <button class="btn" id="exportObjBtn" title="Exporter la géométrie en .obj (compatible Blender, SketchUp…)">📤 OBJ</button>
-    <button class="btn" id="exportStlBtn" title="Exporter en .stl pour impression 3D">🖨️ STL</button>
-    <input type="file" id="fileInput" accept=".json" style="display:none">
+    <input type="file" id="projectInput" accept=".json" style="display:none">
+    <input type="file" id="importInput" accept=".obj,.stl" style="display:none">
   </div>
 
   <div id="viewport">
@@ -108,7 +131,8 @@
       <b>Cube / Cylindre / Sphère</b> : clic pour poser<br>
       <b>Sélection</b> : clic sur un objet pour le sélectionner, glisser pour le déplacer, <kbd>Suppr</kbd> pour supprimer<br>
       <b>Caméra</b> : clic-glisser dans le vide = rotation, molette = zoom, clic droit = déplacement latéral<br>
-      <b>Ctrl+Z</b> : annuler
+      <b>Ctrl+Z</b> : annuler<br>
+      <b>Fichier</b> : ouvrir/enregistrer un projet <kbd>.json</kbd>, importer un objet <kbd>.obj</kbd>/<kbd>.stl</kbd>
     </div>
     <div id="status">Prêt. Choisissez un outil.</div>
   </div>
@@ -337,46 +361,196 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   setStatus('Tout effacé (Ctrl+Z pour revenir)');
 });
 
-document.getElementById('saveBtn').addEventListener('click', () => {
-  const data = objects.map(o => ({
+document.getElementById('saveProjBtn').addEventListener('click', () => {
+  closeFileMenu();
+  const imported = objects.filter(o => o.userData.kind === 'import');
+  const data = objects.filter(o => o.userData.kind !== 'import').map(o => ({
     kind: o.userData.kind, color: '#' + o.material.color.getHexString(),
     position: o.position.toArray(), scale: o.scale.toArray()
   }));
-  const blob = new Blob([JSON.stringify({ app: 'Sketch3D', v: 1, objects: data }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ app: 'Sketch3D', v: 2, name: 'projet', objects: data }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'modele-sketch3d.json';
+  a.download = 'projet-sketch3d.json';
   a.click();
   URL.revokeObjectURL(a.href);
-  setStatus('Modèle enregistré');
+  setStatus(imported.length ? 'Projet enregistré (' + imported.length + ' objet(s) importé(s) non inclus — exportez-les en OBJ/STL)' : 'Projet enregistré');
 });
 
-const fileInput = document.getElementById('fileInput');
-document.getElementById('loadBtn').addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', e => {
+/* ------------------------------------------------------------------ */
+/* Menu Fichier : projets (.json), import .obj/.stl, quitter           */
+/* ------------------------------------------------------------------ */
+const projectInput = document.getElementById('projectInput');
+const importInput = document.getElementById('importInput');
+const fileMenuBtn = document.getElementById('fileMenuBtn');
+const fileMenu = document.getElementById('fileMenu');
+
+function closeFileMenu() { fileMenu.classList.remove('open'); }
+fileMenuBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  fileMenu.classList.toggle('open');
+});
+addEventListener('click', e => {
+  if (!fileMenu.contains(e.target)) closeFileMenu();
+});
+
+function loadProject(json) {
+  [...objects].forEach(remove);
+  for (const d of json.objects) {
+    let m;
+    if (d.kind === 'cylinder') m = makeCylinder(0.5, 1, d.color);
+    else if (d.kind === 'sphere') m = makeSphere(0.5, d.color);
+    else m = makeRect(1, 1, d.color);
+    m.userData.kind = d.kind;
+    m.scale.fromArray(d.scale);
+    m.position.fromArray(d.position);
+    add(m);
+  }
+  undoStack = [];
+  select(null);
+  setStatus(json.objects.length + ' objet(s) chargé(s) depuis le projet');
+}
+
+document.getElementById('openProjBtn').addEventListener('click', () => {
+  closeFileMenu();
+  projectInput.click();
+});
+projectInput.addEventListener('change', e => {
   const f = e.target.files[0];
   if (!f) return;
   const r = new FileReader();
   r.onload = () => {
-    try {
-      const json = JSON.parse(r.result);
-      [...objects].forEach(remove);
-      for (const d of json.objects) {
-        let m;
-        if (d.kind === 'cylinder') m = makeCylinder(0.5, 1, d.color);
-        else if (d.kind === 'sphere') m = makeSphere(0.5, d.color);
-        else m = makeRect(1, 1, d.color);
-        m.userData.kind = d.kind;
-        m.scale.fromArray(d.scale);
-        m.position.fromArray(d.position);
-        add(m);
-      }
-      setStatus(`${json.objects.length} objet(s) chargé(s)`);
-    } catch (err) { setStatus('Fichier invalide : ' + err.message); }
+    try { loadProject(JSON.parse(r.result)); }
+    catch (err) { setStatus('Projet invalide : ' + err.message); }
   };
   r.readAsText(f);
-  fileInput.value = '';
+  projectInput.value = '';
 });
+
+document.getElementById('importObjBtn').addEventListener('click', () => {
+  closeFileMenu();
+  importInput.click();
+});
+importInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const ext = (f.name.split('.').pop() || '').toLowerCase();
+  if (ext === 'obj' || ext === 'stl') {
+    const r = new FileReader();
+    r.onload = () => importMeshes(f.name, r.result);
+    if (ext === 'stl') r.readAsArrayBuffer(f); else r.readAsText(f);
+  } else {
+    setStatus('Import : seuls les formats .obj et .stl sont pris en charge');
+  }
+  importInput.value = '';
+});
+
+function makeImportMesh(positions) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, matFor(color));
+  m.castShadow = true; m.receiveShadow = true;
+  m.userData = { kind: 'import' };
+  return m;
+}
+
+function placeOnGround(mesh, x, z) {
+  mesh.geometry.computeBoundingBox();
+  const bb = mesh.geometry.boundingBox;
+  mesh.position.set(x - (bb.min.x + bb.max.x) / 2, -bb.min.y, z - (bb.min.z + bb.max.z) / 2);
+}
+
+function importMeshes(name, data) {
+  try {
+    const isStl = name.toLowerCase().endsWith('.stl');
+    const meshes = isStl ? stlToMeshes(data) : objToMeshes(data);
+    for (const m of meshes) {
+      placeOnGround(m, snap(lastGroundPoint.x), snap(lastGroundPoint.z));
+      add(m);
+      pushUndo({ type: 'add', obj: m });
+    }
+    setStatus(meshes.length + ' objet(s) importé(s) depuis ' + name + ' — déplaçables en mode Sélection');
+  } catch (err) {
+    setStatus('Import impossible : ' + err.message);
+  }
+}
+
+function objToMeshes(text) {
+  const verts = [];
+  const groups = [];
+  let cur = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const t = line.split(/\s+/);
+    if (t[0] === 'v') {
+      verts.push([parseFloat(t[1]), parseFloat(t[2]), parseFloat(t[3])]);
+    } else if (t[0] === 'o' || t[0] === 'g') {
+      cur = { name: t[1] || 'import', tris: [] };
+      groups.push(cur);
+    } else if (t[0] === 'f') {
+      if (!cur) { cur = { name: 'import', tris: [] }; groups.push(cur); }
+      const idx = [];
+      for (let i = 1; i < t.length; i++) {
+        let n = parseInt(t[i].split('/')[0], 10);
+        if (Number.isNaN(n)) continue;
+        if (n < 0) n = verts.length + n + 1;
+        idx.push(n);
+      }
+      for (let i = 2; i < idx.length; i++) cur.tris.push([idx[0], idx[i - 1], idx[i]]);
+    }
+  }
+  const meshes = [];
+  for (const g of groups) {
+    if (!g.tris.length) continue;
+    const positions = new Float32Array(g.tris.length * 9);
+    let k = 0;
+    for (const [a, b, c] of g.tris) {
+      for (const n of [a, b, c]) {
+        const v = verts[n - 1];
+        if (!v) throw new Error('indice de sommet invalide');
+        positions[k++] = v[0]; positions[k++] = v[1]; positions[k++] = v[2];
+      }
+    }
+    meshes.push(makeImportMesh(positions));
+  }
+  if (!meshes.length) throw new Error('aucune face trouvée');
+  return meshes;
+}
+
+function stlToMeshes(buffer) {
+  let tris = [];
+  if (buffer.byteLength > 84) {
+    const dv = new DataView(buffer);
+    const num = dv.getUint32(80, true);
+    if (num > 0 && 84 + num * 50 === buffer.byteLength) {
+      for (let i = 0; i < num; i++) {
+        const off = 84 + i * 50;
+        const t = [];
+        for (let j = 0; j < 3; j++) {
+          t.push([dv.getFloat32(off + 12 + j * 12, true), dv.getFloat32(off + 16 + j * 12, true), dv.getFloat32(off + 20 + j * 12, true)]);
+        }
+        tris.push(t);
+      }
+    }
+  }
+  if (!tris.length) {
+    const tokens = new TextDecoder().decode(buffer).split(/\s+/);
+    const flat = [];
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i] === 'vertex') flat.push([parseFloat(tokens[i + 1]), parseFloat(tokens[i + 2]), parseFloat(tokens[i + 3])]);
+    }
+    for (let i = 0; i + 2 < flat.length; i += 3) tris.push([flat[i], flat[i + 1], flat[i + 2]]);
+  }
+  if (!tris.length) throw new Error('aucune face trouvée');
+  const positions = new Float32Array(tris.length * 9);
+  let k = 0;
+  for (const t of tris) for (const v of t) {
+    positions[k++] = v[0]; positions[k++] = v[1]; positions[k++] = v[2];
+  }
+  return [makeImportMesh(positions)];
+}
 
 /* ------------------------------------------------------------------ */
 /* Export OBJ / STL                                                    */
@@ -411,6 +585,7 @@ function trianglesOf(obj) {
 }
 
 document.getElementById('exportObjBtn').addEventListener('click', () => {
+  closeFileMenu();
   if (!objects.length) { setStatus('Rien à exporter'); return; }
   const lines = ['# Exporté depuis Sketch3D'];
   let base = 1;
@@ -431,6 +606,7 @@ document.getElementById('exportObjBtn').addEventListener('click', () => {
 });
 
 document.getElementById('exportStlBtn').addEventListener('click', () => {
+  closeFileMenu();
   if (!objects.length) { setStatus('Rien à exporter'); return; }
   const L = ['solid sketch3d'];
   for (const o of objects) {
@@ -445,6 +621,18 @@ document.getElementById('exportStlBtn').addEventListener('click', () => {
   L.push('endsolid sketch3d');
   downloadText('modele-sketch3d.stl', L.join('\n'));
   setStatus('Export STL terminé (prêt pour l\'impression 3D)');
+});
+
+document.getElementById('quitBtn').addEventListener('click', () => {
+  closeFileMenu();
+  if (!objects.length) {
+    setStatus('Projet déjà vide.');
+    return;
+  }
+  if (!confirm('Fermer le projet en cours ? Pensez à enregistrer (Fichier > Enregistrer) : les objets non enregistrés seront perdus.')) return;
+  pushUndo({ type: 'clear', items: [...objects] });
+  [...objects].forEach(remove);
+  setStatus('Projet fermé — Ctrl+Z pour restaurer, Fichier > Ouvrir pour recommencer.');
 });
 
 document.getElementById('helpClose').addEventListener('click', () => document.getElementById('help').remove());
@@ -545,8 +733,12 @@ renderer.domElement.addEventListener('pointerdown', e => {
     if (hits.length) {
       const eobj = hits[0].object;
       select(eobj);
-      controls.enabled = false;
       const kind = eobj.userData.kind;
+      if (kind === 'import') {
+        setStatus('Push/Pull indisponible sur un objet importé — déplacez-le en mode Sélection.');
+        return;
+      }
+      controls.enabled = false;
       let faceAxis = -1, faceSign = 0;
       if (kind === 'rect' || kind === 'box') {
         const n = hits[0].face.normal;
