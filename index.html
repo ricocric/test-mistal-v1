@@ -868,15 +868,24 @@ addEventListener('keydown', e => {
     return;
   }
   if ((drawing && drawing.kind === 'move') && 'xyz'.includes(k)) {
-    drawing.lockAxis = drawing.lockAxis === k ? null : k;
-    const axisColors = { x: 0xff4444, y: 0x22cc44, z: 0x3388ff };
-    const axisNames = { x: 'X (rouge)', y: 'Y (vert, vertical)', z: 'Z (bleu)' };
-    if (drawing.lockAxis) {
-      outline.material.color.setHex(axisColors[k]);
-      setStatus('Axe verrouillé : ' + axisNames[k] + ' (direction locale à l’objet, valable après rotation) — même touche pour libérer.');
-    } else {
-      outline.material.color.setHex(0xffffff);
-      setStatus('Déplacement libre — X/Y/Z pour verrouiller un axe.');
+    if (e.repeat) return;
+    if (selected) {
+      drawing.lockAxis = drawing.lockAxis === k ? null : k;
+      const axisColors = { x: 0xff4444, y: 0x22cc44, z: 0x3388ff };
+      const axisNames = { x: 'X (rouge)', y: 'Y (vert, vertical)', z: 'Z (bleu)' };
+      if (drawing.lockAxis) {
+        drawing.axisDir = new THREE.Vector3();
+        drawing.axisDir.setComponent(k === 'x' ? 0 : k === 'y' ? 1 : 2, 1);
+        drawing.axisDir.applyQuaternion(selected.quaternion).normalize();
+        drawing.lastLen = 0;
+        outline.material.color.setHex(axisColors[k]);
+        setStatus('Axe verrouillé : ' + axisNames[k] + ' (direction locale à l’objet, valable après rotation) — même touche pour libérer.');
+      } else {
+        drawing.axisDir = null;
+        drawing.lastLen = 0;
+        outline.material.color.setHex(0xffffff);
+        setStatus('Déplacement libre — X/Y/Z pour verrouiller un axe.');
+      }
     }
     return;
   }
@@ -916,6 +925,11 @@ const previewMat = new THREE.MeshStandardMaterial({ color: 0x4f8cff, transparent
 
 function cancelDraw() {
   if (preview) { scene.remove(preview); preview = null; }
+  if (drawing && drawing.kind === 'move') {
+    outline.material.color.setHex(0xffffff);
+    drawing.axisDir = null;
+    drawing.lastLen = 0;
+  }
   if (drawing && drawing.kind === 'face' && drawing.obj) {
     drawing.obj.scale.copy(drawing.fromScale);
     drawing.obj.position.copy(drawing.fromPos);
@@ -937,8 +951,9 @@ renderer.domElement.addEventListener('pointerdown', e => {
       const mobj = hits[0].object;
       select(mobj);
       const camDir = camera.getWorldDirection(new THREE.Vector3()).negate().normalize();
-      drawing = { kind: 'move', from: mobj.position.clone(), grabPoint: hits[0].point.clone(), dragPlane: new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, hits[0].point.clone()), lockAxis: null };
+      drawing = { kind: 'move', from: mobj.position.clone(), grabPoint: hits[0].point.clone(), dragPlane: new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, hits[0].point.clone()), lockAxis: null, axisDir: null, lastLen: 0 };
       controls.enabled = false;
+      try { renderer.domElement.setPointerCapture(e.pointerId); } catch (err) {}
       setStatus('Déplacement libre — X (rouge) / Y (vert, vertical) / Z (bleu) pour verrouiller un axe, même touche pour libérer.');
     } else {
       select(null);
@@ -1022,12 +1037,15 @@ renderer.domElement.addEventListener('pointermove', e => {
     const p = new THREE.Vector3();
     if (!raycaster.ray.intersectPlane(drawing.dragPlane, p)) return;
     const delta = new THREE.Vector3().subVectors(p, drawing.grabPoint);
-    if (drawing.lockAxis) {
-      const dir = new THREE.Vector3();
-      dir.setComponent(drawing.lockAxis === 'x' ? 0 : drawing.lockAxis === 'y' ? 1 : 2, 1);
-      dir.applyQuaternion(selected.quaternion);
-      const len = snap(delta.dot(dir));
-      delta.copy(dir).multiplyScalar(len);
+    if (drawing.axisDir) {
+      const rawLen = delta.dot(drawing.axisDir);
+      delta.copy(drawing.axisDir).multiplyScalar(rawLen);
+      drawing.lastLen = rawLen;
+      const now = performance.now();
+      if (!drawing.statusTick || now - drawing.statusTick > 120) {
+        drawing.statusTick = now;
+        setStatus('Axe verrouillé — déplacement : ' + (rawLen < 0 ? '-' : '+') + Math.abs(rawLen).toFixed(2));
+      }
     }
     selected.position.copy(drawing.from).add(delta);
     if (selected.position.y < 0) selected.position.y = 0;
@@ -1144,6 +1162,16 @@ renderer.domElement.addEventListener('pointerup', e => {
     controls.enabled = true;
     setStatus('Extrusion terminée — Ctrl+Z pour annuler.');
   } else if (drawing && drawing.kind === 'move' && selected) {
+    if (drawing.axisDir) {
+      const raw = drawing.lastLen;
+      const len = snapping ? Math.round(raw / SNAP) * SNAP : raw;
+      selected.position.copy(drawing.from).add(drawing.axisDir.clone().multiplyScalar(len));
+      if (selected.position.y < 0) selected.position.y = 0;
+    } else if (snapping) {
+      selected.position.x = snap(selected.position.x);
+      selected.position.z = snap(selected.position.z);
+      selected.position.y = Math.max(0, snap(selected.position.y));
+    }
     if (!selected.position.equals(drawing.from)) {
       pushUndo({ type: 'move', obj: selected, from: drawing.from });
     }
