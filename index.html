@@ -104,7 +104,7 @@
     <div id="help">
       <span class="close" id="helpClose">✕</span>
       <h3>Aide rapide</h3>
-      <b>Push/Pull</b> : cliquez une face d’un objet (dessus ou côté) et glissez pour l’étirer<br>
+      <b>Push/Pull</b> : cliquez une face, déplacez, puis re-cliquez pour la poser (clic droit / Échap = annuler)<br>
       <b>Cube / Cylindre / Sphère</b> : clic pour poser<br>
       <b>Sélection</b> : clic sur un objet pour le sélectionner, glisser pour le déplacer, <kbd>Suppr</kbd> pour supprimer<br>
       <b>Caméra</b> : clic-glisser dans le vide = rotation, molette = zoom, clic droit = déplacement latéral<br>
@@ -278,7 +278,7 @@ function setMode(m) {
     select: 'Sélection : cliquez un objet (glissez pour le déplacer). Clic dans le vide + glisser = orbite.',
     rect: 'Rectangle : clic-glisser au sol pour dessiner la base.',
     circle: 'Cercle : clic au sol pour le centre, puis rayon, clic pour valider.',
-    pushpull: 'Push/Pull : cliquez une face (dessus = hauteur, côté = largeur/profondeur) puis glissez pour l’extruder.',
+    pushpull: 'Push/Pull : cliquez une face (dessus/côté), déplacez la souris, puis re-cliquez pour la poser.',
     orbit: 'Orbite : glissez pour tourner autour de la scène.'
   }[m]);
 }
@@ -457,6 +457,13 @@ addEventListener('keydown', e => {
     if (selected) { pushUndo({ type: 'remove', obj: selected, pos: selected.position.clone(), scale: selected.scale.clone() }); remove(selected); setStatus('Objet supprimé'); }
     return;
   }
+  if (e.key === 'Escape') {
+    const wasPull = drawing && drawing.kind === 'face';
+    cancelDraw();
+    controls.enabled = true;
+    setStatus(wasPull ? 'Extrusion annulée.' : 'Dessin annulé.');
+    return;
+  }
   const modes = { s: 'select', r: 'rect', c: 'circle', p: 'pushpull', o: 'orbit', g: 'grid' };
   if (k in modes) {
     if (modes[k] === 'grid') { snapBtn.click(); return; }
@@ -492,6 +499,11 @@ const previewMat = new THREE.MeshStandardMaterial({ color: 0x4f8cff, transparent
 
 function cancelDraw() {
   if (preview) { scene.remove(preview); preview = null; }
+  if (drawing && drawing.kind === 'face' && drawing.obj) {
+    drawing.obj.scale.copy(drawing.fromScale);
+    drawing.obj.position.copy(drawing.fromPos);
+    if (selected === drawing.obj) outline.setFromObject(drawing.obj);
+  }
   drawing = null;
   orbitDrag = false;
 }
@@ -522,6 +534,12 @@ renderer.domElement.addEventListener('pointerdown', e => {
     controls.enabled = false;
     setStatus('Cliquez de nouveau pour valider le rayon.');
   } else if (mode === 'pushpull') {
+    if (drawing && drawing.kind === 'face') {
+      pushUndo({ type: 'face-extrude', obj: drawing.obj, fromScale: drawing.fromScale, fromPos: drawing.fromPos });
+      drawing = null;
+      controls.enabled = true;
+      setStatus('Face posée — Ctrl+Z pour annuler, ou cliquez une autre face.');
+    } else {
     pointerToNDC(e);
     const hits = raycaster.intersectObjects(objects, false);
     if (hits.length) {
@@ -546,7 +564,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
         m.normalize();
         const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(m, hits[0].point.clone());
         drawing = { kind: 'face', obj: eobj, axis: faceAxis, sign: faceSign, fromScale: eobj.scale.clone(), fromPos: eobj.position.clone(), plane, fixed: pos.getComponent(faceAxis) - faceSign * half };
-        setStatus('Glissez pour étirer cette face, relâchez pour finir.');
+        setStatus('Déplacez la souris puis cliquez pour poser la face (clic droit ou Échap pour annuler).');
       } else {
         const normal = camera.getWorldDirection(new THREE.Vector3());
         normal.y = 0;
@@ -556,6 +574,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
         drawing = { kind: 'extrude', obj: eobj, from: eobj.scale.y, fromObjY: eobj.position.y, plane };
         setStatus('Glissez verticalement, relâchez pour finir.');
       }
+    }
     }
   } else if (mode === 'orbit') {
     controls.enabled = true;
@@ -675,9 +694,6 @@ renderer.domElement.addEventListener('pointerup', e => {
     }
     drawing = null;
     controls.enabled = true;
-  } else if (drawing && drawing.kind === 'face') {
-    pushUndo({ type: 'face-extrude', obj: drawing.obj, fromScale: drawing.fromScale, fromPos: drawing.fromPos });
-    setStatus('Face étirée — Ctrl+Z pour annuler.');
   } else if (drawing && drawing.kind === 'extrude') {
     pushUndo({ type: 'extrude', obj: drawing.obj, from: drawing.from, fromObjY: drawing.fromObjY });
     drawing = null;
@@ -695,6 +711,14 @@ renderer.domElement.addEventListener('pointerup', e => {
 function removePreviewOnly() {
   if (preview) { scene.remove(preview); preview.geometry.dispose(); preview.material.dispose(); preview = null; }
 }
+
+renderer.domElement.addEventListener('contextmenu', e => {
+  if (mode === 'pushpull' && drawing && drawing.kind === 'face') {
+    e.preventDefault();
+    cancelDraw();
+    setStatus('Extrusion annulée.');
+  }
+});
 
 /* Cercle : validation du rayon au second clic */
 renderer.domElement.addEventListener('pointerdown', e => {
