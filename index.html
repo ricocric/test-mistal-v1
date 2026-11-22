@@ -35,6 +35,7 @@
   }
   .btn:hover { background: #40465440; border-color: #ffffff30; }
   .btn.active { background: var(--accent); border-color: #ffffff55; color: #fff; }
+  #unitSel option { background: var(--panel); color: var(--text); }
   .menu { position: relative; }
   .dropdown {
     display: none; position: absolute; top: calc(100% + 4px); left: 0;
@@ -94,6 +95,8 @@
         <div class="mi" id="exportObjBtn">📤 Exporter en OBJ…</div>
         <div class="mi" id="exportStlBtn">🖨️ Exporter en STL…</div>
         <div class="mi-sep"></div>
+        <div class="mi" id="clearMeasuresBtn">🧹 Effacer les cotes</div>
+        <div class="mi-sep"></div>
         <div class="mi" id="closeProjBtn">📁 Fermer le projet</div>
         <div class="mi mi-quit" id="quitAppBtn">🚪 Quitter l'application</div>
       </div>
@@ -104,6 +107,7 @@
     <button class="btn mode" data-mode="circle" title="Disque / cylindre au sol">◯ Cercle <kbd>C</kbd></button>
     <button class="btn mode" data-mode="pushpull" title="Extruder un objet verticalement">↕️ Push/Pull <kbd>P</kbd></button>
     <button class="btn mode" data-mode="orbit" title="Orbiter la caméra">🔄 Orbite <kbd>O</kbd></button>
+    <button class="btn mode" data-mode="measure" title="Mesurer la distance entre 2 points">📏 Mesurer <kbd>M</kbd></button>
 
     <div class="sep"></div>
 
@@ -119,6 +123,12 @@
 
     <button class="btn" id="undoBtn" title="Annuler la dernière action">↩️ Annuler <kbd>Ctrl+Z</kbd></button>
     <button class="btn" id="snapBtn" title="Aimantation sur la grille">🧲 Aimantation <kbd>G</kbd></button>
+    <select id="unitSel" class="btn" title="Unité d’affichage des cotes (1 unité = 1 mètre)">
+      <option value="mm">mm</option>
+      <option value="cm">cm</option>
+      <option value="m" selected>m</option>
+      <option value="km">km</option>
+    </select>
     <button class="btn" id="clearBtn" title="Tout effacer">🗑️ Effacer tout</button>
     <button class="btn" id="zoomInBtn" title="Zoom avant (ou molette)">🔍➕</button>
     <button class="btn" id="zoomOutBtn" title="Zoom arrière (ou molette)">🔍➖</button>
@@ -144,6 +154,7 @@
       <b>Sélection</b> : clic sur un objet pour le sélectionner, glisser pour le déplacer, <kbd>Suppr</kbd> pour supprimer<br>
       <b>Caméra</b> : clic-glisser dans le vide = rotation, molette ou boutons 🔍 = zoom, clic droit = déplacement latéral<br>
       <b>Cadrer</b> : touche <kbd>F</kbd> ou 🎯 pour ajuster la vue sur la sélection (ou toute la scène)<br>
+      <b>Mesurer</b> : mode 📏 (touche <kbd>M</kbd>), cliquez 2 points (surface d'objet ou sol) pour créer une cote ; unité mm/cm/m/km dans la barre ; Fichier > Effacer les cotes<br>
       <b>Ctrl+Z</b> : annuler<br>
       <b>Fichier</b> : ouvrir/enregistrer un projet (json), importer un objet (obj/stl), fermer le projet, quitter l’application<br>
       <b>Clic droit sur un objet</b> : Dupliquer…, Rotation… (angle + axe X/Y/Z), Supprimer, Cadrer ; <kbd>Ctrl+D</kbd> duplique la sélection<br>
@@ -319,7 +330,8 @@ function setMode(m) {
     rect: 'Rectangle : clic-glisser au sol pour dessiner la base.',
     circle: 'Cercle : clic au sol pour le centre, puis rayon, clic pour valider.',
     pushpull: 'Push/Pull : cliquez une face (dessus/côté), déplacez la souris, puis re-cliquez pour la poser.',
-    orbit: 'Orbite : glissez pour tourner autour de la scène.'
+    orbit: 'Orbite : glissez pour tourner autour de la scène.',
+    measure: 'Mesure : cliquez le premier point, puis le second pour créer une cote (Échap annule).'
   }[m]);
 }
 modeButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
@@ -419,7 +431,8 @@ document.getElementById('saveProjBtn').addEventListener('click', () => {
     quaternion: o.quaternion.toArray(),
     positions: Array.from(o.geometry.attributes.position.array, v => round(v))
   }));
-  const blob = new Blob([JSON.stringify({ app: 'Sketch3D', v: 4, name: 'projet', objects: data, imports }, null, imports.length ? 0 : 2)], { type: 'application/json' });
+  const cotes = measures.map(m => ({ a: [round(m.a.x), round(m.a.y), round(m.a.z)], b: [round(m.b.x), round(m.b.y), round(m.b.z)] }));
+  const blob = new Blob([JSON.stringify({ app: 'Sketch3D', v: 5, name: 'projet', objects: data, imports, measures: cotes }, null, imports.length ? 0 : 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'projet-sketch3d.json';
@@ -555,6 +568,8 @@ document.getElementById('ctxFrameBtn').addEventListener('click', () => {
 
 function loadProject(json) {
   [...objects].forEach(remove);
+  clearCotes();
+  clearMeasureLive();
   for (const d of json.objects) {
     let m;
     if (d.kind === 'cylinder') m = makeCylinder(0.5, 1, d.color);
@@ -580,9 +595,17 @@ function loadProject(json) {
       nImports++;
     }
   }
+  let nCotes = 0;
+  if (json.measures) {
+    for (const d of json.measures) {
+      if (!d.a || !d.b) continue;
+      addCote(new THREE.Vector3().fromArray(d.a), new THREE.Vector3().fromArray(d.b));
+      nCotes++;
+    }
+  }
   undoStack = [];
   select(null);
-  setStatus('Projet chargé : ' + (json.objects.length + nImports) + ' objet(s) (' + json.objects.length + ' créé(s), ' + nImports + ' importé(s))');
+  setStatus('Projet chargé : ' + (json.objects.length + nImports) + ' objet(s) (' + json.objects.length + ' créé(s), ' + nImports + ' importé(s))' + (nCotes ? ', ' + nCotes + ' cote(s)' : ''));
 }
 
 document.getElementById('openProjBtn').addEventListener('click', () => {
@@ -829,6 +852,8 @@ document.getElementById('closeProjBtn').addEventListener('click', () => {
   if (!confirm('Fermer le projet en cours ? Pensez à enregistrer (Fichier > Enregistrer) : les objets non enregistrés seront perdus.')) return;
   pushUndo({ type: 'clear', items: [...objects] });
   [...objects].forEach(remove);
+  clearCotes();
+  clearMeasureLive();
   select(null);
   setStatus('Projet fermé — Ctrl+Z pour restaurer, Fichier > Ouvrir pour recommencer.');
 });
@@ -889,12 +914,147 @@ addEventListener('keydown', e => {
     }
     return;
   }
-  const modes = { s: 'select', r: 'rect', c: 'circle', p: 'pushpull', o: 'orbit', g: 'grid' };
+  const modes = { s: 'select', r: 'rect', c: 'circle', p: 'pushpull', o: 'orbit', g: 'grid', m: 'measure' };
   if (k === 'f') { frameSelection(); return; }
   if (k in modes) {
     if (modes[k] === 'grid') { snapBtn.click(); return; }
     setMode(modes[k]);
   }
+});
+
+/* ------------------------------------------------------------------ */
+/* Mesures / cotes : distance entre 2 points, unités métriques         */
+/* ------------------------------------------------------------------ */
+const measureGroup = new THREE.Group();
+scene.add(measureGroup);
+const measures = [];
+let pendingA = null;
+let mLive = null;
+let leftDownPos = null;
+const coteDotGeo = new THREE.SphereGeometry(0.07, 12, 12);
+const coteLineMat = new THREE.LineBasicMaterial({ color: 0xffd54a, depthTest: false, transparent: true });
+const coteDotMat = new THREE.MeshBasicMaterial({ color: 0xffd54a });
+const measureMarker = new THREE.Mesh(coteDotGeo, coteDotMat);
+measureMarker.scale.setScalar(1.4);
+measureMarker.visible = false;
+measureGroup.add(measureMarker);
+
+const UNIT_FACTORS = { mm: 1000, cm: 100, m: 1, km: 0.001 };
+let unit = 'm';
+function fmtLen(v) {
+  const val = v * UNIT_FACTORS[unit];
+  const dec = unit === 'mm' ? 0 : unit === 'cm' ? 1 : unit === 'km' ? 3 : 2;
+  return val.toFixed(dec) + ' ' + unit;
+}
+
+function makeCoteLabel(text) {
+  const c = document.createElement('canvas');
+  const probe = c.getContext('2d');
+  const font = 'bold 28px "Segoe UI", system-ui, sans-serif';
+  probe.font = font;
+  const w = Math.ceil(probe.measureText(text).width) + 24;
+  const h = 46;
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.font = font;
+  ctx.fillStyle = 'rgba(20,22,28,0.88)';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(255,213,74,0.95)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, w - 2, h - 2);
+  ctx.fillStyle = '#ffe082';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 12, h / 2);
+  const tex = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sp.scale.set(0.7 * w / h, 0.7, 1);
+  sp.renderOrder = 20;
+  return sp;
+}
+
+function setSpriteLabel(sp, text) {
+  const fresh = makeCoteLabel(text);
+  sp.material.map.dispose();
+  sp.material.map = fresh.material.map;
+  sp.scale.copy(fresh.scale);
+  fresh.material.dispose();
+}
+
+function disposeSprite(sp) {
+  sp.material.map.dispose();
+  sp.material.dispose();
+}
+
+function addCote(a, b) {
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), coteLineMat);
+  const dotA = new THREE.Mesh(coteDotGeo, coteDotMat);
+  const dotB = new THREE.Mesh(coteDotGeo, coteDotMat);
+  dotA.position.copy(a);
+  dotB.position.copy(b);
+  const sprite = makeCoteLabel(fmtLen(a.distanceTo(b)));
+  sprite.position.copy(a).add(b).multiplyScalar(0.5);
+  measureGroup.add(line, dotA, dotB, sprite);
+  measures.push({ a: a.clone(), b: b.clone(), line, dotA, dotB, sprite });
+}
+
+function clearCotes() {
+  for (const m of measures) {
+    measureGroup.remove(m.line, m.dotA, m.dotB, m.sprite);
+    m.line.geometry.dispose();
+    disposeSprite(m.sprite);
+  }
+  measures.length = 0;
+}
+
+function clearMeasureLive() {
+  pendingA = null;
+  measureMarker.visible = false;
+  if (mLive) {
+    measureGroup.remove(mLive.line, mLive.sprite);
+    mLive.line.geometry.dispose();
+    disposeSprite(mLive.sprite);
+    mLive = null;
+  }
+}
+
+function pickMeasurePoint(e) {
+  pointerToNDC(e);
+  const hits = raycaster.intersectObjects(objects, false);
+  if (hits.length) return hits[0].point.clone();
+  const p = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(groundPlane, p)) return p;
+  return null;
+}
+
+function showMeasureLive(b) {
+  const mid = new THREE.Vector3().addVectors(pendingA, b).multiplyScalar(0.5);
+  if (!mLive) {
+    mLive = { line: new THREE.Line(new THREE.BufferGeometry().setFromPoints([pendingA, b]), coteLineMat), sprite: makeCoteLabel(fmtLen(pendingA.distanceTo(b))) };
+    mLive.sprite.position.copy(mid);
+    measureGroup.add(mLive.line, mLive.sprite);
+  } else {
+    mLive.line.geometry.setFromPoints([pendingA, b]);
+    mLive.sprite.position.copy(mid);
+    setSpriteLabel(mLive.sprite, fmtLen(pendingA.distanceTo(b)));
+  }
+}
+
+const unitSel = document.getElementById('unitSel');
+unitSel.addEventListener('change', () => {
+  unit = unitSel.value;
+  for (const m of measures) {
+    setSpriteLabel(m.sprite, fmtLen(m.a.distanceTo(m.b)));
+    m.sprite.position.copy(m.a).add(m.b).multiplyScalar(0.5);
+  }
+  setStatus('Unités : ' + unit + ' (' + measures.length + ' cote(s) affichée(s))');
+});
+
+document.getElementById('clearMeasuresBtn').addEventListener('click', () => {
+  closeFileMenu();
+  if (!measures.length) { setStatus('Aucune cote à effacer.'); return; }
+  const n = measures.length;
+  clearCotes();
+  setStatus(n + ' cote(s) effacée(s).');
 });
 
 /* ------------------------------------------------------------------ */
@@ -924,6 +1084,7 @@ let orbitDrag = false;
 const previewMat = new THREE.MeshStandardMaterial({ color: 0x4f8cff, transparent: true, opacity: 0.5 });
 
 function cancelDraw() {
+  clearMeasureLive();
   if (preview) { scene.remove(preview); preview = null; }
   if (drawing && drawing.kind === 'move') {
     outline.material.color.setHex(0xffffff);
@@ -1032,6 +1193,14 @@ renderer.domElement.addEventListener('pointermove', e => {
     lastGroundPoint.copy(gp);
   }
 
+  if (mode === 'measure' && pendingA) {
+    const p = pickMeasurePoint(e);
+    if (p) {
+      showMeasureLive(p);
+      setStatus('Cote en cours : ' + fmtLen(pendingA.distanceTo(p)) + ' — cliquez pour fixer le second point.');
+    }
+    return;
+  }
   if (drawing && drawing.kind === 'move' && selected) {
     pointerToNDC(e);
     const p = new THREE.Vector3();
@@ -1113,6 +1282,25 @@ renderer.domElement.addEventListener('pointermove', e => {
 
 renderer.domElement.addEventListener('pointerup', e => {
   if (e.button !== 0) return;
+  if (mode === 'measure') {
+    if (leftDownPos && Math.hypot(e.clientX - leftDownPos.x, e.clientY - leftDownPos.y) < 6) {
+      const p = pickMeasurePoint(e);
+      if (p) {
+        if (!pendingA) {
+          pendingA = p;
+          measureMarker.position.copy(p);
+          measureMarker.visible = true;
+          setStatus('Cote : premier point posé — cliquez le second point (Échap pour annuler).');
+        } else {
+          const d = pendingA.distanceTo(p);
+          addCote(pendingA, p);
+          clearMeasureLive();
+          setStatus('Cote créée : ' + fmtLen(d) + ' — cliquez pour une nouvelle cote (Échap ou changement d’outil pour finir).');
+        }
+      }
+    }
+    return;
+  }
   if (drawing && drawing.kind === 'rect') {
     const obj = preview;
     if (obj && obj.scale.x > 0.06 && obj.scale.z > 0.06) {
@@ -1188,6 +1376,7 @@ function removePreviewOnly() {
 
 renderer.domElement.addEventListener('pointerdown', e => {
   if (e.button === 2) rightDownPos = { x: e.clientX, y: e.clientY };
+  if (e.button === 0) leftDownPos = { x: e.clientX, y: e.clientY };
 });
 
 renderer.domElement.addEventListener('contextmenu', e => {
