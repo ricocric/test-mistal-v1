@@ -47,6 +47,7 @@
   .mi-hint { color: var(--muted); font-size: 11px; }
   .mi-sep { height: 1px; background: #ffffff22; margin: 4px 6px; }
   .mi-quit:hover { background: #ff5c5c33; color: #ffb3b3; }
+  .dropdown.ctx { position: fixed; min-width: 240px; z-index: 100; }
   .btn kbd {
     font-family: inherit; font-size: 10px; opacity: 0.7;
     border: 1px solid #ffffff30; border-radius: 4px; padding: 0 4px;
@@ -126,6 +127,12 @@
     <input type="file" id="importInput" accept=".obj,.stl" style="display:none">
   </div>
 
+  <div class="dropdown ctx" id="ctxMenu">
+    <div class="mi" id="ctxDupBtn">⧉ Dupliquer… <span class="mi-hint">nombre au choix</span></div>
+    <div class="mi" id="ctxDelBtn">🗑️ Supprimer <span class="mi-hint">Suppr</span></div>
+    <div class="mi" id="ctxFrameBtn">🎯 Cadrer sur cet objet <span class="mi-hint">F</span></div>
+  </div>
+
   <div id="viewport">
     <div id="coords">x: 0.00 · z: 0.00</div>
     <div id="help">
@@ -137,7 +144,8 @@
       <b>Caméra</b> : clic-glisser dans le vide = rotation, molette ou boutons 🔍 = zoom, clic droit = déplacement latéral<br>
       <b>Cadrer</b> : touche <kbd>F</kbd> ou 🎯 pour ajuster la vue sur la sélection (ou toute la scène)<br>
       <b>Ctrl+Z</b> : annuler<br>
-      <b>Fichier</b> : ouvrir/enregistrer un projet (json), importer un objet (obj/stl), fermer le projet, quitter l’application
+      <b>Fichier</b> : ouvrir/enregistrer un projet (json), importer un objet (obj/stl), fermer le projet, quitter l’application<br>
+      <b>Clic droit sur un objet</b> : menu Dupliquer (nombre au choix), Supprimer, Cadrer ; <kbd>Ctrl+D</kbd> duplique la sélection
     </div>
     <div id="status">Prêt. Choisissez un outil.</div>
   </div>
@@ -430,6 +438,78 @@ fileMenuBtn.addEventListener('click', e => {
 });
 addEventListener('click', e => {
   if (!fileMenu.contains(e.target)) closeFileMenu();
+  if (!ctxMenu.contains(e.target)) closeCtxMenu();
+});
+
+/* ------------------------------------------------------------------ */
+/* Menu contextuel (clic droit sur un objet) et duplication            */
+/* ------------------------------------------------------------------ */
+const ctxMenu = document.getElementById('ctxMenu');
+let ctxTarget = null;
+let rightDownPos = null;
+
+function closeCtxMenu() {
+  ctxMenu.classList.remove('open');
+}
+
+function openCtxMenu(obj, e) {
+  ctxTarget = obj;
+  select(obj);
+  ctxMenu.classList.add('open');
+  const r = ctxMenu.getBoundingClientRect();
+  ctxMenu.style.left = Math.max(4, Math.min(e.clientX, innerWidth - r.width - 8)) + 'px';
+  ctxMenu.style.top = Math.max(4, Math.min(e.clientY, innerHeight - r.height - 8)) + 'px';
+}
+
+function makeClone(obj) {
+  const m = new THREE.Mesh(obj.geometry, obj.material);
+  m.scale.copy(obj.scale);
+  m.position.copy(obj.position);
+  m.castShadow = true; m.receiveShadow = true;
+  m.userData = { kind: obj.userData.kind };
+  return m;
+}
+
+function duplicateObject(obj, count) {
+  const bb = new THREE.Box3().setFromObject(obj);
+  const step = Math.max(bb.max.x - bb.min.x, 0.5) + 1;
+  let last = obj;
+  for (let i = 1; i <= count; i++) {
+    const clone = makeClone(obj);
+    clone.position.x = snap(obj.position.x + i * step);
+    add(clone);
+    pushUndo({ type: 'add', obj: clone });
+    last = clone;
+  }
+  select(last);
+  setStatus(count + ' copie(s) créée(s) en ligne — Ctrl+Z pour annuler.');
+}
+
+document.getElementById('ctxDupBtn').addEventListener('click', () => {
+  const t = ctxTarget;
+  closeCtxMenu();
+  if (!t) return;
+  const val = prompt('Nombre de copies à créer ?', '1');
+  if (val === null) return;
+  const n = Math.max(1, Math.min(50, parseInt(val, 10) || 1));
+  duplicateObject(t, n);
+});
+
+document.getElementById('ctxDelBtn').addEventListener('click', () => {
+  const t = ctxTarget;
+  closeCtxMenu();
+  if (!t) return;
+  pushUndo({ type: 'remove', obj: t, pos: t.position.clone(), scale: t.scale.clone() });
+  remove(t);
+  setStatus('Objet supprimé (clic droit) — Ctrl+Z pour annuler.');
+});
+
+document.getElementById('ctxFrameBtn').addEventListener('click', () => {
+  const t = ctxTarget;
+  closeCtxMenu();
+  if (!t) return;
+  select(t);
+  frameBounds(new THREE.Box3().setFromObject(t));
 });
 
 function loadProject(json) {
@@ -733,8 +813,15 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     const wasPull = drawing && drawing.kind === 'face';
     cancelDraw();
+    closeCtxMenu();
     controls.enabled = true;
     setStatus(wasPull ? 'Extrusion annulée.' : 'Dessin annulé.');
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && k === 'd') {
+    e.preventDefault();
+    if (selected) duplicateObject(selected, 1);
+    else setStatus('Sélectionnez un objet à dupliquer (Ctrl+D).');
     return;
   }
   const modes = { s: 'select', r: 'rect', c: 'circle', p: 'pushpull', o: 'orbit', g: 'grid' };
@@ -996,11 +1083,23 @@ function removePreviewOnly() {
   if (preview) { scene.remove(preview); preview.geometry.dispose(); preview.material.dispose(); preview = null; }
 }
 
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (e.button === 2) rightDownPos = { x: e.clientX, y: e.clientY };
+});
+
 renderer.domElement.addEventListener('contextmenu', e => {
   if (mode === 'pushpull' && drawing && drawing.kind === 'face') {
     e.preventDefault();
     cancelDraw();
     setStatus('Extrusion annulée.');
+    return;
+  }
+  const panned = rightDownPos && (Math.abs(e.clientX - rightDownPos.x) > 6 || Math.abs(e.clientY - rightDownPos.y) > 6);
+  pointerToNDC(e);
+  const hits = panned ? [] : raycaster.intersectObjects(objects, false);
+  if (hits.length) {
+    e.preventDefault();
+    openCtxMenu(hits[0].object, e);
   }
 });
 
