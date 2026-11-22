@@ -129,6 +129,7 @@
 
   <div class="dropdown ctx" id="ctxMenu">
     <div class="mi" id="ctxDupBtn">⧉ Dupliquer… <span class="mi-hint">nombre au choix</span></div>
+    <div class="mi" id="ctxRotBtn">🔄 Rotation… <span class="mi-hint">angle + axe X/Y/Z</span></div>
     <div class="mi" id="ctxDelBtn">🗑️ Supprimer <span class="mi-hint">Suppr</span></div>
     <div class="mi" id="ctxFrameBtn">🎯 Cadrer sur cet objet <span class="mi-hint">F</span></div>
   </div>
@@ -145,7 +146,8 @@
       <b>Cadrer</b> : touche <kbd>F</kbd> ou 🎯 pour ajuster la vue sur la sélection (ou toute la scène)<br>
       <b>Ctrl+Z</b> : annuler<br>
       <b>Fichier</b> : ouvrir/enregistrer un projet (json), importer un objet (obj/stl), fermer le projet, quitter l’application<br>
-      <b>Clic droit sur un objet</b> : menu Dupliquer (nombre au choix), Supprimer, Cadrer ; <kbd>Ctrl+D</kbd> duplique la sélection
+      <b>Clic droit sur un objet</b> : Dupliquer…, Rotation… (angle + axe X/Y/Z), Supprimer, Cadrer ; <kbd>Ctrl+D</kbd> duplique la sélection<br>
+      <b>Déplacement vertical</b> : glissez un objet en maintenant <kbd>Maj</kbd> pour le faire monter/descendre
     </div>
     <div id="status">Prêt. Choisissez un outil.</div>
   </div>
@@ -296,6 +298,7 @@ function undo() {
   if (a.type === 'add') { remove(a.obj); setStatus('Ajout annulé'); }
   else if (a.type === 'remove') { a.obj.position.copy(a.pos); a.obj.scale.copy(a.scale); add(a.obj); setStatus('Suppression annulée'); }
   else if (a.type === 'face-extrude') { a.obj.scale.copy(a.fromScale); a.obj.position.copy(a.fromPos); setStatus('Extrusion de face annulée'); }
+  else if (a.type === 'rotate') { a.obj.quaternion.copy(a.from); a.obj.position.copy(a.fromPos); setStatus('Rotation annulée'); }
   else if (a.type === 'move') { a.obj.position.copy(a.from); setStatus('Déplacement annulé'); }
   else if (a.type === 'extrude') { a.obj.scale.y = a.from; a.obj.position.y = a.fromObjY; setStatus('Extrusion annulée'); }
   else if (a.type === 'recolor') { a.obj.material = matFor(a.from); setStatus('Couleur annulée'); }
@@ -312,7 +315,7 @@ function setMode(m) {
   cancelDraw();
   controls.enabled = true;
   setStatus({
-    select: 'Sélection : cliquez un objet (glissez pour le déplacer). Clic dans le vide + glisser = orbite.',
+    select: 'Sélection : cliquez un objet (glissez pour le déplacer, Maj enfoncé = monter/descendre). Clic dans le vide + glisser = orbite.',
     rect: 'Rectangle : clic-glisser au sol pour dessiner la base.',
     circle: 'Cercle : clic au sol pour le centre, puis rayon, clic pour valider.',
     pushpull: 'Push/Pull : cliquez une face (dessus/côté), déplacez la souris, puis re-cliquez pour la poser.',
@@ -407,14 +410,16 @@ document.getElementById('saveProjBtn').addEventListener('click', () => {
   const round = v => Math.round(v * 10000) / 10000;
   const data = objects.filter(o => o.userData.kind !== 'import').map(o => ({
     kind: o.userData.kind, color: '#' + o.material.color.getHexString(),
-    position: o.position.toArray(), scale: o.scale.toArray()
+    position: o.position.toArray(), scale: o.scale.toArray(),
+    quaternion: o.quaternion.toArray()
   }));
   const imports = objects.filter(o => o.userData.kind === 'import').map(o => ({
     color: '#' + o.material.color.getHexString(),
     scale: o.scale.toArray(), position: o.position.toArray(),
+    quaternion: o.quaternion.toArray(),
     positions: Array.from(o.geometry.attributes.position.array, v => round(v))
   }));
-  const blob = new Blob([JSON.stringify({ app: 'Sketch3D', v: 3, name: 'projet', objects: data, imports }, null, imports.length ? 0 : 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ app: 'Sketch3D', v: 4, name: 'projet', objects: data, imports }, null, imports.length ? 0 : 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'projet-sketch3d.json';
@@ -465,6 +470,7 @@ function makeClone(obj) {
   const m = new THREE.Mesh(obj.geometry, obj.material);
   m.scale.copy(obj.scale);
   m.position.copy(obj.position);
+  m.quaternion.copy(obj.quaternion);
   m.castShadow = true; m.receiveShadow = true;
   m.userData = { kind: obj.userData.kind };
   return m;
@@ -495,6 +501,41 @@ document.getElementById('ctxDupBtn').addEventListener('click', () => {
   duplicateObject(t, n);
 });
 
+function rotateObject(obj, deg, axis) {
+  const axv = axis === 'x' ? new THREE.Vector3(1, 0, 0) : axis === 'z' ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+  const before = new THREE.Box3().setFromObject(obj);
+  const onGround = Math.abs(before.min.y) < 0.02;
+  pushUndo({ type: 'rotate', obj, from: obj.quaternion.clone(), fromPos: obj.position.clone() });
+  obj.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axv, deg * Math.PI / 180));
+  obj.updateMatrixWorld();
+  if (onGround) {
+    const after = new THREE.Box3().setFromObject(obj);
+    obj.position.y -= after.min.y;
+  }
+  if (selected === obj) outline.setFromObject(obj);
+  setStatus('Rotation de ' + deg + '° autour de ' + axis.toUpperCase() + ' — Ctrl+Z pour annuler.');
+}
+
+document.getElementById('ctxRotBtn').addEventListener('click', () => {
+  const t = ctxTarget;
+  closeCtxMenu();
+  if (!t) return;
+  const valA = prompt('Angle de rotation en degrés (négatif = sens horaire) :', '90');
+  if (valA === null) return;
+  const deg = parseFloat(valA);
+  if (Number.isNaN(deg) || Math.abs(deg) < 0.5 || Math.abs(deg) > 360) {
+    setStatus('Angle invalide (ex. : 90, -45, 180).');
+    return;
+  }
+  const valX = prompt('Axe de rotation (votre lettre au choix) ?', 'Y');
+  const axis = (valX || 'y').toLowerCase();
+  if (!'xyz'.includes(axis)) {
+    setStatus('Axe invalide — choisissez X, Y ou Z.');
+    return;
+  }
+  rotateObject(t, deg, axis);
+});
+
 document.getElementById('ctxDelBtn').addEventListener('click', () => {
   const t = ctxTarget;
   closeCtxMenu();
@@ -522,6 +563,7 @@ function loadProject(json) {
     m.userData.kind = d.kind;
     m.scale.fromArray(d.scale);
     m.position.fromArray(d.position);
+    if (d.quaternion) m.quaternion.fromArray(d.quaternion);
     add(m);
   }
   let nImports = 0;
@@ -533,6 +575,7 @@ function loadProject(json) {
       m.material = importMatFor(d.color || color);
       m.scale.fromArray(d.scale || [1, 1, 1]);
       m.position.fromArray(d.position || [0, 0, 0]);
+      if (d.quaternion) m.quaternion.fromArray(d.quaternion);
       add(m);
       nImports++;
     }
@@ -912,8 +955,14 @@ renderer.domElement.addEventListener('pointerdown', e => {
         return;
       }
       controls.enabled = false;
+      const q = eobj.quaternion;
+      if (Math.abs(q.x) > 1e-4 || Math.abs(q.z) > 1e-4) {
+        setStatus('Extrusion indisponible sur un objet incliné (rotation selon X ou Z).');
+        return;
+      }
+      const unrotated = Math.abs(q.y) < 1e-4;
       let faceAxis = -1, faceSign = 0;
-      if (kind === 'rect' || kind === 'box') {
+      if ((kind === 'rect' || kind === 'box') && unrotated) {
         const n = hits[0].face.normal;
         const comps = [Math.abs(n.x), Math.abs(n.y), Math.abs(n.z)];
         const axis = comps.indexOf(Math.max(...comps));
@@ -953,7 +1002,29 @@ renderer.domElement.addEventListener('pointermove', e => {
     lastGroundPoint.copy(gp);
   }
 
-  if (drawing && drawing.kind === 'move' && selected && gp) {
+  if (drawing && drawing.kind === 'move' && selected) {
+    if (e.shiftKey) {
+      if (!drawing.vplane) {
+        const normal = camera.getWorldDirection(new THREE.Vector3());
+        normal.y = 0;
+        if (normal.lengthSq() < 0.04) normal.set(0, 0, 1);
+        normal.normalize();
+        drawing.vplane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, selected.position.clone());
+        drawing.vOffset = 0;
+        pointerToNDC(e);
+        const first = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(drawing.vplane, first)) drawing.vOffset = selected.position.y - first.y;
+      }
+      pointerToNDC(e);
+      const hit = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(drawing.vplane, hit)) {
+        selected.position.y = Math.max(0, snap(hit.y + drawing.vOffset));
+        outline.setFromObject(selected);
+      }
+      return;
+    }
+    drawing.vplane = null;
+    if (!gp) return;
     const targetY = drawing.from.y;
     selected.position.x = snap(gp.x + drawing.offset.x);
     selected.position.z = snap(gp.z + drawing.offset.z);
