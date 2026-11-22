@@ -13,7 +13,7 @@ Ouvrir `index.html` dans n'importe quel navigateur moderne (Three.js est chargé
 | Sélection | `S` | Clic pour sélectionner, glisser pour déplacer, `Suppr` pour supprimer |
 | Rectangle | `R` | Clic-glisser au sol pour tracer la base |
 | Cercle | `C` | Clic au sol (centre), puis clic pour valider le rayon |
-| Push/Pull | `P` | Clic sur un objet puis glisser verticalement pour l'extruder |
+| Push/Pull | `P` | Cliquez une **face** (dessus = hauteur, côté = largeur/profondeur) puis glissez pour l'étirer |
 | Orbite | `O` | Rotation de la caméra |
 
 ## Autres commandes
@@ -24,6 +24,8 @@ Ouvrir `index.html` dans n'importe quel navigateur moderne (Three.js est chargé
 - **Palette** : couleur des nouveaux objets, recolorer la sélection
 - **Ctrl+Z** : annuler (ajout, suppression, déplacement, extrusion, couleur)
 - **Enregistrer / Ouvrir** : modèle au format `.json`
+- **📤 OBJ** : export de la géométrie en `.obj` (Blender, SketchUp, 3ds Max…)
+- **🖨️ STL** : export `.stl` pour impression 3D
 
 ## Technologies
 
