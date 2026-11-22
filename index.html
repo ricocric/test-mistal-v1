@@ -94,6 +94,8 @@
     <button class="btn" id="clearBtn" title="Tout effacer">🗑️ Effacer tout</button>
     <button class="btn" id="saveBtn" title="Télécharger le modèle (.json)">💾 Enregistrer</button>
     <button class="btn" id="loadBtn" title="Charger un modèle (.json)">📂 Ouvrir</button>
+    <button class="btn" id="exportObjBtn" title="Exporter la géométrie en .obj (compatible Blender, SketchUp…)">📤 OBJ</button>
+    <button class="btn" id="exportStlBtn" title="Exporter en .stl pour impression 3D">🖨️ STL</button>
     <input type="file" id="fileInput" accept=".json" style="display:none">
   </div>
 
@@ -102,7 +104,7 @@
     <div id="help">
       <span class="close" id="helpClose">✕</span>
       <h3>Aide rapide</h3>
-      <b>Rectangle / Cercle</b> : clic-glisser au sol puis extrudez avec <b>Push/Pull</b><br>
+      <b>Push/Pull</b> : cliquez une face d’un objet (dessus ou côté) et glissez pour l’étirer<br>
       <b>Cube / Cylindre / Sphère</b> : clic pour poser<br>
       <b>Sélection</b> : clic sur un objet pour le sélectionner, glisser pour le déplacer, <kbd>Suppr</kbd> pour supprimer<br>
       <b>Caméra</b> : clic-glisser dans le vide = rotation, molette = zoom, clic droit = déplacement latéral<br>
@@ -256,6 +258,7 @@ function undo() {
   if (!a) { setStatus('Rien à annuler'); return; }
   if (a.type === 'add') { remove(a.obj); setStatus('Ajout annulé'); }
   else if (a.type === 'remove') { a.obj.position.copy(a.pos); a.obj.scale.copy(a.scale); add(a.obj); setStatus('Suppression annulée'); }
+  else if (a.type === 'face-extrude') { a.obj.scale.copy(a.fromScale); a.obj.position.copy(a.fromPos); setStatus('Extrusion de face annulée'); }
   else if (a.type === 'move') { a.obj.position.copy(a.from); setStatus('Déplacement annulé'); }
   else if (a.type === 'extrude') { a.obj.scale.y = a.from; a.obj.position.y = a.fromObjY; setStatus('Extrusion annulée'); }
   else if (a.type === 'recolor') { a.obj.material = matFor(a.from); setStatus('Couleur annulée'); }
@@ -275,7 +278,7 @@ function setMode(m) {
     select: 'Sélection : cliquez un objet (glissez pour le déplacer). Clic dans le vide + glisser = orbite.',
     rect: 'Rectangle : clic-glisser au sol pour dessiner la base.',
     circle: 'Cercle : clic au sol pour le centre, puis rayon, clic pour valider.',
-    pushpull: 'Push/Pull : cliquez un objet et glissez verticalement pour l’extruder.',
+    pushpull: 'Push/Pull : cliquez une face (dessus = hauteur, côté = largeur/profondeur) puis glissez pour l’extruder.',
     orbit: 'Orbite : glissez pour tourner autour de la scène.'
   }[m]);
 }
@@ -375,6 +378,75 @@ fileInput.addEventListener('change', e => {
   fileInput.value = '';
 });
 
+/* ------------------------------------------------------------------ */
+/* Export OBJ / STL                                                    */
+/* ------------------------------------------------------------------ */
+function downloadText(name, text) {
+  const blob = new Blob([text], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function trianglesOf(obj) {
+  obj.updateMatrixWorld();
+  const g = obj.geometry.clone().toNonIndexed();
+  g.applyMatrix4(obj.matrixWorld);
+  const pos = g.attributes.position;
+  const out = [];
+  for (let i = 0; i < pos.count; i += 3) {
+    const t = [
+      new THREE.Vector3().fromBufferAttribute(pos, i),
+      new THREE.Vector3().fromBufferAttribute(pos, i + 1),
+      new THREE.Vector3().fromBufferAttribute(pos, i + 2)
+    ];
+    const n = new THREE.Vector3().subVectors(t[1], t[0])
+      .cross(new THREE.Vector3().subVectors(t[2], t[0])).normalize();
+    out.push({ n, t });
+  }
+  g.dispose();
+  return out;
+}
+
+document.getElementById('exportObjBtn').addEventListener('click', () => {
+  if (!objects.length) { setStatus('Rien à exporter'); return; }
+  const lines = ['# Exporté depuis Sketch3D'];
+  let base = 1;
+  objects.forEach((o, i) => {
+    lines.push('o ' + (o.userData.kind || 'objet') + '_' + (i + 1));
+    const tris = trianglesOf(o);
+    let vi = base, ni = 1;
+    for (const { n, t } of tris) {
+      for (const v of t) lines.push('v ' + v.x.toFixed(4) + ' ' + v.y.toFixed(4) + ' ' + v.z.toFixed(4));
+      lines.push('vn ' + n.x.toFixed(4) + ' ' + n.y.toFixed(4) + ' ' + n.z.toFixed(4));
+      lines.push('f ' + vi + '//' + ni + ' ' + (vi + 1) + '//' + ni + ' ' + (vi + 2) + '//' + ni);
+      vi += 3; ni += 1;
+    }
+    base = vi;
+  });
+  downloadText('modele-sketch3d.obj', lines.join('\n'));
+  setStatus('Export OBJ terminé (ouvrable dans Blender, SketchUp…)');
+});
+
+document.getElementById('exportStlBtn').addEventListener('click', () => {
+  if (!objects.length) { setStatus('Rien à exporter'); return; }
+  const L = ['solid sketch3d'];
+  for (const o of objects) {
+    for (const { n, t } of trianglesOf(o)) {
+      L.push('  facet normal ' + n.x.toFixed(5) + ' ' + n.y.toFixed(5) + ' ' + n.z.toFixed(5));
+      L.push('    outer loop');
+      for (const v of t) L.push('      vertex ' + v.x.toFixed(4) + ' ' + v.y.toFixed(4) + ' ' + v.z.toFixed(4));
+      L.push('    endloop');
+      L.push('  endfacet');
+    }
+  }
+  L.push('endsolid sketch3d');
+  downloadText('modele-sketch3d.stl', L.join('\n'));
+  setStatus('Export STL terminé (prêt pour l\'impression 3D)');
+});
+
 document.getElementById('helpClose').addEventListener('click', () => document.getElementById('help').remove());
 
 addEventListener('keydown', e => {
@@ -453,17 +525,37 @@ renderer.domElement.addEventListener('pointerdown', e => {
     pointerToNDC(e);
     const hits = raycaster.intersectObjects(objects, false);
     if (hits.length) {
-      select(hits[0].object);
       const eobj = hits[0].object;
       select(eobj);
-      const normal = camera.getWorldDirection(new THREE.Vector3());
-      normal.y = 0;
-      if (normal.lengthSq() < 0.04) normal.set(0, 0, 1);
-      normal.normalize();
-      const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, eobj.position.clone());
-      drawing = { kind: 'extrude', obj: eobj, from: eobj.scale.y, fromObjY: eobj.position.y, plane };
       controls.enabled = false;
-      setStatus('Glissez verticalement, relâchez pour finir.');
+      const kind = eobj.userData.kind;
+      let faceAxis = -1, faceSign = 0;
+      if (kind === 'rect' || kind === 'box') {
+        const n = hits[0].face.normal;
+        const comps = [Math.abs(n.x), Math.abs(n.y), Math.abs(n.z)];
+        const axis = comps.indexOf(Math.max(...comps));
+        if (axis !== 1) { faceAxis = axis; faceSign = n.getComponent(axis) > 0 ? 1 : -1; }
+      }
+      if (faceAxis !== -1) {
+        const pos = eobj.position;
+        const half = eobj.scale.getComponent(faceAxis) / 2;
+        const camDir = camera.getWorldDirection(new THREE.Vector3());
+        const m = camDir.clone();
+        m.setComponent(faceAxis, 0);
+        if (m.lengthSq() < 0.04) m.set(faceAxis === 2 ? 1 : 0, 0, faceAxis === 2 ? 0 : 1);
+        m.normalize();
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(m, hits[0].point.clone());
+        drawing = { kind: 'face', obj: eobj, axis: faceAxis, sign: faceSign, fromScale: eobj.scale.clone(), fromPos: eobj.position.clone(), plane, fixed: pos.getComponent(faceAxis) - faceSign * half };
+        setStatus('Glissez pour étirer cette face, relâchez pour finir.');
+      } else {
+        const normal = camera.getWorldDirection(new THREE.Vector3());
+        normal.y = 0;
+        if (normal.lengthSq() < 0.04) normal.set(0, 0, 1);
+        normal.normalize();
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, eobj.position.clone());
+        drawing = { kind: 'extrude', obj: eobj, from: eobj.scale.y, fromObjY: eobj.position.y, plane };
+        setStatus('Glissez verticalement, relâchez pour finir.');
+      }
     }
   } else if (mode === 'orbit') {
     controls.enabled = true;
@@ -509,6 +601,19 @@ renderer.domElement.addEventListener('pointermove', e => {
     preview.material.color.set(color);
     preview.scale.set(r, 1, r);
     preview.position.set(drawing.cx, 0.01, drawing.cz);
+    return;
+  }
+  if (drawing && drawing.kind === 'face' && drawing.obj) {
+    pointerToNDC(e);
+    const p = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(drawing.plane, p)) {
+      const obj = drawing.obj, axis = drawing.axis, sign = drawing.sign;
+      let span = (p.getComponent(axis) - drawing.fixed) * sign;
+      span = snapping ? Math.max(0.05, Math.round(span / SNAP) * SNAP) : Math.max(0.05, span);
+      obj.scale.setComponent(axis, span);
+      obj.position.setComponent(axis, drawing.fixed + sign * span / 2);
+      outline.setFromObject(obj);
+    }
     return;
   }
   if (drawing && drawing.kind === 'extrude' && drawing.obj) {
@@ -570,6 +675,9 @@ renderer.domElement.addEventListener('pointerup', e => {
     }
     drawing = null;
     controls.enabled = true;
+  } else if (drawing && drawing.kind === 'face') {
+    pushUndo({ type: 'face-extrude', obj: drawing.obj, fromScale: drawing.fromScale, fromPos: drawing.fromPos });
+    setStatus('Face étirée — Ctrl+Z pour annuler.');
   } else if (drawing && drawing.kind === 'extrude') {
     pushUndo({ type: 'extrude', obj: drawing.obj, from: drawing.from, fromObjY: drawing.fromObjY });
     drawing = null;
