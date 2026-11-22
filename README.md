@@ -23,6 +23,7 @@ Ouvrir `index.html` dans n'importe quel navigateur moderne (Three.js est chargé
 - **Aimantation** (`G`) : alignement sur la grille (pas de 0,5)
 - **Palette** : couleur des nouveaux objets, recolorer la sélection
 - **Ctrl+Z** : annuler (ajout, suppression, déplacement, extrusion, couleur)
+- **Clic droit sur un objet** : menu contextuel — Dupliquer… (nombre de copies au choix, alignées en ligne), Supprimer, Cadrer ; **Ctrl+D** duplique la sélection
 - **Menu Fichier** : ouvrir/enregistrer un projet (`.json` — y compris la géométrie des objets importés), importer un objet (`obj`/`stl`), exporter en OBJ ou STL, fermer le projet, quitter l'application
 - **Import/Export OBJ** : géométrie avec normales, groupes par objet (Blender, SketchUp, 3ds Max…) ; objets importés visibles (matériau double face) et auto-redimensionnés s'ils sortent de l'échelle de la scène
 - **Import/Export STL** : binaire ou ASCII à l'import, ASCII à l'export — impression 3D
