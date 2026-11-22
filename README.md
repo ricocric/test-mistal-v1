@@ -24,7 +24,7 @@ Ouvrir `index.html` dans n'importe quel navigateur moderne (Three.js est chargé
 - **Palette** : couleur des nouveaux objets, recolorer la sélection
 - **Ctrl+Z** : annuler (ajout, suppression, déplacement, extrusion, couleur)
 - **Clic droit sur un objet** : menu contextuel — Dupliquer… (nombre de copies au choix, alignées en ligne), Rotation… (angle libre autour de l'axe X, Y ou Z ; l'objet reste posé au sol), Supprimer, Cadrer ; **Ctrl+D** duplique la sélection
-- **Déplacement vertical** : glissez un objet en maintenant **Maj** pour le faire monter/descendre
+- **Déplacement sur n'importe quel axe** : glissez librement (l'objet suit la souris à vitesse écran, plus de dérive) ; pendant le drag, touches **X** (rouge), **Y** (vert, vertical) et **Z** (bleu) pour verrouiller l'axe — en direction **locale à l'objet**, donc correcte même après rotation ; même touche pour libérer (l'objet sélectionné s'illumine de la couleur de l'axe)
 - **Menu Fichier** : ouvrir/enregistrer un projet (`.json` — y compris la géométrie des objets importés), importer un objet (`obj`/`stl`), exporter en OBJ ou STL, fermer le projet, quitter l'application
 - **Import/Export OBJ** : géométrie avec normales, groupes par objet (Blender, SketchUp, 3ds Max…) ; objets importés visibles (matériau double face) et auto-redimensionnés s'ils sortent de l'échelle de la scène
 - **Import/Export STL** : binaire ou ASCII à l'import, ASCII à l'export — impression 3D

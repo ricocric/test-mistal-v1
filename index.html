@@ -147,7 +147,7 @@
       <b>Ctrl+Z</b> : annuler<br>
       <b>Fichier</b> : ouvrir/enregistrer un projet (json), importer un objet (obj/stl), fermer le projet, quitter l’application<br>
       <b>Clic droit sur un objet</b> : Dupliquer…, Rotation… (angle + axe X/Y/Z), Supprimer, Cadrer ; <kbd>Ctrl+D</kbd> duplique la sélection<br>
-      <b>Déplacement vertical</b> : glissez un objet en maintenant <kbd>Maj</kbd> pour le faire monter/descendre
+      <b>Déplacement</b> : glissez librement (vitesse écran) ; touches <kbd>X</kbd> (axe rouge), <kbd>Z</kbd> (axe bleu) et <kbd>Y</kbd> (axe vert, vertical) pendant le déplacement pour verrouiller un axe — direction locale à l'objet, donc correcte après rotation — même touche pour libérer
     </div>
     <div id="status">Prêt. Choisissez un outil.</div>
   </div>
@@ -315,7 +315,7 @@ function setMode(m) {
   cancelDraw();
   controls.enabled = true;
   setStatus({
-    select: 'Sélection : cliquez un objet (glissez pour le déplacer, Maj enfoncé = monter/descendre). Clic dans le vide + glisser = orbite.',
+    select: 'Sélection : cliquez un objet ; glissez pour le déplacer, puis touches X/Y/Z (rouge/vert/bleu) pour contraindre l’axe.',
     rect: 'Rectangle : clic-glisser au sol pour dessiner la base.',
     circle: 'Cercle : clic au sol pour le centre, puis rayon, clic pour valider.',
     pushpull: 'Push/Pull : cliquez une face (dessus/côté), déplacez la souris, puis re-cliquez pour la poser.',
@@ -867,6 +867,19 @@ addEventListener('keydown', e => {
     else setStatus('Sélectionnez un objet à dupliquer (Ctrl+D).');
     return;
   }
+  if ((drawing && drawing.kind === 'move') && 'xyz'.includes(k)) {
+    drawing.lockAxis = drawing.lockAxis === k ? null : k;
+    const axisColors = { x: 0xff4444, y: 0x22cc44, z: 0x3388ff };
+    const axisNames = { x: 'X (rouge)', y: 'Y (vert, vertical)', z: 'Z (bleu)' };
+    if (drawing.lockAxis) {
+      outline.material.color.setHex(axisColors[k]);
+      setStatus('Axe verrouillé : ' + axisNames[k] + ' (direction locale à l’objet, valable après rotation) — même touche pour libérer.');
+    } else {
+      outline.material.color.setHex(0xffffff);
+      setStatus('Déplacement libre — X/Y/Z pour verrouiller un axe.');
+    }
+    return;
+  }
   const modes = { s: 'select', r: 'rect', c: 'circle', p: 'pushpull', o: 'orbit', g: 'grid' };
   if (k === 'f') { frameSelection(); return; }
   if (k in modes) {
@@ -921,10 +934,12 @@ renderer.domElement.addEventListener('pointerdown', e => {
     pointerToNDC(e);
     const hits = raycaster.intersectObjects(objects, false);
     if (hits.length) {
-      select(hits[0].object);
-      const gp2 = groundPoint(e);
-      drawing = { kind: 'move', offset: gp2 ? new THREE.Vector3().subVectors(hits[0].object.position, gp2.setY(hits[0].object.position.y)) : new THREE.Vector3(), from: hits[0].object.position.clone() };
+      const mobj = hits[0].object;
+      select(mobj);
+      const camDir = camera.getWorldDirection(new THREE.Vector3()).negate().normalize();
+      drawing = { kind: 'move', from: mobj.position.clone(), grabPoint: hits[0].point.clone(), dragPlane: new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, hits[0].point.clone()), lockAxis: null };
       controls.enabled = false;
+      setStatus('Déplacement libre — X (rouge) / Y (vert, vertical) / Z (bleu) pour verrouiller un axe, même touche pour libérer.');
     } else {
       select(null);
       controls.enabled = true;
@@ -1003,32 +1018,19 @@ renderer.domElement.addEventListener('pointermove', e => {
   }
 
   if (drawing && drawing.kind === 'move' && selected) {
-    if (e.shiftKey) {
-      if (!drawing.vplane) {
-        const normal = camera.getWorldDirection(new THREE.Vector3());
-        normal.y = 0;
-        if (normal.lengthSq() < 0.04) normal.set(0, 0, 1);
-        normal.normalize();
-        drawing.vplane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, selected.position.clone());
-        drawing.vOffset = 0;
-        pointerToNDC(e);
-        const first = new THREE.Vector3();
-        if (raycaster.ray.intersectPlane(drawing.vplane, first)) drawing.vOffset = selected.position.y - first.y;
-      }
-      pointerToNDC(e);
-      const hit = new THREE.Vector3();
-      if (raycaster.ray.intersectPlane(drawing.vplane, hit)) {
-        selected.position.y = Math.max(0, snap(hit.y + drawing.vOffset));
-        outline.setFromObject(selected);
-      }
-      return;
+    pointerToNDC(e);
+    const p = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(drawing.dragPlane, p)) return;
+    const delta = new THREE.Vector3().subVectors(p, drawing.grabPoint);
+    if (drawing.lockAxis) {
+      const dir = new THREE.Vector3();
+      dir.setComponent(drawing.lockAxis === 'x' ? 0 : drawing.lockAxis === 'y' ? 1 : 2, 1);
+      dir.applyQuaternion(selected.quaternion);
+      const len = snap(delta.dot(dir));
+      delta.copy(dir).multiplyScalar(len);
     }
-    drawing.vplane = null;
-    if (!gp) return;
-    const targetY = drawing.from.y;
-    selected.position.x = snap(gp.x + drawing.offset.x);
-    selected.position.z = snap(gp.z + drawing.offset.z);
-    selected.position.y = targetY;
+    selected.position.copy(drawing.from).add(delta);
+    if (selected.position.y < 0) selected.position.y = 0;
     outline.setFromObject(selected);
     return;
   }
@@ -1145,8 +1147,10 @@ renderer.domElement.addEventListener('pointerup', e => {
     if (!selected.position.equals(drawing.from)) {
       pushUndo({ type: 'move', obj: selected, from: drawing.from });
     }
+    outline.material.color.setHex(0xffffff);
     drawing = null;
     controls.enabled = true;
+    setStatus('Déplacement terminé — Ctrl+Z pour annuler.');
   }
 });
 
