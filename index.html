@@ -119,6 +119,9 @@
     <button class="btn" id="undoBtn" title="Annuler la dernière action">↩️ Annuler <kbd>Ctrl+Z</kbd></button>
     <button class="btn" id="snapBtn" title="Aimantation sur la grille">🧲 Aimantation <kbd>G</kbd></button>
     <button class="btn" id="clearBtn" title="Tout effacer">🗑️ Effacer tout</button>
+    <button class="btn" id="zoomInBtn" title="Zoom avant (ou molette)">🔍➕</button>
+    <button class="btn" id="zoomOutBtn" title="Zoom arrière (ou molette)">🔍➖</button>
+    <button class="btn" id="frameBtn" title="Cadrer la sélection, ou toute la scène si rien n'est sélectionné">🎯 Cadrer <kbd>F</kbd></button>
     <input type="file" id="projectInput" accept=".json" style="display:none">
     <input type="file" id="importInput" accept=".obj,.stl" style="display:none">
   </div>
@@ -131,7 +134,8 @@
       <b>Push/Pull</b> : cliquez une face, déplacez, puis re-cliquez pour la poser (clic droit / Échap = annuler)<br>
       <b>Cube / Cylindre / Sphère</b> : clic pour poser<br>
       <b>Sélection</b> : clic sur un objet pour le sélectionner, glisser pour le déplacer, <kbd>Suppr</kbd> pour supprimer<br>
-      <b>Caméra</b> : clic-glisser dans le vide = rotation, molette = zoom, clic droit = déplacement latéral<br>
+      <b>Caméra</b> : clic-glisser dans le vide = rotation, molette ou boutons 🔍 = zoom, clic droit = déplacement latéral<br>
+      <b>Cadrer</b> : touche <kbd>F</kbd> ou 🎯 pour ajuster la vue sur la sélection (ou toute la scène)<br>
       <b>Ctrl+Z</b> : annuler<br>
       <b>Fichier</b> : ouvrir/enregistrer un projet (json), importer un objet (obj/stl), fermer le projet, quitter l’application
     </div>
@@ -355,6 +359,34 @@ snapBtn.addEventListener('click', () => {
   snapBtn.classList.toggle('active', snapping);
   setStatus(snapping ? 'Aimantation : activée (pas de 0,5)' : 'Aimantation : désactivée');
 });
+
+function dollyZoom(factor) {
+  const dir = new THREE.Vector3().subVectors(camera.position, controls.target);
+  const len = Math.max(1, dir.length() * factor);
+  camera.position.copy(controls.target).add(dir.setLength(len));
+}
+function frameBounds(bb) {
+  const center = bb.getCenter(new THREE.Vector3());
+  const radius = Math.max(bb.getSize(new THREE.Vector3()).length() / 2, 0.6);
+  const dir = new THREE.Vector3().subVectors(camera.position, controls.target).normalize();
+  const dist = Math.min(radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) + radius * 0.25, 150);
+  camera.position.copy(center).add(dir.multiplyScalar(dist));
+  controls.target.copy(center);
+}
+function frameSelection() {
+  if (selected) {
+    frameBounds(new THREE.Box3().setFromObject(selected));
+  } else if (objects.length) {
+    const bb = new THREE.Box3();
+    for (const o of objects) bb.expandByObject(o);
+    frameBounds(bb);
+  } else {
+    setStatus('Rien à cadrer — sélectionnez un objet ou dessinez-en un.');
+  }
+}
+document.getElementById('zoomInBtn').addEventListener('click', () => dollyZoom(0.8));
+document.getElementById('zoomOutBtn').addEventListener('click', () => dollyZoom(1.25));
+document.getElementById('frameBtn').addEventListener('click', frameSelection);
 document.getElementById('clearBtn').addEventListener('click', () => {
   if (!objects.length) { setStatus('Rien à effacer'); return; }
   pushUndo({ type: 'clear', items: [...objects] });
@@ -485,11 +517,16 @@ function importMeshes(name, data) {
         m.scale.setScalar(4 / size);
         resized = true;
       }
-      placeOnGround(m, snap(lastGroundPoint.x), snap(lastGroundPoint.z));
+      placeOnGround(m, snap(controls.target.x), snap(controls.target.z));
       add(m);
       pushUndo({ type: 'add', obj: m });
     }
-    setStatus(meshes.length + ' objet(s) importé(s)' + (resized ? ' — dimensions ajustées à ~4 unités' : '') + ' depuis ' + name);
+    if (meshes.length) {
+      const bb = new THREE.Box3();
+      for (const m of meshes) bb.expandByObject(m);
+      frameBounds(bb);
+    }
+    setStatus(meshes.length + ' objet(s) importé(s)' + (resized ? ' — dimensions ajustées à ~4 unités' : '') + ' depuis ' + name + ' — vue recentrée');
   } catch (err) {
     setStatus('Import impossible : ' + err.message);
   }
@@ -683,6 +720,7 @@ addEventListener('keydown', e => {
     return;
   }
   const modes = { s: 'select', r: 'rect', c: 'circle', p: 'pushpull', o: 'orbit', g: 'grid' };
+  if (k === 'f') { frameSelection(); return; }
   if (k in modes) {
     if (modes[k] === 'grid') { snapBtn.click(); return; }
     setMode(modes[k]);
@@ -750,7 +788,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
   } else if (mode === 'circle' && gp && !drawing) {
     drawing = { kind: 'circle', cx: snap(gp.x), cz: snap(gp.z) };
     controls.enabled = false;
-    setStatus('Cliquez de nouveau pour valider le rayon.');
+    setStatus('Déplacez la souris pour ajuster le rayon, puis cliquez pour valider (Échap pour annuler).');
   } else if (mode === 'pushpull') {
     if (drawing && drawing.kind === 'face') {
       pushUndo({ type: 'face-extrude', obj: drawing.obj, fromScale: drawing.fromScale, fromPos: drawing.fromPos });
@@ -899,6 +937,10 @@ renderer.domElement.addEventListener('pointerup', e => {
     drawing = null;
     controls.enabled = true;
   } else if (drawing && drawing.kind === 'circle') {
+    if (drawing.pendingR === undefined) {
+      setStatus('Rayon en cours — déplacez la souris, puis cliquez pour valider.');
+      return;
+    }
     const r = drawing.pendingR;
     if (preview && r > 0.06) {
       const c = preview;
@@ -911,7 +953,7 @@ renderer.domElement.addEventListener('pointerup', e => {
       pushUndo({ type: 'add', obj });
       select(obj);
       setMode('pushpull');
-      setStatus('Disque créé — glissez vers le haut pour extruder (Push/Pull actif).');
+      setStatus('Disque créé — cliquez sa face du dessus, puis re-cliquez pour extruder.');
     } else {
       removePreviewOnly();
       setStatus('Cercle trop petit ou rayon non validé');
