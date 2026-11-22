@@ -93,7 +93,8 @@
         <div class="mi" id="exportObjBtn">📤 Exporter en OBJ…</div>
         <div class="mi" id="exportStlBtn">🖨️ Exporter en STL…</div>
         <div class="mi-sep"></div>
-        <div class="mi mi-quit" id="quitBtn">❌ Quitter</div>
+        <div class="mi" id="closeProjBtn">📁 Fermer le projet</div>
+        <div class="mi mi-quit" id="quitAppBtn">🚪 Quitter l'application</div>
       </div>
     </div>
 
@@ -132,7 +133,7 @@
       <b>Sélection</b> : clic sur un objet pour le sélectionner, glisser pour le déplacer, <kbd>Suppr</kbd> pour supprimer<br>
       <b>Caméra</b> : clic-glisser dans le vide = rotation, molette = zoom, clic droit = déplacement latéral<br>
       <b>Ctrl+Z</b> : annuler<br>
-      <b>Fichier</b> : ouvrir/enregistrer un projet <kbd>.json</kbd>, importer un objet <kbd>.obj</kbd>/<kbd>.stl</kbd>
+      <b>Fichier</b> : ouvrir/enregistrer un projet (json), importer un objet (obj/stl), fermer le projet, quitter l’application
     </div>
     <div id="status">Prêt. Choisissez un outil.</div>
   </div>
@@ -445,32 +446,50 @@ importInput.addEventListener('change', e => {
   importInput.value = '';
 });
 
+const importMatCache = new Map();
+function importMatFor(hex) {
+  if (!importMatCache.has(hex)) {
+    importMatCache.set(hex, new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.75, metalness: 0.05, side: THREE.DoubleSide }));
+  }
+  return importMatCache.get(hex);
+}
+
 function makeImportMesh(positions) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.computeVertexNormals();
-  const m = new THREE.Mesh(geo, matFor(color));
+  const m = new THREE.Mesh(geo, importMatFor(color));
   m.castShadow = true; m.receiveShadow = true;
   m.userData = { kind: 'import' };
   return m;
 }
 
 function placeOnGround(mesh, x, z) {
-  mesh.geometry.computeBoundingBox();
-  const bb = mesh.geometry.boundingBox;
-  mesh.position.set(x - (bb.min.x + bb.max.x) / 2, -bb.min.y, z - (bb.min.z + bb.max.z) / 2);
+  mesh.updateMatrixWorld();
+  const bb = new THREE.Box3().setFromObject(mesh);
+  mesh.position.x += x - (bb.min.x + bb.max.x) / 2;
+  mesh.position.z += z - (bb.min.z + bb.max.z) / 2;
+  mesh.position.y -= bb.min.y;
 }
 
 function importMeshes(name, data) {
   try {
     const isStl = name.toLowerCase().endsWith('.stl');
     const meshes = isStl ? stlToMeshes(data) : objToMeshes(data);
+    let resized = false;
     for (const m of meshes) {
+      m.geometry.computeBoundingBox();
+      const bb = m.geometry.boundingBox;
+      const size = Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z);
+      if (size > 80 || (size > 0 && size < 0.05)) {
+        m.scale.setScalar(4 / size);
+        resized = true;
+      }
       placeOnGround(m, snap(lastGroundPoint.x), snap(lastGroundPoint.z));
       add(m);
       pushUndo({ type: 'add', obj: m });
     }
-    setStatus(meshes.length + ' objet(s) importé(s) depuis ' + name + ' — déplaçables en mode Sélection');
+    setStatus(meshes.length + ' objet(s) importé(s)' + (resized ? ' — dimensions ajustées à ~4 unités' : '') + ' depuis ' + name);
   } catch (err) {
     setStatus('Import impossible : ' + err.message);
   }
@@ -623,7 +642,7 @@ document.getElementById('exportStlBtn').addEventListener('click', () => {
   setStatus('Export STL terminé (prêt pour l\'impression 3D)');
 });
 
-document.getElementById('quitBtn').addEventListener('click', () => {
+document.getElementById('closeProjBtn').addEventListener('click', () => {
   closeFileMenu();
   if (!objects.length) {
     setStatus('Projet déjà vide.');
@@ -632,7 +651,18 @@ document.getElementById('quitBtn').addEventListener('click', () => {
   if (!confirm('Fermer le projet en cours ? Pensez à enregistrer (Fichier > Enregistrer) : les objets non enregistrés seront perdus.')) return;
   pushUndo({ type: 'clear', items: [...objects] });
   [...objects].forEach(remove);
+  select(null);
   setStatus('Projet fermé — Ctrl+Z pour restaurer, Fichier > Ouvrir pour recommencer.');
+});
+
+document.getElementById('quitAppBtn').addEventListener('click', () => {
+  closeFileMenu();
+  if (objects.length && !confirm('Quitter l\'application ? Le projet non enregistré sera perdu (Fichier > Enregistrer le projet).')) return;
+  const done = document.createElement('div');
+  done.style.cssText = 'position:fixed;inset:0;background:#1e2127;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#e8eaf0;font-family:"Segoe UI",system-ui,sans-serif;z-index:9999;text-align:center';
+  done.innerHTML = '<div style="font-size:48px">👋</div><div style="font-size:20px;font-weight:600">Application fermée</div><div style="color:#9aa1af">Rechargez la page pour rouvrir Sketch3D.</div>';
+  try { window.close(); } catch (err) {}
+  setTimeout(() => document.body.appendChild(done), 120);
 });
 
 document.getElementById('helpClose').addEventListener('click', () => document.getElementById('help').remove());
@@ -871,6 +901,8 @@ renderer.domElement.addEventListener('pointerup', e => {
   } else if (drawing && drawing.kind === 'circle') {
     const r = drawing.pendingR;
     if (preview && r > 0.06) {
+      const c = preview;
+      preview = null;
       removePreviewOnly();
       const h = 0.02;
       const obj = makeCylinder(r, h, color);
