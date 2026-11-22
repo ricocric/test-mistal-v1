@@ -19,7 +19,7 @@ Ouvrir `index.html` dans n'importe quel navigateur moderne (Three.js est chargé
 ## Autres commandes
 
 - **Cube / Cylindre / Sphère** : pose rapide au point cliqué
-- **Caméra** : clic-glisser dans le vide = orbite, molette = zoom, clic droit = panoramique
+- **Caméra** : clic-glisser dans le vide = orbite, molette ou boutons 🔍+ / 🔍± = zoom, clic droit = panoramique ; **🎯 Cadrer** (`F`) ajuste la vue sur la sélection ou toute la scène
 - **Aimantation** (`G`) : alignement sur la grille (pas de 0,5)
 - **Palette** : couleur des nouveaux objets, recolorer la sélection
 - **Ctrl+Z** : annuler (ajout, suppression, déplacement, extrusion, couleur)
