@@ -13,7 +13,7 @@ Ouvrir `index.html` dans n'importe quel navigateur moderne (Three.js est chargé
 | Sélection | `S` | Clic pour sélectionner, glisser pour déplacer, `Suppr` pour supprimer |
 | Rectangle | `R` | Clic-glisser au sol pour tracer la base |
 | Cercle | `C` | Clic au sol (centre), puis clic pour valider le rayon |
-| Push/Pull | `P` | Cliquez une **face** (dessus = hauteur, côté = largeur/profondeur) puis glissez pour l'étirer |
+| Push/Pull | `P` | Cliquez une **face** (dessus = hauteur, côté = largeur/profondeur), déplacez la souris, puis **re-cliquez** pour la poser (clic droit / `Échap` = annuler) |
 | Orbite | `O` | Rotation de la caméra |
 
 ## Autres commandes
