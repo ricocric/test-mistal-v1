@@ -117,13 +117,18 @@ static void drawGrid(int span, double step) {
         glVertex3d(span * step, 0, i * step);
     }
     glEnd();
-    /* axes : X rouge, Z bleu */
+    /* axes : X rouge, Z bleu — sans test de profondeur ni ligne coplanaire :
+       sinon le quadrillage masque les axes par egalite de profondeur */
+    glDisable(GL_DEPTH_TEST);
+    glLineWidth(2.0);
     glBegin(GL_LINES);
-    glColor3d(0.85, 0.2, 0.2);
+    glColor3d(0.92, 0.25, 0.2);
     glVertex3d(-span * step, 0, 0); glVertex3d(span * step, 0, 0);
-    glColor3d(0.2, 0.2, 0.85);
+    glColor3d(0.2, 0.35, 0.92);
     glVertex3d(0, 0, -span * step); glVertex3d(0, 0, span * step);
     glEnd();
+    glLineWidth(1.0);
+    glEnable(GL_DEPTH_TEST);
 }
 
 static void drawCube(double s) {
