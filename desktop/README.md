@@ -17,23 +17,31 @@ build, aucune fonction d edition.
 
 ## Prerequis
 
-1. **Visual Studio 2022 Community** avec la charge de travail
+1. **Visual Studio Community 2022 ou 2026** avec la charge de travail
    **« Developpement Desktop avec C++ »** (CMake est inclu dedans).
+   Les deux versions conviennent ; les binaires GLFW precompiles (lib-vc2022)
+   restent compatibles avec elles.
 2. **GLFW 3** (la seule bibliotheque externe du lot N1). Deux facons :
    - Deja installe (vcpkg, MSYS2...) : rien a faire de special.
    - Sinon : telecharger le binaire Windows sur https://www.glfw.org/download.html
      (fichier `glfw-3.4.bin.WIN64.zip`), dezipper par exemple dans `C:\libs\`.
 
-## Compiler (invite « Developer PowerShell for VS 2022 »)
+## Compiler (invite « Developer PowerShell for VS ... »)
+
+Le plus simple est de **ne pas preciser le generateur** : CMake choisit tout
+seul la derniere version de Visual Studio installee (2022 ou 2026 ; VS 2026
+embarque un CMake assez recent pour la gerer).
 
 ```
 cd desktop
-cmake -B build -G "Visual Studio 17 2022" -DGLFW_HOME=C:/libs/glfw-3.4.bin.WIN64
+cmake -B build -DGLFW_HOME=C:/libs/glfw-3.4.bin.WIN64
 cmake --build build
 ```
 
 Le chemin `GLFW_HOME` est optionnel si GLFW est deja visible du systeme.
-Variante : ouvrir simplement le dossier `desktop` dans VS 2022 (CMake integre).
+Si besoin d etre explicite : `-G "Visual Studio 17 2022"` (VS 2022) ou
+`-G "Visual Studio 18 2026"` (VS 2026, demande CMake 4.2+).
+Variante : ouvrir simplement le dossier `desktop` dans Visual Studio (CMake integre).
 
 ## Executer
 
