@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sketch3D — dessin 3D façon SketchUp</title>
+<title>Sketch3D — dessin 3D façon SketchUp — build 3.10.3</title>
 <style>
   :root {
     --bg: #1e2127;
@@ -35,6 +35,7 @@
   }
   .btn:hover { background: #40465440; border-color: #ffffff30; }
   .btn.active { background: var(--accent); border-color: #ffffff55; color: #fff; }
+  #unitSel option { background: var(--panel); color: var(--text); }
   .menu { position: relative; }
   .dropdown {
     display: none; position: absolute; top: calc(100% + 4px); left: 0;
@@ -82,7 +83,7 @@
 <body>
 <div id="app">
   <div id="topbar">
-    <div class="logo">✏️ <span>Sketch3D</span></div>
+    <div class="logo">✏️ <span>Sketch3D</span> <small style="opacity:.55;font-weight:400">build 3.10.3</small></div>
 
     <div class="menu">
       <button class="btn" id="fileMenuBtn">📁 Fichier ▾</button>
@@ -94,6 +95,8 @@
         <div class="mi" id="exportObjBtn">📤 Exporter en OBJ…</div>
         <div class="mi" id="exportStlBtn">🖨️ Exporter en STL…</div>
         <div class="mi-sep"></div>
+        <div class="mi" id="clearMeasuresBtn">🧹 Effacer les cotes</div>
+        <div class="mi-sep"></div>
         <div class="mi" id="closeProjBtn">📁 Fermer le projet</div>
         <div class="mi mi-quit" id="quitAppBtn">🚪 Quitter l'application</div>
       </div>
@@ -104,6 +107,7 @@
     <button class="btn mode" data-mode="circle" title="Disque / cylindre au sol">◯ Cercle <kbd>C</kbd></button>
     <button class="btn mode" data-mode="pushpull" title="Extruder un objet verticalement">↕️ Push/Pull <kbd>P</kbd></button>
     <button class="btn mode" data-mode="orbit" title="Orbiter la caméra">🔄 Orbite <kbd>O</kbd></button>
+    <button class="btn mode" data-mode="measure" title="Mesurer la distance entre 2 points">📏 Mesurer <kbd>M</kbd></button>
 
     <div class="sep"></div>
 
@@ -119,6 +123,12 @@
 
     <button class="btn" id="undoBtn" title="Annuler la dernière action">↩️ Annuler <kbd>Ctrl+Z</kbd></button>
     <button class="btn" id="snapBtn" title="Aimantation sur la grille">🧲 Aimantation <kbd>G</kbd></button>
+    <select id="unitSel" class="btn" title="Unité d’affichage des cotes (1 unité = 1 mètre)">
+      <option value="mm">mm</option>
+      <option value="cm">cm</option>
+      <option value="m" selected>m</option>
+      <option value="km">km</option>
+    </select>
     <button class="btn" id="clearBtn" title="Tout effacer">🗑️ Effacer tout</button>
     <button class="btn" id="zoomInBtn" title="Zoom avant (ou molette)">🔍➕</button>
     <button class="btn" id="zoomOutBtn" title="Zoom arrière (ou molette)">🔍➖</button>
@@ -130,6 +140,7 @@
   <div class="dropdown ctx" id="ctxMenu">
     <div class="mi" id="ctxDupBtn">⧉ Dupliquer… <span class="mi-hint">nombre au choix</span></div>
     <div class="mi" id="ctxRotBtn">🔄 Rotation… <span class="mi-hint">angle + axe X/Y/Z</span></div>
+    <div class="mi" id="ctxDimBtn">📐 Dimension précise… <span class="mi-hint">valeurs exactes</span></div>
     <div class="mi" id="ctxDelBtn">🗑️ Supprimer <span class="mi-hint">Suppr</span></div>
     <div class="mi" id="ctxFrameBtn">🎯 Cadrer sur cet objet <span class="mi-hint">F</span></div>
   </div>
@@ -144,6 +155,9 @@
       <b>Sélection</b> : clic sur un objet pour le sélectionner, glisser pour le déplacer, <kbd>Suppr</kbd> pour supprimer<br>
       <b>Caméra</b> : clic-glisser dans le vide = rotation, molette ou boutons 🔍 = zoom, clic droit = déplacement latéral<br>
       <b>Cadrer</b> : touche <kbd>F</kbd> ou 🎯 pour ajuster la vue sur la sélection (ou toute la scène)<br>
+      <b>Mesurer</b> : mode 📏 (touche <kbd>M</kbd>), cliquez 2 points pour créer une cote ; les points accrochent les sommets (marqueur vert) et les arêtes (bleu) des objets ; unité mm/cm/m/km dans la barre ; clic droit sur une cote pour la supprimer ; Fichier > Effacer les cotes (tout)<br>
+      <b>Cote en continu</b> : pendant un Push/Pull, la dimension suit la face en direct ; tapez une valeur + <kbd>Entrée</kbd> pendant le glissement pour poser une dimension exacte ; clic droit > 📐 Dimension précise… pour repréciser L l H (ou diamètre/hauteur)<br>
+      <b>Push/Pull sur objet importé</b> : extrusion des faces planes (sommets/côtés de cube, disques) ; les faces courbes ne sont pas extrudables<br>
       <b>Ctrl+Z</b> : annuler<br>
       <b>Fichier</b> : ouvrir/enregistrer un projet (json), importer un objet (obj/stl), fermer le projet, quitter l’application<br>
       <b>Clic droit sur un objet</b> : Dupliquer…, Rotation… (angle + axe X/Y/Z), Supprimer, Cadrer ; <kbd>Ctrl+D</kbd> duplique la sélection<br>
@@ -165,6 +179,8 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+console.log('Sketch3D build 3.10.3 (lot 3.10 : pull sur feuille a la butee recree du volume)');
 
 /* ------------------------------------------------------------------ */
 /* Scène, caméra, rendu                                                */
@@ -302,7 +318,10 @@ function undo() {
   else if (a.type === 'move') { a.obj.position.copy(a.from); setStatus('Déplacement annulé'); }
   else if (a.type === 'extrude') { a.obj.scale.y = a.from; a.obj.position.y = a.fromObjY; setStatus('Extrusion annulée'); }
   else if (a.type === 'recolor') { a.obj.material = matFor(a.from); setStatus('Couleur annulée'); }
+  else if (a.type === 'resize') { a.obj.scale.copy(a.fromScale); a.obj.position.copy(a.fromPos); setStatus('Dimension annulée'); }
+  else if (a.type === 'import-extrude') { setImportGeometry(a.obj, a.base); if (selected === a.obj) outline.setFromObject(a.obj); setStatus('Extrusion (import) annulée'); }
   else if (a.type === 'clear') { for (const o of a.items) add(o); setStatus('Effacement annulé'); }
+  refreshCotes();
 }
 
 /* ------------------------------------------------------------------ */
@@ -319,7 +338,8 @@ function setMode(m) {
     rect: 'Rectangle : clic-glisser au sol pour dessiner la base.',
     circle: 'Cercle : clic au sol pour le centre, puis rayon, clic pour valider.',
     pushpull: 'Push/Pull : cliquez une face (dessus/côté), déplacez la souris, puis re-cliquez pour la poser.',
-    orbit: 'Orbite : glissez pour tourner autour de la scène.'
+    orbit: 'Orbite : glissez pour tourner autour de la scène.',
+    measure: 'Mesure : cliquez le premier point, puis le second pour créer une cote (Échap annule).'
   }[m]);
 }
 modeButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
@@ -419,7 +439,8 @@ document.getElementById('saveProjBtn').addEventListener('click', () => {
     quaternion: o.quaternion.toArray(),
     positions: Array.from(o.geometry.attributes.position.array, v => round(v))
   }));
-  const blob = new Blob([JSON.stringify({ app: 'Sketch3D', v: 4, name: 'projet', objects: data, imports }, null, imports.length ? 0 : 2)], { type: 'application/json' });
+  const cotes = measures.map(m => ({ a: [round(m.a.x), round(m.a.y), round(m.a.z)], b: [round(m.b.x), round(m.b.y), round(m.b.z)] }));
+  const blob = new Blob([JSON.stringify({ app: 'Sketch3D', v: 5, name: 'projet', objects: data, imports, measures: cotes }, null, imports.length ? 0 : 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'projet-sketch3d.json';
@@ -513,6 +534,7 @@ function rotateObject(obj, deg, axis) {
     obj.position.y -= after.min.y;
   }
   if (selected === obj) outline.setFromObject(obj);
+  refreshCotes();
   setStatus('Rotation de ' + deg + '° autour de ' + axis.toUpperCase() + ' — Ctrl+Z pour annuler.');
 }
 
@@ -536,6 +558,51 @@ document.getElementById('ctxRotBtn').addEventListener('click', () => {
   rotateObject(t, deg, axis);
 });
 
+document.getElementById('ctxDimBtn').addEventListener('click', () => {
+  const t = ctxTarget;
+  closeCtxMenu();
+  if (!t) return;
+  if (t.userData.kind === 'import') {
+    setStatus('Dimension précise indisponible sur un objet importé — redimensionnez-le avec son échelle d’origine.');
+    return;
+  }
+  const toM = v => v / UNIT_FACTORS[unit];
+  const nArgs = t.userData.kind === 'sphere' ? 1 : t.userData.kind === 'cylinder' ? 2 : 3;
+  const hint = nArgs === 1
+    ? 'Diamètre en ' + unit + ' :'
+    : nArgs === 2
+      ? 'Diamètre hauteur en ' + unit + ' (séparés par un espace) :'
+      : 'Largeur profondeur hauteur en ' + unit + ' (séparés par des espaces) :';
+  const ans = prompt(hint);
+  if (ans === null) return;
+  const vals = ans.trim().split(/[\s,;x*]+/).filter(s => s.length).map(parseFloat).filter(v => isFinite(v) && v > 0);
+  if (vals.length < nArgs) {
+    setStatus('Dimensions invalides — ' + nArgs + ' valeur(s) positive(s) attendue(s).');
+    return;
+  }
+  const fromScale = t.scale.clone();
+  const fromPos = t.position.clone();
+  if (nArgs === 1) {
+    const d = toM(vals[0]);
+    if (d < 0.05) { setStatus('Dimension trop petite (minimum 5 cm).'); return; }
+    t.scale.set(d, d, d);
+  } else if (nArgs === 2) {
+    const d = Math.max(0.05, toM(vals[0]));
+    const h = Math.max(0.05, toM(vals[1]));
+    t.scale.set(d, h, d);
+  } else {
+    const sx = Math.max(0.05, toM(vals[0]));
+    const sz = Math.max(0.05, toM(vals[1]));
+    const sy = Math.max(0.05, toM(vals[2]));
+    t.scale.set(sx, sy, sz);
+  }
+  if (Math.abs(t.quaternion.x) < 1e-4 && Math.abs(t.quaternion.z) < 1e-4) t.position.y = t.scale.y / 2;
+  pushUndo({ type: 'resize', obj: t, fromScale, fromPos });
+  outline.setFromObject(t);
+  refreshCotes();
+  setStatus('Objet dimensionné : ' + fmtLen(t.scale.x) + ' × ' + fmtLen(t.scale.z) + ' × ' + fmtLen(t.scale.y) + ' — Ctrl+Z pour annuler.');
+});
+
 document.getElementById('ctxDelBtn').addEventListener('click', () => {
   const t = ctxTarget;
   closeCtxMenu();
@@ -555,6 +622,8 @@ document.getElementById('ctxFrameBtn').addEventListener('click', () => {
 
 function loadProject(json) {
   [...objects].forEach(remove);
+  clearCotes();
+  clearMeasureLive();
   for (const d of json.objects) {
     let m;
     if (d.kind === 'cylinder') m = makeCylinder(0.5, 1, d.color);
@@ -580,9 +649,17 @@ function loadProject(json) {
       nImports++;
     }
   }
+  let nCotes = 0;
+  if (json.measures) {
+    for (const d of json.measures) {
+      if (!d.a || !d.b) continue;
+      addCote(new THREE.Vector3().fromArray(d.a), new THREE.Vector3().fromArray(d.b));
+      nCotes++;
+    }
+  }
   undoStack = [];
   select(null);
-  setStatus('Projet chargé : ' + (json.objects.length + nImports) + ' objet(s) (' + json.objects.length + ' créé(s), ' + nImports + ' importé(s))');
+  setStatus('Projet chargé : ' + (json.objects.length + nImports) + ' objet(s) (' + json.objects.length + ' créé(s), ' + nImports + ' importé(s))' + (nCotes ? ', ' + nCotes + ' cote(s)' : ''));
 }
 
 document.getElementById('openProjBtn').addEventListener('click', () => {
@@ -637,6 +714,332 @@ function makeImportMesh(positions) {
   return m;
 }
 
+function setImportGeometry(mobj, positions) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  mobj.geometry.dispose();
+  mobj.geometry = g;
+}
+
+function ekey(ka, kb) { return ka < kb ? ka + '|' + kb : kb + '|' + ka; }
+
+function applyImportExtrude(mobj, data, d) {
+  if (data.dLow !== undefined && d < data.dLow) d = data.dLow;
+  if (data.dHigh !== undefined && d > data.dHigh) d = data.dHigh;
+  const base = data.base, n = data.normal;
+  const lin = new THREE.Matrix3().setFromMatrix4(mobj.matrixWorld);
+  const inv = lin.clone().invert();
+  const dl = new THREE.Vector3(n.x * d, n.y * d, n.z * d).applyMatrix3(inv);
+  const ox = dl.x, oy = dl.y, oz = dl.z;
+  // detection de feuille : tous les sommets quasi coplanaires au plan capture.
+  // On ne peut pas se fier au patch BFS (arretes a cles exactes : le bruit Float32 du
+  // round-trip monde empeche de traverser entre les deux couches coïncidentes).
+  let aMin = Infinity, aMax = -Infinity, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  const mwS = mobj.matrixWorld, ppS = data.planePoint;
+  const wvS = new THREE.Vector3();
+  for (let i = 0; i < base.length / 3; i++) {
+    wvS.set(base[3 * i], base[3 * i + 1], base[3 * i + 2]).applyMatrix4(mwS);
+    if (wvS.x < x0) x0 = wvS.x; if (wvS.x > x1) x1 = wvS.x;
+    if (wvS.y < y0) y0 = wvS.y; if (wvS.y > y1) y1 = wvS.y;
+    if (wvS.z < z0) z0 = wvS.z; if (wvS.z > z1) z1 = wvS.z;
+    const al = wvS.sub(ppS).dot(n);
+    if (al < aMin) aMin = al;
+    if (al > aMax) aMax = al;
+  }
+  const sizeW = Math.max(x1 - x0, y1 - y0, z1 - z0, 1e-12);
+  const allSheet = (aMax - aMin) <= 1e-3 * sizeW;
+  if (allSheet) {
+    // feuille aplatie (solide reduit a zero a la butee) : le pull recree du volume.
+    // fond = une seule couche a la position d origine : sommets regroupes en clusters
+    // (tolerance au-dessus du bruit Float32 du round-trip monde, tres sous l espacement
+    // reel des sommets), doublons coplanaires fondus, coords snapées sur les representants ;
+    // winding normalise oppose au deplacement, couche deplacee = copie inversee translatée,
+    // jupe = perimetre de la couche fondue, orientation sortante par construction
+    let mx = 1e-9;
+    for (let i = 0; i < base.length; i++) { const aa = Math.abs(base[i]); if (aa > mx) mx = aa; }
+    const tol = 1e-3 * mx;
+    const cells = new Map(), repPt = [];
+    const cid = (x, y, z) => {
+      const cx = Math.floor(x / tol), cy = Math.floor(y / tol), cz = Math.floor(z / tol);
+      const t2 = tol * tol;
+      for (let u = -1; u <= 1; u++) for (let w = -1; w <= 1; w++) for (let q2 = -1; q2 <= 1; q2++) {
+        const b2 = cells.get((cx + u) + ',' + (cy + w) + ',' + (cz + q2));
+        if (b2) for (const r of b2) {
+          const rp = repPt[r];
+          const ddx = rp[0] - x, ddy = rp[1] - y, ddz = rp[2] - z;
+          if (ddx * ddx + ddy * ddy + ddz * ddz <= t2) return r;
+        }
+      }
+      const id = repPt.length;
+      repPt.push([Math.fround(x), Math.fround(y), Math.fround(z)]);
+      const k2 = cx + ',' + cy + ',' + cz;
+      if (!cells.has(k2)) cells.set(k2, []);
+      cells.get(k2).push(id);
+      return id;
+    };
+    // une seule couche : les deux couches coïncidentes ont des windings opposés
+    // (chapeau vs face opposée), parfois des triangulations différentes (diagonales
+    // croisées) : on ne peut pas fusionner les triangles, on garde la couche du côté
+    // de la normale capturée (winding· normale > 0) puis on fond les doublons identiques
+    const nlS = new THREE.Vector3(n.x, n.y, n.z).applyMatrix3(inv).normalize();
+    const seen = new Set();
+    const bottom = [], trisB = [];
+    for (let t = 0; t < base.length / 9; t++) {
+      const idp = [0, 1, 2].map(e => cid(base[9 * t + 3 * e], base[9 * t + 3 * e + 1], base[9 * t + 3 * e + 2]));
+      const p0 = repPt[idp[0]], p1 = repPt[idp[1]], p2 = repPt[idp[2]];
+      const e1x = p1[0] - p0[0], e1y = p1[1] - p0[1], e1z = p1[2] - p0[2];
+      const e2x = p2[0] - p0[0], e2y = p2[1] - p0[1], e2z = p2[2] - p0[2];
+      const crx = e1y * e2z - e1z * e2y, cry = e1z * e2x - e1x * e2z, crz = e1x * e2y - e1y * e2x;
+      const m1 = e1x * e1x + e1y * e1y + e1z * e1z;
+      const m2 = e2x * e2x + e2y * e2y + e2z * e2z;
+      const m3 = (p0[0] - p2[0]) * (p0[0] - p2[0]) + (p0[1] - p2[1]) * (p0[1] - p2[1]) + (p0[2] - p2[2]) * (p0[2] - p2[2]);
+      const mmax = Math.max(m1, m2, m3);
+      if (crx * crx + cry * cry + crz * crz <= 1e-7 * mmax * mmax) continue;
+      if (crx * nlS.x + cry * nlS.y + crz * nlS.z <= 0) continue;
+      const kb = [idp[0], idp[1], idp[2]].sort((a, b) => a - b).join('|');
+      if (seen.has(kb)) continue;
+      seen.add(kb);
+      trisB.push([p0, p1, p2]);
+    }
+    let sgn = 0;
+    for (const pts of trisB) {
+      const e1 = [pts[1][0] - pts[0][0], pts[1][1] - pts[0][1], pts[1][2] - pts[0][2]];
+      const e2 = [pts[2][0] - pts[0][0], pts[2][1] - pts[0][1], pts[2][2] - pts[0][2]];
+      sgn += (e1[1] * e2[2] - e1[2] * e2[1]) * dl.x + (e1[2] * e2[0] - e1[0] * e2[2]) * dl.y + (e1[0] * e2[1] - e1[1] * e2[0]) * dl.z;
+    }
+    if (sgn > 0) { for (const pts of trisB) pts.reverse(); }
+    if (Math.abs(d) < 1e-9) {
+      for (const pts of trisB) for (const p of pts) bottom.push(p[0], p[1], p[2]);
+      setImportGeometry(mobj, new Float32Array(bottom));
+      return;
+    }
+    for (const pts of trisB) for (const p of pts) bottom.push(p[0], p[1], p[2]);
+    const key2 = (a, b) => a < b ? a + '|' + b : b + '|' + a;
+    const edir = new Map();
+    for (const pts of trisB) {
+      for (let e = 0; e < 3; e++) {
+        const a = pts[e], b = pts[(e + 1) % 3];
+        const key = key2(a[0] + ',' + a[1] + ',' + a[2], b[0] + ',' + b[1] + ',' + b[2]);
+        edir.set(key, edir.has(key) ? null : [a, b]);
+      }
+    }
+    const per = [];
+    for (const v of edir.values()) if (v) per.push(v);
+    const arr = new Float32Array(2 * bottom.length + per.length * 18);
+    arr.set(bottom, 0);
+    let o = bottom.length;
+    for (const pts of trisB) {
+      arr[o++] = pts[2][0] + ox; arr[o++] = pts[2][1] + oy; arr[o++] = pts[2][2] + oz;
+      arr[o++] = pts[1][0] + ox; arr[o++] = pts[1][1] + oy; arr[o++] = pts[1][2] + oz;
+      arr[o++] = pts[0][0] + ox; arr[o++] = pts[0][1] + oy; arr[o++] = pts[0][2] + oz;
+    }
+    for (const [a, b] of per) {
+      arr[o++] = b[0]; arr[o++] = b[1]; arr[o++] = b[2];
+      arr[o++] = a[0]; arr[o++] = a[1]; arr[o++] = a[2];
+      arr[o++] = a[0] + ox; arr[o++] = a[1] + oy; arr[o++] = a[2] + oz;
+      arr[o++] = b[0]; arr[o++] = b[1]; arr[o++] = b[2];
+      arr[o++] = a[0] + ox; arr[o++] = a[1] + oy; arr[o++] = a[2] + oz;
+      arr[o++] = b[0] + ox; arr[o++] = b[1] + oy; arr[o++] = b[2] + oz;
+    }
+    setImportGeometry(mobj, arr);
+    return;
+  }
+  if (d <= 0 && data.dHigh === undefined) {
+    // push rentrant : pas d interpolation. Tout ce qui est au-dessus du plan est replie
+    // exactement sur le plan, par une translation qui ne depend que du sommet
+    // (copies soudées identiques, jonctions des strips alignées, coque fermee par construction)
+    if (d > -1e-9) {
+      setImportGeometry(mobj, new Float32Array(base));
+      return;
+    }
+    const mw = mobj.matrixWorld;
+    const pp = data.planePoint;
+    const cnt = base.length / 3;
+    const along = new Float64Array(cnt);
+    for (let i = 0; i < cnt; i++) {
+      const v = new THREE.Vector3(base[3 * i], base[3 * i + 1], base[3 * i + 2]).applyMatrix4(mw);
+      along[i] = v.sub(pp).dot(n);
+    }
+    const lo = new Float64Array(cnt * 3);
+    for (let i = 0; i < cnt; i++) {
+      if (along[i] <= d + 1e-7) continue;
+      const o = new THREE.Vector3(n.x * (d - along[i]), n.y * (d - along[i]), n.z * (d - along[i])).applyMatrix3(inv);
+      lo[3 * i] = o.x; lo[3 * i + 1] = o.y; lo[3 * i + 2] = o.z;
+    }
+    const patchSet = new Set(data.patchTris || []);
+    const out2 = [];
+    for (let t = 0; t < cnt / 3; t++) {
+      const idx = [3 * t, 3 * t + 1, 3 * t + 2];
+      const out = idx.map(i => along[i] > d + 1e-7);
+      if (out.every(x => x) && !patchSet.has(t)) continue;
+      const v = [];
+      for (let k = 0; k < 3; k++) {
+        const i = idx[k];
+        v.push(Math.fround(base[3 * i] + lo[3 * i]), Math.fround(base[3 * i + 1] + lo[3 * i + 1]), Math.fround(base[3 * i + 2] + lo[3 * i + 2]));
+      }
+      const e1x = v[3] - v[0], e1y = v[4] - v[1], e1z = v[5] - v[2];
+      const e2x = v[6] - v[0], e2y = v[7] - v[1], e2z = v[8] - v[2];
+      const crx = e1y * e2z - e1z * e2y, cry = e1z * e2x - e1x * e2z, crz = e1x * e2y - e1y * e2x;
+      const e3x = v[0] - v[6], e3y = v[1] - v[7], e3z = v[2] - v[8];
+      const m1 = e1x * e1x + e1y * e1y + e1z * e1z;
+      const m2 = e2x * e2x + e2y * e2y + e2z * e2z;
+      const m3 = e3x * e3x + e3y * e3y + e3z * e3z;
+      const mmax = Math.max(m1, m2, m3);
+      if (crx * crx + cry * cry + crz * crz <= 1e-7 * mmax * mmax) continue;
+      out2.push(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
+    }
+    setImportGeometry(mobj, new Float32Array(out2));
+    return;
+  }
+  const arr = new Float32Array(base.length + data.boundary.length * 18);
+  arr.set(base);
+  for (const i of data.vset) {
+    arr[3 * i] += ox; arr[3 * i + 1] += oy; arr[3 * i + 2] += oz;
+  }
+  let o = base.length;
+  for (const [ia, ib] of data.boundary) {
+    const a0 = 3 * ia, b0 = 3 * ib;
+    arr[o++] = base[a0]; arr[o++] = base[a0 + 1]; arr[o++] = base[a0 + 2];
+    arr[o++] = base[b0]; arr[o++] = base[b0 + 1]; arr[o++] = base[b0 + 2];
+    arr[o++] = base[b0] + ox; arr[o++] = base[b0 + 1] + oy; arr[o++] = base[b0 + 2] + oz;
+    arr[o++] = base[a0]; arr[o++] = base[a0 + 1]; arr[o++] = base[a0 + 2];
+    arr[o++] = base[b0] + ox; arr[o++] = base[b0 + 1] + oy; arr[o++] = base[b0 + 2] + oz;
+    arr[o++] = base[a0] + ox; arr[o++] = base[a0 + 1] + oy; arr[o++] = base[a0 + 2] + oz;
+  }
+  setImportGeometry(mobj, arr);
+}
+
+function makeImportExtrudeData(mobj, hit) {
+  const posAttr = mobj.geometry.attributes.position;
+  if (!posAttr || posAttr.count < 9) return null;
+  const arr = posAttr.array;
+  const triCount = Math.floor(posAttr.count / 3);
+  const fi = hit.faceIndex;
+  if (fi === undefined || fi === null || fi < 0 || fi >= triCount) return null;
+  const mw = mobj.matrixWorld;
+  const weps = 1e-3 * Math.max(1, mobj.scale.x, mobj.scale.y, mobj.scale.z);
+  const wgrid = new Map();
+  const vkey = i => {
+    const cx = arr[3 * i], cy = arr[3 * i + 1], cz = arr[3 * i + 2];
+    const bx = Math.round(cx / weps), by = Math.round(cy / weps), bz = Math.round(cz / weps);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const rep = wgrid.get((bx + dx) + ',' + (by + dy) + ',' + (bz + dz));
+      if (rep !== undefined && Math.hypot(arr[3 * rep] - cx, arr[3 * rep + 1] - cy, arr[3 * rep + 2] - cz) <= weps) return 'w' + rep;
+    }
+    wgrid.set(bx + ',' + by + ',' + bz, i);
+    return 'w' + i;
+  };
+  const worldVertex = i => new THREE.Vector3(arr[3 * i], arr[3 * i + 1], arr[3 * i + 2]).applyMatrix4(mw);
+  const triNormal = t => {
+    const a = worldVertex(3 * t), b = worldVertex(3 * t + 1), c = worldVertex(3 * t + 2);
+    return new THREE.Vector3().subVectors(c, b).cross(new THREE.Vector3().subVectors(a, b)).normalize();
+  };
+  const n0 = triNormal(fi);
+  const eps = 1e-3 * Math.max(1, mobj.scale.x, mobj.scale.y, mobj.scale.z);
+  const planePoint = worldVertex(3 * fi);
+  const vidx = new Map();
+  const edgeTris = new Map();
+  for (let t = 0; t < triCount; t++) {
+    const ks = [vkey(3 * t), vkey(3 * t + 1), vkey(3 * t + 2)];
+    for (let e = 0; e < 3; e++) {
+      if (!vidx.has(ks[e])) vidx.set(ks[e], 3 * t + e);
+      const ek = ekey(ks[e], ks[(e + 1) % 3]);
+      let l = edgeTris.get(ek);
+      if (!l) { l = []; edgeTris.set(ek, l); }
+      l.push(t);
+    }
+  }
+  const patch = new Set([fi]);
+  const queue = [fi];
+  while (queue.length) {
+    const t = queue.pop();
+    const ks = [vkey(3 * t), vkey(3 * t + 1), vkey(3 * t + 2)];
+    for (let e = 0; e < 3; e++) {
+      const ek = ekey(ks[e], ks[(e + 1) % 3]);
+      for (const t2 of (edgeTris.get(ek) || [])) {
+        if (patch.has(t2)) continue;
+        if (Math.abs(triNormal(t2).dot(n0)) < 0.999) continue;
+        patch.add(t2);
+        queue.push(t2);
+      }
+    }
+  }
+  for (const t of patch) {
+    for (let i = 0; i < 3; i++) {
+      if (Math.abs(worldVertex(3 * t + i).sub(planePoint).dot(n0)) > eps) return null;
+    }
+  }
+  const ecount = new Map();
+  const pKeys = new Set();
+  for (const t of patch) {
+    const ks = [vkey(3 * t), vkey(3 * t + 1), vkey(3 * t + 2)];
+    for (const k of ks) pKeys.add(k);
+    for (let e = 0; e < 3; e++) {
+      const ek = ekey(ks[e], ks[(e + 1) % 3]);
+      ecount.set(ek, (ecount.get(ek) || 0) + 1);
+    }
+  }
+  const pvidx = [];
+  for (let i = 0; i < posAttr.count; i++) {
+    if (pKeys.has(vkey(i))) pvidx.push(i);
+  }
+  const patchVset = [];
+  for (const t of patch) {
+    patchVset.push(3 * t, 3 * t + 1, 3 * t + 2);
+  }
+  const boundary = [];
+  for (const [ek, c] of ecount) {
+    if (c !== 1) continue;
+    const parts = ek.split('|');
+    if (!vidx.has(parts[0]) || !vidx.has(parts[1])) return null;
+    boundary.push([vidx.get(parts[0]), vidx.get(parts[1])]);
+  }
+  let dLow = 0, dHigh = 0, hasLow = false, hasHigh = false;
+  for (let i = 0; i < posAttr.count; i++) {
+    if (pKeys.has(vkey(i))) continue;
+    const along = worldVertex(i).sub(planePoint).dot(n0);
+    if (along < -1e-7 && (!hasLow || along < dLow)) { dLow = along; hasLow = true; }
+    if (along > 1e-7 && (!hasHigh || along > dHigh)) { dHigh = along; hasHigh = true; }
+  }
+  const flip = hasHigh && !hasLow;
+  const normal = flip ? n0.clone().negate() : n0;
+  const dLo = flip ? (hasHigh ? -dHigh : undefined) : (hasLow ? dLow : undefined);
+  const dHi = flip ? (hasLow ? -dLow : undefined) : (hasHigh ? dHigh : undefined);
+  return { normal, planePoint, fixed: planePoint.dot(normal), base: arr.slice(), vset: patchVset, vsetAll: pvidx, patchTris: [...patch], boundary, dLow: dLo, dHigh: dHi };
+}
+
+function applyTypedExtrusion(dg) {
+  const v = parseFloat((dg.numBuf || '').trim());
+  if (!isFinite(v) || v <= 0) {
+    setStatus('Valeur invalide — tapez un nombre positif puis Entrée.');
+    return;
+  }
+  const d = Math.max(0.05, v / UNIT_FACTORS[unit]);
+  const obj = dg.obj;
+  if (dg.kind === 'face') {
+    obj.scale.setComponent(dg.axis, d);
+    obj.position.setComponent(dg.axis, dg.fixed + dg.sign * d / 2);
+    outline.setFromObject(obj);
+    pushUndo({ type: 'face-extrude', obj, fromScale: dg.fromScale, fromPos: dg.fromPos });
+    setStatus('Extrusion posée : ' + fmtLen(d) + ' — Ctrl+Z pour annuler.');
+  } else if (dg.kind === 'extrude') {
+    obj.scale.y = d;
+    obj.position.y = d / 2;
+    outline.setFromObject(obj);
+    pushUndo({ type: 'extrude', obj, from: dg.from, fromObjY: dg.fromObjY });
+    setStatus('Extrusion posée : hauteur ' + fmtLen(d) + ' — Ctrl+Z pour annuler.');
+  } else {
+    applyImportExtrude(obj, dg, d);
+    pushUndo({ type: 'import-extrude', obj, base: dg.base });
+    setStatus('Extrusion posée : ' + fmtLen(d) + ' — Ctrl+Z pour annuler.');
+  }
+  refreshCotes();
+  drawing = null;
+  controls.enabled = true;
+}
+
 function placeOnGround(mesh, x, z) {
   mesh.updateMatrixWorld();
   const bb = new THREE.Box3().setFromObject(mesh);
@@ -645,11 +1048,32 @@ function placeOnGround(mesh, x, z) {
   mesh.position.y -= bb.min.y;
 }
 
+function placeWithoutOverlap(mesh, placed) {
+  placeOnGround(mesh, snap(controls.target.x), snap(controls.target.z));
+  let shifts = 0;
+  for (let tries = 0; tries < 20; tries++) {
+    mesh.updateMatrixWorld(true);
+    const bb = new THREE.Box3().setFromObject(mesh);
+    let hit = null;
+    for (const o of placed) {
+      if (o === mesh) continue;
+      const ob = new THREE.Box3().setFromObject(o);
+      if (ob.isEmpty()) continue;
+      if (bb.intersectsBox(ob)) { hit = ob; break; }
+    }
+    if (!hit) return shifts;
+    mesh.position.x += (hit.max.x - bb.min.x) + 0.25;
+    shifts++;
+  }
+  return shifts;
+}
+
 function importMeshes(name, data) {
   try {
     const isStl = name.toLowerCase().endsWith('.stl');
     const meshes = isStl ? stlToMeshes(data) : objToMeshes(data);
     let resized = false;
+    let shifted = 0;
     for (const m of meshes) {
       m.geometry.computeBoundingBox();
       const bb = m.geometry.boundingBox;
@@ -658,7 +1082,7 @@ function importMeshes(name, data) {
         m.scale.setScalar(4 / size);
         resized = true;
       }
-      placeOnGround(m, snap(controls.target.x), snap(controls.target.z));
+      if (placeWithoutOverlap(m, objects) > 0) shifted++;
       add(m);
       pushUndo({ type: 'add', obj: m });
     }
@@ -667,7 +1091,9 @@ function importMeshes(name, data) {
       for (const m of meshes) bb.expandByObject(m);
       frameBounds(bb);
     }
-    setStatus(meshes.length + ' objet(s) importé(s)' + (resized ? ' — dimensions ajustées à ~4 unités' : '') + ' depuis ' + name + ' — vue recentrée');
+    let msg = meshes.length + ' objet(s) importé(s)' + (resized ? ' — dimensions ajustées à ~4 unités' : '') + ' depuis ' + name + ' — vue recentrée';
+    if (shifted) msg = 'Superpositions évitées par décalage, ' + msg.charAt(0).toLowerCase() + msg.slice(1);
+    setStatus(msg);
   } catch (err) {
     setStatus('Import impossible : ' + err.message);
   }
@@ -829,6 +1255,8 @@ document.getElementById('closeProjBtn').addEventListener('click', () => {
   if (!confirm('Fermer le projet en cours ? Pensez à enregistrer (Fichier > Enregistrer) : les objets non enregistrés seront perdus.')) return;
   pushUndo({ type: 'clear', items: [...objects] });
   [...objects].forEach(remove);
+  clearCotes();
+  clearMeasureLive();
   select(null);
   setStatus('Projet fermé — Ctrl+Z pour restaurer, Fichier > Ouvrir pour recommencer.');
 });
@@ -849,6 +1277,25 @@ addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); return; }
+  if (drawing && (drawing.kind === 'face' || drawing.kind === 'extrude' || drawing.kind === 'import-face')) {
+    if (/^[0-9]$/.test(e.key) || e.key === '.' || e.key === ',') {
+      e.preventDefault();
+      drawing.numBuf = (drawing.numBuf || '') + (e.key === ',' ? '.' : e.key);
+      setStatus('Valeur saisie : ' + drawing.numBuf + ' ' + unit + ' — Entrée pour appliquer (Retour arrière pour corriger).');
+      return;
+    }
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      drawing.numBuf = (drawing.numBuf || '').slice(0, -1);
+      setStatus('Valeur saisie : ' + (drawing.numBuf || '(vide)') + ' ' + unit + ' — Entrée pour appliquer.');
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      applyTypedExtrusion(drawing);
+      return;
+    }
+  }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (selected) { pushUndo({ type: 'remove', obj: selected, pos: selected.position.clone(), scale: selected.scale.clone() }); remove(selected); setStatus('Objet supprimé'); }
     return;
@@ -889,12 +1336,316 @@ addEventListener('keydown', e => {
     }
     return;
   }
-  const modes = { s: 'select', r: 'rect', c: 'circle', p: 'pushpull', o: 'orbit', g: 'grid' };
+  const modes = { s: 'select', r: 'rect', c: 'circle', p: 'pushpull', o: 'orbit', g: 'grid', m: 'measure' };
   if (k === 'f') { frameSelection(); return; }
   if (k in modes) {
     if (modes[k] === 'grid') { snapBtn.click(); return; }
     setMode(modes[k]);
   }
+});
+
+/* ------------------------------------------------------------------ */
+/* Mesures / cotes : distance entre 2 points, unités métriques         */
+/* ------------------------------------------------------------------ */
+const measureGroup = new THREE.Group();
+scene.add(measureGroup);
+const measures = [];
+let pendingA = null;
+let pendingASnap = null;
+let pendingAObj = null;
+let mLive = null;
+let leftDownPos = null;
+const coteDotGeo = new THREE.SphereGeometry(0.07, 12, 12);
+const coteLineMat = new THREE.LineBasicMaterial({ color: 0xffd54a, depthTest: false, transparent: true });
+const coteDotMat = new THREE.MeshBasicMaterial({ color: 0xffd54a });
+const measureMarkerMat = new THREE.MeshBasicMaterial({ color: 0xffd54a });
+const measureMarker = new THREE.Mesh(coteDotGeo, measureMarkerMat);
+measureMarker.scale.setScalar(1.4);
+measureMarker.visible = false;
+measureGroup.add(measureMarker);
+
+const UNIT_FACTORS = { mm: 1000, cm: 100, m: 1, km: 0.001 };
+let unit = 'm';
+function fmtLen(v) {
+  const val = v * UNIT_FACTORS[unit];
+  const dec = unit === 'mm' ? 0 : unit === 'cm' ? 1 : unit === 'km' ? 3 : 2;
+  return val.toFixed(dec) + ' ' + unit;
+}
+
+function makeCoteLabel(text) {
+  const c = document.createElement('canvas');
+  const probe = c.getContext('2d');
+  const font = 'bold 28px "Segoe UI", system-ui, sans-serif';
+  probe.font = font;
+  const w = Math.ceil(probe.measureText(text).width) + 24;
+  const h = 46;
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.font = font;
+  ctx.fillStyle = 'rgba(20,22,28,0.88)';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(255,213,74,0.95)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, w - 2, h - 2);
+  ctx.fillStyle = '#ffe082';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 12, h / 2);
+  const tex = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sp.scale.set(0.7 * w / h, 0.7, 1);
+  sp.renderOrder = 20;
+  return sp;
+}
+
+function setSpriteLabel(sp, text) {
+  const fresh = makeCoteLabel(text);
+  sp.material.map.dispose();
+  sp.material.map = fresh.material.map;
+  sp.scale.copy(fresh.scale);
+  fresh.material.dispose();
+}
+
+function disposeSprite(sp) {
+  sp.material.map.dispose();
+  sp.material.dispose();
+}
+
+function addCote(a, b, aA, aB) {
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), coteLineMat);
+  const dotA = new THREE.Mesh(coteDotGeo, coteDotMat);
+  const dotB = new THREE.Mesh(coteDotGeo, coteDotMat);
+  dotA.position.copy(a);
+  dotB.position.copy(b);
+  const sprite = makeCoteLabel(fmtLen(a.distanceTo(b)));
+  sprite.position.copy(a).add(b).multiplyScalar(0.5);
+  measureGroup.add(line, dotA, dotB, sprite);
+  measures.push({ a: a.clone(), b: b.clone(), line, dotA, dotB, sprite, aA: aA || null, aB: aB || null });
+}
+
+function anchorFromSnap(s, obj) {
+  if (!s || !obj) return null;
+  if (s.type === 'vertex') return { obj, i: s.vi };
+  if (s.type === 'edge') return { obj, i: s.vi, j: s.vj, u: s.u };
+  return null;
+}
+
+function anchorW(an) {
+  if (!an || !an.obj || !objects.includes(an.obj)) return null;
+  const arr = an.obj.geometry.attributes.position.array;
+  const v = new THREE.Vector3();
+  if (an.j !== undefined) {
+    const ia = 3 * an.i, ib = 3 * an.j;
+    v.set(arr[ia] + (arr[ib] - arr[ia]) * an.u, arr[ia + 1] + (arr[ib + 1] - arr[ia + 1]) * an.u, arr[ia + 2] + (arr[ib + 2] - arr[ia + 2]) * an.u);
+  } else {
+    v.set(arr[3 * an.i], arr[3 * an.i + 1], arr[3 * an.i + 2]);
+  }
+  return v.applyMatrix4(an.obj.matrixWorld);
+}
+
+function refreshCotes() {
+  for (const m of measures) {
+    m.a.copy(anchorW(m.aA) || m.a);
+    m.b.copy(anchorW(m.aB) || m.b);
+    m.line.geometry.setFromPoints([m.a, m.b]);
+    m.dotA.position.copy(m.a);
+    m.dotB.position.copy(m.b);
+    m.sprite.position.copy(m.a).add(m.b).multiplyScalar(0.5);
+    const txt = fmtLen(m.a.distanceTo(m.b));
+    if (m._txt !== txt) {
+      m._txt = txt;
+      setSpriteLabel(m.sprite, txt);
+    }
+  }
+}
+
+function clearCotes() {
+  for (const m of measures) {
+    measureGroup.remove(m.line, m.dotA, m.dotB, m.sprite);
+    m.line.geometry.dispose();
+    disposeSprite(m.sprite);
+  }
+  measures.length = 0;
+}
+
+function removeCote(m) {
+  const idx = measures.indexOf(m);
+  if (idx < 0) return;
+  measures.splice(idx, 1);
+  measureGroup.remove(m.line, m.dotA, m.dotB, m.sprite);
+  m.line.geometry.dispose();
+  disposeSprite(m.sprite);
+}
+
+function nearestCote(px, py, tolPx) {
+  const r = renderer.domElement.getBoundingClientRect();
+  let best = null, bestD = tolPx;
+  const pa = new THREE.Vector3(), pb = new THREE.Vector3();
+  for (const m of measures) {
+    pa.copy(m.a).project(camera);
+    pb.copy(m.b).project(camera);
+    const ax = r.left + (pa.x + 1) / 2 * r.width, ay = r.top + (1 - (pa.y + 1) / 2) * r.height;
+    const bx = r.left + (pb.x + 1) / 2 * r.width, by = r.top + (1 - (pb.y + 1) / 2) * r.height;
+    const abx = bx - ax, aby = by - ay;
+    const ab2 = abx * abx + aby * aby;
+    let d;
+    if (ab2 < 1e-12) d = Math.hypot(px - ax, py - ay);
+    else {
+      let u = ((px - ax) * abx + (py - ay) * aby) / ab2;
+      u = Math.max(0, Math.min(1, u));
+      d = Math.hypot(px - (ax + abx * u), py - (ay + aby * u));
+    }
+    if (d < bestD) { bestD = d; best = m; }
+  }
+  return best;
+}
+
+function clearMeasureLive() {
+  pendingA = null;
+  pendingASnap = null;
+  pendingAObj = null;
+  measureMarker.visible = false;
+  if (mLive) {
+    measureGroup.remove(mLive.line, mLive.sprite);
+    mLive.line.geometry.dispose();
+    disposeSprite(mLive.sprite);
+    mLive = null;
+  }
+}
+
+const SNAP_RATE = 0.025;
+function pickMeasurePoint(e) {
+  pointerToNDC(e);
+  const hits = raycaster.intersectObjects(objects, false);
+  if (hits.length) {
+    const tMax = raycaster.ray.direction.dot(hits[0].point.clone().sub(raycaster.ray.origin));
+    const s = snapTargetPoint(e, hits[0].object, tMax);
+    if (s) return { p: s.p, obj: hits[0].object, snap: s, onVertex: s.type === 'vertex', onEdge: s.type === 'edge' };
+    return { p: hits[0].point.clone(), obj: hits[0].object, snap: null, onVertex: false, onEdge: false };
+  }
+  const p = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(groundPlane, p)) {
+    p.x = snap(p.x);
+    p.z = snap(p.z);
+    return { p, obj: null, snap: null, onVertex: false, onEdge: false };
+  }
+  return null;
+}
+
+function snapTargetPoint(e, mobj, tMax) {
+  const posAttr = mobj.geometry.attributes.position;
+  if (!posAttr || posAttr.count > 8000) return null;
+  const arr = posAttr.array;
+  const mw = mobj.matrixWorld;
+  const ray = raycaster.ray;
+  const verts = [];
+  const seenV = new Map();
+  const seenL = new Map();
+  const wp = new THREE.Vector3();
+  for (let i = 0; i < posAttr.count; i++) {
+    const lkey = arr3Key(arr, 3 * i);
+    if (seenL.has(lkey)) continue;
+    wp.set(arr[3 * i], arr[3 * i + 1], arr[3 * i + 2]).applyMatrix4(mw);
+    const distO = Math.max(wp.distanceTo(ray.origin), 1e-6);
+    const t = wp.clone().sub(ray.origin).dot(ray.direction);
+    if (t < -0.1 * distO || (tMax !== undefined && t > tMax + 0.1 * distO)) continue;
+    const wkey = wp.x.toFixed(4) + ',' + wp.y.toFixed(4) + ',' + wp.z.toFixed(4);
+    let idx = seenV.get(wkey);
+    if (idx === undefined) {
+      idx = verts.length;
+      seenV.set(wkey, idx);
+      verts.push({ x: wp.x, y: wp.y, z: wp.z, li: i, r: ray.distanceToPoint(wp) / distO });
+    }
+    seenL.set(lkey, idx);
+  }
+  let best = null;
+  for (const v of verts) {
+    if (v.r <= SNAP_RATE && (!best || v.r < best.d)) best = { d: v.r, p: new THREE.Vector3(v.x, v.y, v.z), type: 'vertex', vi: v.li };
+  }
+  if (best) return best;
+  const edges = [];
+  const edgeTris = new Map();
+  const triN = new Map();
+  const seenE = new Set();
+  const tA = new THREE.Vector3(), tB = new THREE.Vector3(), tC = new THREE.Vector3(), tN = new THREE.Vector3();
+  for (let t = 0; t + 2 < posAttr.count; t += 3) {
+    const ks = [arr3Key(arr, 3 * t), arr3Key(arr, 3 * (t + 1)), arr3Key(arr, 3 * (t + 2))];
+    if (!(seenL.has(ks[0]) && seenL.has(ks[1]) && seenL.has(ks[2]))) continue;
+    const idxs = ks.map(k => seenL.get(k));
+    tA.set(verts[idxs[0]].x, verts[idxs[0]].y, verts[idxs[0]].z);
+    tB.set(verts[idxs[1]].x, verts[idxs[1]].y, verts[idxs[1]].z);
+    tC.set(verts[idxs[2]].x, verts[idxs[2]].y, verts[idxs[2]].z);
+    tN.subVectors(tC, tB).cross(new THREE.Vector3().subVectors(tA, tB)).normalize();
+    triN.set(t, [tN.x, tN.y, tN.z]);
+    for (let e2 = 0; e2 < 3; e2++) {
+      const ia = idxs[e2], ib = idxs[(e2 + 1) % 3];
+      const ek = ia < ib ? ia + '|' + ib : ib + '|' + ia;
+      if (!edgeTris.has(ek)) edgeTris.set(ek, []);
+      edgeTris.get(ek).push(t);
+      if (seenE.has(ek)) continue;
+      seenE.add(ek);
+      edges.push([ia, ib, ek]);
+    }
+  }
+  let bestE = null;
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), P = new THREE.Vector3(), w0 = new THREE.Vector3();
+  for (const [ia, ib, ek] of edges) {
+    const ts = edgeTris.get(ek);
+    if (ts && ts.length === 2) {
+      const n1 = triN.get(ts[0]), n2 = triN.get(ts[1]);
+      if (n1 && n2 && Math.abs(n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) >= 0.999) continue;
+    }
+    const va = verts[ia], vb = verts[ib];
+    A.set(va.x, va.y, va.z);
+    B.set(vb.x, vb.y, vb.z);
+    const vv = new THREE.Vector3().subVectors(B, A);
+    w0.subVectors(A, ray.origin);
+    const b = vv.dot(ray.direction), c = vv.dot(vv);
+    const d = w0.dot(ray.direction), e3 = w0.dot(vv);
+    const denom = c - b * b;
+    let s;
+    if (denom < 1e-12) s = c > 1e-12 ? Math.max(0, Math.min(1, -e3 / c)) : 0;
+    else s = Math.max(0, Math.min(1, (d * b - e3) / denom));
+    P.copy(A).addScaledVector(vv, s);
+    const distO = Math.max(P.distanceTo(ray.origin), 1e-6);
+    const tP = P.clone().sub(ray.origin).dot(ray.direction);
+    if (tMax !== undefined && tP > tMax + 0.1 * distO) continue;
+    const r = ray.distanceToPoint(P) / distO;
+    if (r <= SNAP_RATE && (!bestE || r < bestE.d)) bestE = { d: r, p: P.clone(), type: 'edge', vi: va.li, vj: vb.li, u: s };
+  }
+  return bestE;
+}
+
+function arr3Key(arr, i) {
+  return arr[i].toFixed(4) + ',' + arr[i + 1].toFixed(4) + ',' + arr[i + 2].toFixed(4);
+}
+
+function showMeasureLive(b) {
+  const mid = new THREE.Vector3().addVectors(pendingA, b).multiplyScalar(0.5);
+  if (!mLive) {
+    mLive = { line: new THREE.Line(new THREE.BufferGeometry().setFromPoints([pendingA, b]), coteLineMat), sprite: makeCoteLabel(fmtLen(pendingA.distanceTo(b))) };
+    mLive.sprite.position.copy(mid);
+    measureGroup.add(mLive.line, mLive.sprite);
+  } else {
+    mLive.line.geometry.setFromPoints([pendingA, b]);
+    mLive.sprite.position.copy(mid);
+    setSpriteLabel(mLive.sprite, fmtLen(pendingA.distanceTo(b)));
+  }
+}
+
+const unitSel = document.getElementById('unitSel');
+unitSel.addEventListener('change', () => {
+  unit = unitSel.value;
+  for (const m of measures) delete m._txt;
+  refreshCotes();
+  setStatus('Unités : ' + unit + ' (' + measures.length + ' cote(s) affichée(s))');
+});
+
+document.getElementById('clearMeasuresBtn').addEventListener('click', () => {
+  closeFileMenu();
+  clearMeasureLive();
+  clearCotes();
+  setMode('select');
+  setStatus('Cotes effacées — outil mesure désactivé.');
 });
 
 /* ------------------------------------------------------------------ */
@@ -924,16 +1675,29 @@ let orbitDrag = false;
 const previewMat = new THREE.MeshStandardMaterial({ color: 0x4f8cff, transparent: true, opacity: 0.5 });
 
 function cancelDraw() {
+  clearMeasureLive();
   if (preview) { scene.remove(preview); preview = null; }
   if (drawing && drawing.kind === 'move') {
     outline.material.color.setHex(0xffffff);
     drawing.axisDir = null;
     drawing.lastLen = 0;
   }
+  if (drawing && drawing.kind === 'import-face' && drawing.obj) {
+    setImportGeometry(drawing.obj, drawing.base);
+    if (selected === drawing.obj) outline.setFromObject(drawing.obj);
+    refreshCotes();
+  }
+  if (drawing && drawing.kind === 'extrude' && drawing.obj) {
+    drawing.obj.scale.y = drawing.from;
+    drawing.obj.position.y = drawing.fromObjY;
+    if (selected === drawing.obj) outline.setFromObject(drawing.obj);
+    refreshCotes();
+  }
   if (drawing && drawing.kind === 'face' && drawing.obj) {
     drawing.obj.scale.copy(drawing.fromScale);
     drawing.obj.position.copy(drawing.fromPos);
     if (selected === drawing.obj) outline.setFromObject(drawing.obj);
+    refreshCotes();
   }
   drawing = null;
   orbitDrag = false;
@@ -968,12 +1732,35 @@ renderer.domElement.addEventListener('pointerdown', e => {
     controls.enabled = false;
     setStatus('Déplacez la souris pour ajuster le rayon, puis cliquez pour valider (Échap pour annuler).');
   } else if (mode === 'pushpull') {
-    if (drawing && drawing.kind === 'face') {
-      pushUndo({ type: 'face-extrude', obj: drawing.obj, fromScale: drawing.fromScale, fromPos: drawing.fromPos });
+    if (drawing && (drawing.kind === 'face' || drawing.kind === 'extrude' || drawing.kind === 'import-face')) {
+      if (drawing.kind === 'face') {
+        pushUndo({ type: 'face-extrude', obj: drawing.obj, fromScale: drawing.fromScale, fromPos: drawing.fromPos });
+        setStatus('Face posée — Ctrl+Z pour annuler, ou cliquez une autre face.');
+      } else if (drawing.kind === 'extrude') {
+        if (drawing.appliedH === undefined) {
+          drawing.obj.scale.y = drawing.from;
+          drawing.obj.position.y = drawing.fromObjY;
+          setStatus('Extrusion annulée (aucun déplacement) — cliquez une face pour recommencer.');
+        } else {
+          pushUndo({ type: 'extrude', obj: drawing.obj, from: drawing.from, fromObjY: drawing.fromObjY });
+          setStatus('Extrusion posée : hauteur ' + fmtLen(drawing.appliedH) + ' — Ctrl+Z pour annuler, ou cliquez une autre face.');
+        }
+      } else {
+        const applied = drawing.appliedD || 0;
+        if (Math.abs(applied) < 1e-6) {
+          setImportGeometry(drawing.obj, drawing.base);
+          refreshCotes();
+          setStatus('Extrusion annulée (aucun déplacement) — cliquez une face pour recommencer.');
+        } else {
+          pushUndo({ type: 'import-extrude', obj: drawing.obj, base: drawing.base });
+          setStatus('Extrusion posée : ' + fmtLen(applied) + ' — Ctrl+Z pour annuler, ou cliquez une autre face.');
+        }
+      }
+      if (selected) outline.setFromObject(selected);
       drawing = null;
       controls.enabled = true;
-      setStatus('Face posée — Ctrl+Z pour annuler, ou cliquez une autre face.');
-    } else {
+      return;
+    }
     pointerToNDC(e);
     const hits = raycaster.intersectObjects(objects, false);
     if (hits.length) {
@@ -981,7 +1768,22 @@ renderer.domElement.addEventListener('pointerdown', e => {
       select(eobj);
       const kind = eobj.userData.kind;
       if (kind === 'import') {
-        setStatus('Push/Pull indisponible sur un objet importé — déplacez-le en mode Sélection.');
+        const ext = makeImportExtrudeData(eobj, hits[0]);
+        if (!ext) {
+          setStatus('Face non plane — Push/Pull indisponible sur cette surface.');
+          return;
+        }
+        controls.enabled = false;
+        const camDirPull = camera.getWorldDirection(new THREE.Vector3());
+        const pn = camDirPull.clone().addScaledVector(ext.normal, -camDirPull.dot(ext.normal));
+        if (pn.lengthSq() < 0.04) {
+          if (Math.abs(ext.normal.y) > 0.9) pn.set(1, 0, 0);
+          else pn.set(ext.normal.z, 0, -ext.normal.x);
+        }
+        pn.normalize();
+        ext.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(pn, ext.planePoint);
+        drawing = Object.assign({ kind: 'import-face', obj: eobj, appliedD: 0, numBuf: '', statusTick: 0 }, ext);
+        setStatus('Glissez le long de la normale, cliquez pour poser la face (ou tapez une valeur + Entrée, Échap pour annuler).');
         return;
       }
       controls.enabled = false;
@@ -1016,9 +1818,8 @@ renderer.domElement.addEventListener('pointerdown', e => {
         normal.normalize();
         const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, eobj.position.clone());
         drawing = { kind: 'extrude', obj: eobj, from: eobj.scale.y, fromObjY: eobj.position.y, plane };
-        setStatus('Glissez verticalement, relâchez pour finir.');
+        setStatus('Déplacez la souris, cliquez pour poser (ou tapez une valeur + Entrée, Échap pour annuler).');
       }
-    }
     }
   } else if (mode === 'orbit') {
     controls.enabled = true;
@@ -1032,6 +1833,21 @@ renderer.domElement.addEventListener('pointermove', e => {
     lastGroundPoint.copy(gp);
   }
 
+  if (mode === 'measure') {
+    const hit = pickMeasurePoint(e);
+    if (hit) {
+      measureMarkerMat.color.setHex(hit.onVertex ? 0x66ff66 : hit.onEdge ? 0x66ccff : 0xffd54a);
+      measureMarker.position.copy(hit.p);
+      measureMarker.visible = true;
+      if (pendingA) {
+        showMeasureLive(hit.p);
+        setStatus('Cote en cours : ' + fmtLen(pendingA.distanceTo(hit.p)) + (hit.onVertex ? ' — sommet capté' : hit.onEdge ? ' — arête captée' : '') + ' — cliquez pour fixer le second point.');
+      }
+    } else if (!pendingA) {
+      measureMarker.visible = false;
+    }
+    return;
+  }
   if (drawing && drawing.kind === 'move' && selected) {
     pointerToNDC(e);
     const p = new THREE.Vector3();
@@ -1050,6 +1866,7 @@ renderer.domElement.addEventListener('pointermove', e => {
     selected.position.copy(drawing.from).add(delta);
     if (selected.position.y < 0) selected.position.y = 0;
     outline.setFromObject(selected);
+    refreshCotes();
     return;
   }
   if (drawing && drawing.kind === 'rect' && gp) {
@@ -1078,6 +1895,23 @@ renderer.domElement.addEventListener('pointermove', e => {
     preview.position.set(drawing.cx, 0.01, drawing.cz);
     return;
   }
+  if (drawing && drawing.kind === 'import-face' && drawing.obj) {
+    pointerToNDC(e);
+    const p = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(drawing.plane, p)) {
+      let d = p.dot(drawing.normal) - drawing.fixed;
+      if (snapping) d = Math.round(d / SNAP) * SNAP;
+      drawing.appliedD = d;
+      applyImportExtrude(drawing.obj, drawing, d);
+      refreshCotes();
+      const nowF = performance.now();
+      if (!drawing.statusTick || nowF - drawing.statusTick > 120) {
+        drawing.statusTick = nowF;
+        setStatus('Extrusion (import) : ' + fmtLen(d) + ' — cliquez pour poser, ou tapez une valeur + Entrée (Échap pour annuler).');
+      }
+    }
+    return;
+  }
   if (drawing && drawing.kind === 'face' && drawing.obj) {
     pointerToNDC(e);
     const p = new THREE.Vector3();
@@ -1086,8 +1920,14 @@ renderer.domElement.addEventListener('pointermove', e => {
       let span = (p.getComponent(axis) - drawing.fixed) * sign;
       span = snapping ? Math.max(0.05, Math.round(span / SNAP) * SNAP) : Math.max(0.05, span);
       obj.scale.setComponent(axis, span);
+      const nowF = performance.now();
+      if (!drawing.statusTick || nowF - drawing.statusTick > 120) {
+        drawing.statusTick = nowF;
+        setStatus('Extrusion de face : ' + fmtLen(span) + ' — cliquez pour poser, ou tapez une valeur + Entrée (Échap pour annuler).');
+      }
       obj.position.setComponent(axis, drawing.fixed + sign * span / 2);
       outline.setFromObject(obj);
+      refreshCotes();
     }
     return;
   }
@@ -1096,10 +1936,17 @@ renderer.domElement.addEventListener('pointermove', e => {
     const p = new THREE.Vector3();
     if (raycaster.ray.intersectPlane(drawing.plane, p)) {
       const h = Math.max(0.05, snapping ? Math.round(p.y / SNAP) * SNAP : p.y);
+      drawing.appliedH = h;
+      const nowF = performance.now();
+      if (!drawing.statusTick || nowF - drawing.statusTick > 120) {
+        drawing.statusTick = nowF;
+        setStatus('Extrusion : hauteur ' + fmtLen(h) + ' — cliquez pour poser, ou tapez une valeur + Entrée.');
+      }
       const obj = drawing.obj;
       obj.scale.y = h;
       obj.position.y = h / 2;
       outline.setFromObject(obj);
+      refreshCotes();
     }
     return;
   }
@@ -1113,6 +1960,27 @@ renderer.domElement.addEventListener('pointermove', e => {
 
 renderer.domElement.addEventListener('pointerup', e => {
   if (e.button !== 0) return;
+  if (mode === 'measure') {
+    if (leftDownPos && Math.hypot(e.clientX - leftDownPos.x, e.clientY - leftDownPos.y) < 6) {
+      const hit = pickMeasurePoint(e);
+      if (hit) {
+        if (!pendingA) {
+          pendingA = hit.p;
+          pendingASnap = hit.snap;
+          pendingAObj = hit.obj;
+          measureMarker.position.copy(hit.p);
+          measureMarker.visible = true;
+          setStatus('Cote : premier point posé' + (hit.onVertex ? ' (sommet)' : hit.onEdge ? ' (arête)' : '') + ' — cliquez le second point (Échap pour annuler).');
+        } else {
+          const d = pendingA.distanceTo(hit.p);
+          addCote(pendingA, hit.p, anchorFromSnap(pendingASnap, pendingAObj), anchorFromSnap(hit.snap, hit.obj));
+          clearMeasureLive();
+          setStatus('Cote créée : ' + fmtLen(d) + ' — cliquez pour une nouvelle cote (Échap ou changement d’outil pour finir).');
+        }
+      }
+    }
+    return;
+  }
   if (drawing && drawing.kind === 'rect') {
     const obj = preview;
     if (obj && obj.scale.x > 0.06 && obj.scale.z > 0.06) {
@@ -1156,11 +2024,6 @@ renderer.domElement.addEventListener('pointerup', e => {
     }
     drawing = null;
     controls.enabled = true;
-  } else if (drawing && drawing.kind === 'extrude') {
-    pushUndo({ type: 'extrude', obj: drawing.obj, from: drawing.from, fromObjY: drawing.fromObjY });
-    drawing = null;
-    controls.enabled = true;
-    setStatus('Extrusion terminée — Ctrl+Z pour annuler.');
   } else if (drawing && drawing.kind === 'move' && selected) {
     if (drawing.axisDir) {
       const raw = drawing.lastLen;
@@ -1188,9 +2051,19 @@ function removePreviewOnly() {
 
 renderer.domElement.addEventListener('pointerdown', e => {
   if (e.button === 2) rightDownPos = { x: e.clientX, y: e.clientY };
+  if (e.button === 0) leftDownPos = { x: e.clientX, y: e.clientY };
 });
 
 renderer.domElement.addEventListener('contextmenu', e => {
+  if (mode === 'measure') {
+    e.preventDefault();
+    const cote = nearestCote(e.clientX, e.clientY, 12);
+    if (cote) {
+      removeCote(cote);
+      setStatus('Cote supprimée — ' + measures.length + ' cote(s) restante(s).');
+    }
+    return;
+  }
   if (mode === 'pushpull' && drawing && drawing.kind === 'face') {
     e.preventDefault();
     cancelDraw();
