@@ -747,6 +747,8 @@ struct Extrude {
     std::vector<unsigned> vset;      /* sommets de la face (patch) */
     std::vector<size_t> patchTris;   /* tris du patch */
     std::vector<std::pair<unsigned, unsigned>> boundary; /* perimetre du patch */
+    std::vector<char> inCompVert;    /* sommets de la composante connexe du patch (vide = tout le mesh) */
+    std::vector<char> inCompTri;     /* tris de cette composante : butee, pli et feuille ne la concernent qu'elle */
     double dLow = 0.0, dHigh = 0.0;  /* butees : epaisseur de matiere disponible */
     bool hasLow = false, hasHigh = false;
     double d = 0.0;                  /* dernier deplacement applique */
@@ -816,11 +818,58 @@ static bool makeExtrude(const Object& o, size_t clickedTri, Extrude& dd) {
         if (kv.second == 1)
             boundary.emplace_back((unsigned)(kv.first >> 32), (unsigned)(kv.first & 0xffffffffULL));
 
+    /* composante connexe du patch : tous les tris joignables par aretes, meme
+       non coplanaires (un voisin a pu etre plie par une extrusion precedente).
+       Les aretes sont reconnues par POSITION (quantification 1e-6 relatif) et
+       non par index : une face a coins dupliques (STL non soude) ou une feuille
+       a deux windings index-disjoints restent rattachees a leur coque ; une coque
+       disjointe (silhouette dans un mesh SketchUp) ne l'est pas. Butee, pli
+       rentrant, feuille et recreation ne touchent que cette composante. */
+    std::vector<char> inCompTri(triCount, 0);
+    {
+        std::unordered_map<unsigned long long, unsigned> gcells;
+        std::vector<unsigned> gv(o.v.size());
+        const double tolG = 1e-6 * std::max(1.0, sizeW);
+        for (size_t i = 0; i < o.v.size(); ++i) {
+            const Vec3 wx = worldV((unsigned)i);
+            const long long cx = (long long)std::floor(wx.x / tolG);
+            const long long cy = (long long)std::floor(wx.y / tolG);
+            const long long cz = (long long)std::floor(wx.z / tolG);
+            const unsigned long long ckey = ((unsigned long long)(cx + (1LL << 20)) << 42)
+                                          | ((unsigned long long)(cy + (1LL << 20)) << 21)
+                                          |  (unsigned long long)(cz + (1LL << 20));
+            auto it = gcells.find(ckey);
+            if (it == gcells.end()) { gv[i] = (unsigned)gcells.size(); gcells.emplace(ckey, gv[i]); }
+            else gv[i] = it->second;
+        }
+        std::unordered_map<unsigned long long, std::vector<size_t>> edgeTrisG;
+        for (size_t t = 0; t < triCount; ++t)
+            for (int k = 0; k < 3; ++k)
+                edgeTrisG[ekey(gv[o.tri[t * 3 + k]], gv[o.tri[t * 3 + (k + 1) % 3]])].push_back(t);
+        std::vector<size_t> cpile(patchTris.begin(), patchTris.end());
+        for (size_t t : patchTris) inCompTri[t] = 1;
+        while (!cpile.empty()) {
+            const size_t t = cpile.back();
+            cpile.pop_back();
+            for (int k = 0; k < 3; ++k)
+                for (size_t t2 : edgeTrisG[ekey(gv[o.tri[t * 3 + k]], gv[o.tri[t * 3 + (k + 1) % 3]])]) {
+                    if (inCompTri[t2]) continue;
+                    inCompTri[t2] = 1;
+                    cpile.push_back(t2);
+                }
+        }
+    }
+    std::vector<char> inCompVert(o.v.size(), 0);
+    for (size_t t = 0; t < triCount; ++t) {
+        if (!inCompTri[t]) continue;
+        for (int k = 0; k < 3; ++k) inCompVert[o.tri[t * 3 + k]] = 1;
+    }
+
     double dLow = 0.0, dHigh = 0.0;
     bool hasLow = false, hasHigh = false;
     const double tiny = 1e-7 * std::max(1.0, sizeW);
     for (unsigned i = 0; i < o.v.size(); ++i) {
-        if (seen[i]) continue;
+        if (seen[i] || !inCompVert[i]) continue;   /* butee = epaisseur de la coque capturee, pas celle des objets voisins */
         const double along = dot(worldV(i) - planePoint, n0);
         if (along < -tiny) { if (!hasLow || along < dLow) { dLow = along; hasLow = true; } }
         if (along >  tiny) { if (!hasHigh || along > dHigh) { dHigh = along; hasHigh = true; } }
@@ -843,6 +892,8 @@ static bool makeExtrude(const Object& o, size_t clickedTri, Extrude& dd) {
     dd.boundary = std::move(boundary);
     dd.dLow = flip ? -dHigh : dLow;   dd.hasLow  = flip ? hasHigh : hasLow;
     dd.dHigh = flip ? -dLow : dHigh;  dd.hasHigh = flip ? hasLow : hasHigh;
+    dd.inCompVert = std::move(inCompVert);
+    dd.inCompTri = std::move(inCompTri);
     dd.d = 0.0;
     return true;
 }
@@ -854,12 +905,18 @@ static void applyExtrude(Object& o, const Extrude& dd, double d) {
     const Vec3 dl = n * (d / o.scl);
     const Vec3 ppL = (dd.planePoint - o.pos) * (1.0 / o.scl);
 
+    /* aMin/aMax sur la seule composante capturee : la detection de feuille et
+       les butees ne doivent pas dependre d'une coque disjointe du meme mesh.
+       La bbox w0/w1 reste globale (taille de reference pour les seuils). */
     double aMin = 1e300, aMax = -1e300;
     Vec3 w0(1e300, 1e300, 1e300), w1(-1e300, -1e300, -1e300);
-    for (const Vec3& p : dd.base) {
-        const double al = dot(p - ppL, n);
-        if (al < aMin) aMin = al;
-        if (al > aMax) aMax = al;
+    for (size_t i = 0; i < dd.base.size(); ++i) {
+        const Vec3& p = dd.base[i];
+        if (dd.inCompVert.empty() || dd.inCompVert[i]) {
+            const double al = dot(p - ppL, n);
+            if (al < aMin) aMin = al;
+            if (al > aMax) aMax = al;
+        }
         const Vec3 w = p * o.scl;
         if (w.x < w0.x) w0.x = w.x;
         if (w.y < w0.y) w0.y = w.y;
@@ -888,6 +945,7 @@ static void applyExtrude(Object& o, const Extrude& dd, double d) {
         std::vector<unsigned> cid(dd.base.size());
         std::vector<Vec3> rep;
         for (size_t i = 0; i < dd.base.size(); ++i) {
+            if (!dd.inCompVert.empty() && !dd.inCompVert[i]) continue;   /* hors composante : pas regroupe, reemis tel quel */
             const Vec3 p = dd.base[i];
             const long long cx = (long long)std::floor(p.x / tol), cy = (long long)std::floor(p.y / tol), cz = (long long)std::floor(p.z / tol);
             unsigned repId = 0;
@@ -913,6 +971,7 @@ static void applyExtrude(Object& o, const Extrude& dd, double d) {
         std::set<std::array<unsigned, 3>> seenT;
         double sgn = 0.0;
         for (size_t t = 0; t < dd.tri.size(); t += 3) {
+            if (!dd.inCompTri.empty() && !dd.inCompTri[t / 3]) continue;   /* coques disjointes : pas dans la feuille */
             std::array<unsigned, 3> ids = {cid[dd.tri[t]], cid[dd.tri[t + 1]], cid[dd.tri[t + 2]]};
             const Vec3 p0 = rep[ids[0]], p1 = rep[ids[1]], p2 = rep[ids[2]];
             const Vec3 e1 = p1 - p0, e2 = p2 - p0, e3 = p0 - p2;
@@ -929,8 +988,31 @@ static void applyExtrude(Object& o, const Extrude& dd, double d) {
         }
         if (sgn > 0.0)
             for (auto& ids : trisB) std::swap(ids[1], ids[2]);
-        o.v = rep;
+        /* reconstruction : les coques hors composante survivent telles quelles
+           (remap identite sur leurs sommets), la composante capturee est
+           reconstituee en coque fermee : fond + face deplacee + jupe. */
+        std::vector<unsigned> remap(dd.base.size(), 0);
         o.tri.clear();
+        if (dd.inCompVert.empty()) {
+            for (size_t i = 0; i < cid.size(); ++i) remap[i] = cid[i];
+            o.v = rep;
+        } else {
+            o.v.clear();
+            o.v.reserve(dd.base.size() + rep.size());
+            for (size_t i = 0; i < dd.base.size(); ++i)
+                if (!dd.inCompVert[i]) { remap[i] = (unsigned)o.v.size(); o.v.push_back(dd.base[i]); }
+            const unsigned repOff = (unsigned)o.v.size();
+            for (const Vec3& p : rep) o.v.push_back(p);
+            for (size_t i = 0; i < dd.base.size(); ++i)
+                if (dd.inCompVert[i]) remap[i] = repOff + cid[i];
+            for (auto& ids : trisB) { ids[0] += repOff; ids[1] += repOff; ids[2] += repOff; }
+        }
+        for (size_t t = 0; t < dd.tri.size(); t += 3) {
+            if (!dd.inCompTri.empty() && dd.inCompTri[t / 3]) continue;
+            o.tri.push_back(remap[dd.tri[t]]);
+            o.tri.push_back(remap[dd.tri[t + 1]]);
+            o.tri.push_back(remap[dd.tri[t + 2]]);
+        }
         if (std::fabs(d) < 1e-9) {
             for (const auto& ids : trisB) {
                 o.tri.push_back(ids[0]); o.tri.push_back(ids[1]); o.tri.push_back(ids[2]);
@@ -939,11 +1021,11 @@ static void applyExtrude(Object& o, const Extrude& dd, double d) {
             return;
         }
         std::unordered_map<unsigned, unsigned> topId;
-        auto topOf = [&](unsigned b) {
+        auto topOf = [&](unsigned b) {   /* b : index du sommet du fond dans o.v */
             auto it = topId.find(b);
             if (it != topId.end()) return it->second;
             const unsigned id = (unsigned)o.v.size();
-            o.v.push_back(rep[b] + dl);
+            o.v.push_back(o.v[b] + dl);
             topId.emplace(b, id);
             return id;
         };
@@ -983,17 +1065,40 @@ static void applyExtrude(Object& o, const Extrude& dd, double d) {
         std::vector<Vec3> nv(dd.base.size());
         std::vector<char> out(dd.base.size(), 0);
         for (size_t i = 0; i < dd.base.size(); ++i) {
+            const bool comp = dd.inCompVert.empty() || dd.inCompVert[i] != 0;   /* jamais plier une coque disjointe */
             const double al = dot(dd.base[i] * o.scl - (dd.planePoint - o.pos), n);
-            out[i] = (al > d + tiny) ? 1 : 0;
+            out[i] = (comp && al > d + tiny) ? 1 : 0;
             nv[i] = out[i] ? dd.base[i] + n * ((d - al) / o.scl) : dd.base[i];
         }
         std::vector<char> isPatch(dd.tri.size() / 3, 0);   /* indexe par les positions de dd.tri, pas par o.tri (rappels a chaque frame) */
         for (size_t t : dd.patchTris) isPatch[t] = 1;
         o.tri.clear();
         o.tri.reserve(dd.tri.size());
+        std::unordered_map<unsigned, unsigned> cloneOf;
         for (size_t t = 0; t < dd.tri.size(); t += 3) {
+            const bool compTri = dd.inCompTri.empty() || dd.inCompTri[t / 3];
             const bool all = out[dd.tri[t]] && out[dd.tri[t + 1]] && out[dd.tri[t + 2]];
-            if (all && !isPatch[t / 3]) continue;
+            if (all && !isPatch[t / 3] && compTri) continue;
+            if (!compTri) {
+                /* coque hors composante : geometrie figee. Un sommet partage avec
+                   la coque padsee (soudure du fichier source) est clone a sa
+                   position d'origine, jamais plie : sinon le tri voisin se
+                   deformait jusqu'a devenir degenere et disparaissait. */
+                unsigned c[3];
+                for (int k = 0; k < 3; ++k) {
+                    const unsigned v = dd.tri[t + k];
+                    if (!out[v]) { c[k] = v; continue; }
+                    auto it = cloneOf.find(v);
+                    if (it == cloneOf.end()) {
+                        const unsigned id = (unsigned)nv.size();
+                        nv.push_back(dd.base[v]);
+                        it = cloneOf.emplace(v, id).first;
+                    }
+                    c[k] = it->second;
+                }
+                o.tri.push_back(c[0]); o.tri.push_back(c[1]); o.tri.push_back(c[2]);
+                continue;
+            }
             const Vec3 v0 = nv[dd.tri[t]], v1 = nv[dd.tri[t + 1]], v2 = nv[dd.tri[t + 2]];
             const Vec3 e1 = v1 - v0, e2 = v2 - v0, e3 = v0 - v2;
             const Vec3 cr = cross(e1, e2);

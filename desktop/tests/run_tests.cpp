@@ -364,6 +364,48 @@ int main() {
         CHECK(std::fabs(b2.bmax.z - 1.0) < 1e-9, "push/pull echelle : sommet local monte a 1.0 (deplacement local 0.5)");
     }
 
+    /* --- 15. objet composite : mesh SketchUp avec deux coques disjointes
+            (cube + silhouette). Butée, pli rentrant et feuille ne doivent
+            toucher que la coque du patch, jamais la coque voisine. --- */
+    {
+        Object compo = makeBoxObject("Compo", Vec3(0, 0, 0), Vec3(0.5, 0.5, 0.5), col);
+        Object shell2 = makeBoxObject("S2", Vec3(0, 0, 0), Vec3(0.5, 0.5, 0.5), col);
+        const unsigned base2 = (unsigned)compo.v.size();
+        for (const Vec3& p : shell2.v) compo.v.push_back(p + Vec3(5, 0, 2));   /* coque 2 a cote et au-dessus */
+        for (size_t i = 0; i < shell2.tri.size(); ++i) compo.tri.push_back(base2 + shell2.tri[i]);
+        computeObjectDerived(compo);
+        CHECK(compo.v.size() == 16 && compo.tri.size() == 72 && countNonManifold(compo) == 0
+              && std::fabs(signedVolume(compo) - 2.0) < 1e-9,
+              "composite : deux coques fermees disjointes, volume 2");
+        Extrude dd;
+        CHECK(makeExtrude(compo, 2, dd), "composite : capture de la face du dessus de la coque 1");
+        CHECK(std::fabs(dd.dLow + 1.0) < 1e-9 && !dd.hasHigh,
+              "composite : butee = epaisseur de la coque poussee (la coque voisine au-dessus ne la bloque ni ne la prolonge)");
+        const size_t trisShell2 = 36;
+        const std::vector<unsigned> triAvant(compo.tri.begin() + 36, compo.tri.end());
+        const std::vector<Vec3> vAvant = compo.v;
+        applyExtrude(compo, dd, dd.dLow);
+        CHECK(compo.tri.size() == 16 * 3, "composite : butee -> feuille 4 tris + coque 2 intacte (16 tris)");
+        bool shell2OK = compo.tri.size() >= triAvant.size();
+        for (size_t i = 0; shell2OK && i < triAvant.size(); ++i) shell2OK = compo.tri[compo.tri.size() - triAvant.size() + i] == triAvant[i];
+        CHECK(shell2OK, "composite : les tris de la coque 2 survivent a l'identique");
+        bool vShell2OK = vAvant.size() == compo.v.size();
+        for (size_t i = base2; vShell2OK && i < compo.v.size(); ++i) vShell2OK = dot(compo.v[i] - vAvant[i], compo.v[i] - vAvant[i]) < 1e-18;
+        CHECK(vShell2OK, "composite : aucun sommet de la coque 2 ne bouge au pli");
+        CHECK(std::fabs(signedVolume(compo) - 1.0) < 1e-9
+              && countNonManifold(compo) == 8,
+              "composite : feuille aplat a la butee (volume = coque 2 seule), 8 bords ouverts en index");
+        /* capture de la feuille (couche opposee, comme le rayon qui pille la couche basse) */
+        Extrude dd3;
+        CHECK(makeExtrude(compo, 0, dd3), "composite : capture de la feuille");
+        CHECK(std::fabs(dd3.normal.z - 1.0) < 1e-9 && !dd3.hasLow && !dd3.hasHigh,
+              "composite : normale feuille reorientee du cote camera, aucune butee gauche");
+        applyExtrude(compo, dd3, 0.5);
+        CHECK(std::fabs(signedVolume(compo) - 1.5) < 1e-9 && countNonManifold(compo) == 0
+              && std::fabs(compo.bmin.z + 0.5) < 1e-9 && std::fabs(compo.bmax.z - 2.5) < 1e-9,
+              "composite : pull +0.5 -> solide referme de la coque 1 (0.5) + coque 2 inchangee (1.0)");
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }
