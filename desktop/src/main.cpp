@@ -15,14 +15,17 @@
 
 #include <GLFW/glfw3.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -298,7 +301,7 @@ static bool rayTri(const Vec3& org, const Vec3& dir, const Vec3& a, const Vec3& 
     return true;
 }
 
-static bool rayObject(const Vec3& org, const Vec3& dir, const Object& o, double& tHit) {
+static bool rayObjectTri(const Vec3& org, const Vec3& dir, const Object& o, double& tHit, size_t* triIdx) {
     double t0;
     if (!rayAABB(org, dir, o.pos + o.bmin * o.scl, o.pos + o.bmax * o.scl, t0)) return false;
     /* rayon ramene en local : orgL + dirL*t = vlocal, meme parametre t (monde) */
@@ -308,12 +311,18 @@ static bool rayObject(const Vec3& org, const Vec3& dir, const Object& o, double&
     double best = 1e300;
     for (size_t i = 0; i < o.tri.size(); i += 3) {
         double t;
-        if (rayTri(orgL, dirL, o.v[o.tri[i]], o.v[o.tri[i + 1]], o.v[o.tri[i + 2]], t)
-            && t < best) best = t;
+        if (rayTri(orgL, dirL, o.v[o.tri[i]], o.v[o.tri[i + 1]], o.v[o.tri[i + 2]], t) && t < best) {
+            best = t;
+            if (triIdx) *triIdx = i / 3;
+        }
     }
     if (best >= 1e300) return false;
     tHit = best;
     return true;
+}
+
+static bool rayObject(const Vec3& org, const Vec3& dir, const Object& o, double& tHit) {
+    return rayObjectTri(org, dir, o, tHit, nullptr);
 }
 
 static int pickAt(GLFWwindow* w) {
@@ -386,6 +395,56 @@ static void updateDrag(GLFWwindow* w) {
 /* Import OBJ / STL                                                    */
 /* ------------------------------------------------------------------ */
 
+/* Soudure des sommets coincidents a l'import (lot web 3.6) : grille spatiale
+   a tolerance relative, les sommets juxtaposes (STL, triangulations de coque)
+   partagent ensuite leurs indices — indispensable pour le Push/Pull. */
+static void weldObject(Object& o) {
+    computeObjectDerived(o);
+    const double span = std::max(std::max(o.bmax.x - o.bmin.x, o.bmax.y - o.bmin.y), o.bmax.z - o.bmin.z);
+    if (o.v.empty() || span <= 0.0) return;
+    const double tol = span * 1e-6;
+    const double t2 = tol * tol;
+    auto cellKey = [](long long cx, long long cy, long long cz) {
+        return ((unsigned long long)(cx + (1LL << 20)) << 42)
+             | ((unsigned long long)(cy + (1LL << 20)) << 21)
+             |  (unsigned long long)(cz + (1LL << 20));
+    };
+    std::unordered_map<unsigned long long, std::vector<int>> cells;
+    std::vector<unsigned> remap(o.v.size(), 0);
+    std::vector<Vec3> out;
+    out.reserve(o.v.size());
+    for (size_t i = 0; i < o.v.size(); ++i) {
+        const Vec3 p = o.v[i];
+        const long long cx = (long long)std::floor(p.x / tol), cy = (long long)std::floor(p.y / tol), cz = (long long)std::floor(p.z / tol);
+        int rep = -1;
+        for (long long u = -1; u <= 1 && rep < 0; ++u)
+            for (long long w = -1; w <= 1 && rep < 0; ++w)
+                for (long long q = -1; q <= 1 && rep < 0; ++q) {
+                    auto it = cells.find(cellKey(cx + u, cy + w, cz + q));
+                    if (it == cells.end()) continue;
+                    for (int r : it->second) {
+                        const Vec3 d = out[(size_t)r] - p;
+                        if (dot(d, d) <= t2) { rep = r; break; }
+                    }
+                }
+        if (rep < 0) {
+            rep = (int)out.size();
+            out.push_back(p);
+            cells[cellKey(cx, cy, cz)].push_back(rep);
+        }
+        remap[i] = (unsigned)rep;
+    }
+    o.v = std::move(out);
+    std::vector<unsigned> tris;
+    tris.reserve(o.tri.size());
+    for (size_t i = 0; i + 2 < o.tri.size(); i += 3) {
+        const unsigned a = remap[o.tri[i]], b = remap[o.tri[i + 1]], c = remap[o.tri[i + 2]];
+        if (a == b || b == c || a == c) continue;
+        tris.push_back(a); tris.push_back(b); tris.push_back(c);
+    }
+    o.tri = std::move(tris);
+}
+
 static std::string baseNameOf(const std::string& path) {
     size_t p = path.find_last_of("/\\");
     std::string s = (p == std::string::npos) ? path : path.substr(p + 1);
@@ -437,7 +496,11 @@ static bool loadOBJ(std::istream& in, Object& o, std::string& err) {
     if (raw.empty() || tris.empty()) { err = "pas de triangles dans le fichier OBJ"; return false; }
     o.v = std::move(raw);
     o.tri = std::move(tris);
+    const size_t rawCount = o.v.size();
+    weldObject(o);
     computeObjectDerived(o);
+    if (o.v.size() < rawCount)
+        std::printf("import OBJ : %zu sommets soudes (%zu restants)\n", rawCount - o.v.size(), o.v.size());
     if (skipped) std::printf("import OBJ : %zu faces degenerees ou invalides ignorees\n", skipped);
     return true;
 }
@@ -488,7 +551,11 @@ static bool loadSTL(std::istream& in, Object& o, std::string& err) {
         o.tri.push_back((unsigned)(i + 1));
         o.tri.push_back((unsigned)(i + 2));
     }
+    const size_t rawCount = o.v.size();
+    weldObject(o);
     computeObjectDerived(o);
+    if (o.v.size() < rawCount)
+        std::printf("import STL : %zu sommets soudes (%zu restants)\n", rawCount - o.v.size(), o.v.size());
     return true;
 }
 
@@ -668,6 +735,341 @@ static void exportSTL(const std::string& path) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Push/Pull (transcription des lots web 3.x, etat final 3.10.3)       */
+/* ------------------------------------------------------------------ */
+
+struct Extrude {
+    int obj = -1;                    /* index dans g_objs */
+    Vec3 normal, planePoint;         /* monde ; normal pointe hors de la matiere */
+    Vec3 pn;                         /* normale du plan de souris (projetee camera) */
+    std::vector<Vec3> base;          /* copie des sommets locaux a la capture */
+    std::vector<unsigned> tri;       /* copie des tris a la capture */
+    std::vector<unsigned> vset;      /* sommets de la face (patch) */
+    std::vector<size_t> patchTris;   /* tris du patch */
+    std::vector<std::pair<unsigned, unsigned>> boundary; /* perimetre du patch */
+    double dLow = 0.0, dHigh = 0.0;  /* butees : epaisseur de matiere disponible */
+    bool hasLow = false, hasHigh = false;
+    double d = 0.0;                  /* dernier deplacement applique */
+    std::string numBuf;              /* saisie de dimension exacte */
+};
+static bool g_ppMode = false;        /* touche P : mode Push/Pull */
+static bool g_ppActive = false;      /* une face est capturee, en attente de pose */
+static Extrude g_pp;
+static double g_ppStatusTick = 0.0;
+
+static bool makeExtrude(const Object& o, size_t clickedTri, Extrude& dd) {
+    const size_t triCount = o.tri.size() / 3;
+    if (o.tri.size() < 9 || clickedTri >= triCount) return false;
+    const Vec3 n0raw = o.n[clickedTri];
+    if (!(dot(n0raw, n0raw) > 0.5)) return false;
+    const Vec3 n0 = n0raw;
+    auto worldV = [&o](unsigned i) { return o.pos + o.v[i] * o.scl; };
+    const Vec3 spanW = (o.bmax - o.bmin) * o.scl;
+    const double sizeW = std::max(std::max(spanW.x, spanW.y), spanW.z);
+    const double epsW = 1e-6 * std::max(1.0, sizeW);
+    const Vec3 planePoint = worldV(o.tri[clickedTri * 3]);
+
+    auto ekey = [](unsigned a, unsigned b) {
+        return a < b ? ((unsigned long long)a << 32) | b : ((unsigned long long)b << 32) | a;
+    };
+    std::unordered_map<unsigned long long, std::vector<size_t>> edgeTris;
+    for (size_t t = 0; t < triCount; ++t)
+        for (int k = 0; k < 3; ++k)
+            edgeTris[ekey(o.tri[t * 3 + k], o.tri[t * 3 + (k + 1) % 3])].push_back(t);
+
+    /* patch = tris coplanaires connectes par aretes (BFS, comme le web) */
+    std::vector<char> inPatch(triCount, 0);
+    std::vector<size_t> pile{clickedTri};
+    inPatch[clickedTri] = 1;
+    while (!pile.empty()) {
+        const size_t t = pile.back();
+        pile.pop_back();
+        for (int k = 0; k < 3; ++k)
+            for (size_t t2 : edgeTris[ekey(o.tri[t * 3 + k], o.tri[t * 3 + (k + 1) % 3])]) {
+                if (inPatch[t2]) continue;
+                if (std::fabs(dot(o.n[t2], n0)) < 0.999) continue;
+                inPatch[t2] = 1;
+                pile.push_back(t2);
+            }
+    }
+    for (size_t t = 0; t < triCount; ++t)
+        if (inPatch[t])
+            for (int k = 0; k < 3; ++k)
+                if (std::fabs(dot(worldV(o.tri[t * 3 + k]) - planePoint, n0)) > epsW) return false;
+
+    std::vector<unsigned> vset;
+    std::vector<char> seen(o.v.size(), 0);
+    std::vector<size_t> patchTris;
+    for (size_t t = 0; t < triCount; ++t) {
+        if (!inPatch[t]) continue;
+        patchTris.push_back(t);
+        for (int k = 0; k < 3; ++k) {
+            const unsigned id = o.tri[t * 3 + k];
+            if (!seen[id]) { seen[id] = 1; vset.push_back(id); }
+        }
+    }
+    std::unordered_map<unsigned long long, int> ecount;
+    for (size_t t : patchTris)
+        for (int k = 0; k < 3; ++k) ++ecount[ekey(o.tri[t * 3 + k], o.tri[t * 3 + (k + 1) % 3])];
+    std::vector<std::pair<unsigned, unsigned>> boundary;
+    for (const auto& kv : ecount)
+        if (kv.second == 1)
+            boundary.emplace_back((unsigned)(kv.first >> 32), (unsigned)(kv.first & 0xffffffffULL));
+
+    double dLow = 0.0, dHigh = 0.0;
+    bool hasLow = false, hasHigh = false;
+    const double tiny = 1e-7 * std::max(1.0, sizeW);
+    for (unsigned i = 0; i < o.v.size(); ++i) {
+        if (seen[i]) continue;
+        const double along = dot(worldV(i) - planePoint, n0);
+        if (along < -tiny) { if (!hasLow || along < dLow) { dLow = along; hasLow = true; } }
+        if (along >  tiny) { if (!hasHigh || along > dHigh) { dHigh = along; hasHigh = true; } }
+    }
+    const bool flip = hasHigh && !hasLow;
+
+    dd.normal = flip ? n0 * -1.0 : n0;
+    dd.planePoint = planePoint;
+    dd.base = o.v;
+    dd.tri = o.tri;
+    dd.vset = std::move(vset);
+    dd.patchTris = std::move(patchTris);
+    dd.boundary = std::move(boundary);
+    dd.dLow = flip ? -dHigh : dLow;   dd.hasLow  = flip ? hasHigh : hasLow;
+    dd.dHigh = flip ? -dLow : dHigh;  dd.hasHigh = flip ? hasLow : hasHigh;
+    dd.d = 0.0;
+    return true;
+}
+
+static void applyExtrude(Object& o, const Extrude& dd, double d) {
+    if (dd.hasLow  && d < dd.dLow)  d = dd.dLow;
+    if (dd.hasHigh && d > dd.dHigh) d = dd.dHigh;
+    const Vec3 n = dd.normal;
+    const Vec3 dl = n * (d / o.scl);
+    const Vec3 ppL = (dd.planePoint - o.pos) * (1.0 / o.scl);
+
+    double aMin = 1e300, aMax = -1e300;
+    Vec3 w0(1e300, 1e300, 1e300), w1(-1e300, -1e300, -1e300);
+    for (const Vec3& p : dd.base) {
+        const double al = dot(p - ppL, n);
+        if (al < aMin) aMin = al;
+        if (al > aMax) aMax = al;
+        const Vec3 w = p * o.scl;
+        if (w.x < w0.x) w0.x = w.x;
+        if (w.y < w0.y) w0.y = w.y;
+        if (w.z < w0.z) w0.z = w.z;
+        if (w.x > w1.x) w1.x = w.x;
+        if (w.y > w1.y) w1.y = w.y;
+        if (w.z > w1.z) w1.z = w.z;
+    }
+    const double sizeW = std::max(std::max(w1.x - w0.x, w1.y - w0.y), w1.z - w0.z);
+
+    if ((aMax - aMin) <= 1e-3 * std::max(sizeW, 1e-12)) {
+        /* feuille aplatie a la butee : le pull recree du volume. Fond = une seule
+           couche a la position d'origine (sommets regroupes en clusters, doublons
+           coplanaires fondus, winding normalise oppose au deplacement), couche
+           deplacee = copie inversee translatée, jupe = perimetre de la couche. */
+        double mx = 1e-9;
+        for (const Vec3& p : dd.base)
+            mx = std::max(mx, std::max(std::fabs(p.x), std::max(std::fabs(p.y), std::fabs(p.z))));
+        const double tol = 1e-6 * mx, t2 = tol * tol;   /* |floor(p/tol)| <= 1e6 < 2^20 : codage cellKey garanti */
+        auto cellKey = [](long long cx, long long cy, long long cz) {
+            return ((unsigned long long)(cx + (1LL << 20)) << 42)
+                 | ((unsigned long long)(cy + (1LL << 20)) << 21)
+                 |  (unsigned long long)(cz + (1LL << 20));
+        };
+        std::unordered_map<unsigned long long, std::vector<unsigned>> cells;
+        std::vector<unsigned> cid(dd.base.size());
+        std::vector<Vec3> rep;
+        for (size_t i = 0; i < dd.base.size(); ++i) {
+            const Vec3 p = dd.base[i];
+            const long long cx = (long long)std::floor(p.x / tol), cy = (long long)std::floor(p.y / tol), cz = (long long)std::floor(p.z / tol);
+            unsigned repId = 0;
+            bool found = false;
+            for (long long u = -1; u <= 1 && !found; ++u)
+                for (long long w = -1; w <= 1 && !found; ++w)
+                    for (long long q = -1; q <= 1 && !found; ++q) {
+                        auto it = cells.find(cellKey(cx + u, cy + w, cz + q));
+                        if (it == cells.end()) continue;
+                        for (unsigned r : it->second) {
+                            const Vec3 d3 = rep[r] - p;
+                            if (dot(d3, d3) <= t2) { repId = r; found = true; break; }
+                        }
+                    }
+            if (!found) {
+                repId = (unsigned)rep.size();
+                rep.push_back(p);
+                cells[cellKey(cx, cy, cz)].push_back(repId);
+            }
+            cid[i] = repId;
+        }
+        std::vector<std::array<unsigned, 3>> trisB;
+        std::set<std::array<unsigned, 3>> seenT;
+        double sgn = 0.0;
+        for (size_t t = 0; t < dd.tri.size(); t += 3) {
+            std::array<unsigned, 3> ids = {cid[dd.tri[t]], cid[dd.tri[t + 1]], cid[dd.tri[t + 2]]};
+            const Vec3 p0 = rep[ids[0]], p1 = rep[ids[1]], p2 = rep[ids[2]];
+            const Vec3 e1 = p1 - p0, e2 = p2 - p0, e3 = p0 - p2;
+            const Vec3 cr = cross(e1, e2);
+            const double m1 = dot(e1, e1), m2 = dot(e2, e2), m3 = dot(e3, e3);
+            const double mm = std::max(m1, std::max(m2, m3));
+            if (dot(cr, cr) <= 1e-7 * mm * mm) continue;
+            if (dot(cr, n) <= 0.0) continue;
+            std::array<unsigned, 3> key = ids;
+            std::sort(key.begin(), key.end());
+            if (!seenT.insert(key).second) continue;
+            sgn += dot(cross(e1, e2), dl);
+            trisB.push_back(ids);
+        }
+        if (sgn > 0.0)
+            for (auto& ids : trisB) std::swap(ids[1], ids[2]);
+        o.v = rep;
+        o.tri.clear();
+        if (std::fabs(d) < 1e-9) {
+            for (const auto& ids : trisB) {
+                o.tri.push_back(ids[0]); o.tri.push_back(ids[1]); o.tri.push_back(ids[2]);
+            }
+            computeObjectDerived(o);
+            return;
+        }
+        std::unordered_map<unsigned, unsigned> topId;
+        auto topOf = [&](unsigned b) {
+            auto it = topId.find(b);
+            if (it != topId.end()) return it->second;
+            const unsigned id = (unsigned)o.v.size();
+            o.v.push_back(rep[b] + dl);
+            topId.emplace(b, id);
+            return id;
+        };
+        for (const auto& ids : trisB) {
+            o.tri.push_back(ids[0]); o.tri.push_back(ids[1]); o.tri.push_back(ids[2]);
+        }
+        for (const auto& ids : trisB) {
+            const unsigned ta = topOf(ids[2]), tb = topOf(ids[1]), tc = topOf(ids[0]);
+            o.tri.push_back(ta); o.tri.push_back(tb); o.tri.push_back(tc);
+        }
+        std::unordered_map<unsigned long long, std::pair<unsigned, unsigned>> edir;
+        for (const auto& ids : trisB)
+            for (int k = 0; k < 3; ++k) {
+                const unsigned a = ids[k], b = ids[(k + 1) % 3];
+                const unsigned long long key = a < b ? ((unsigned long long)a << 32) | b : ((unsigned long long)b << 32) | a;
+                auto it = edir.find(key);
+                if (it == edir.end()) edir.emplace(key, std::make_pair(a, b));
+                else it->second = std::make_pair(0u, 0u);
+            }
+        for (const auto& kv : edir) {
+            if (kv.second.first == 0 && kv.second.second == 0) continue;
+            const unsigned a = kv.second.first, b = kv.second.second;
+            const unsigned ta = topOf(a), tb = topOf(b);
+            o.tri.push_back(b); o.tri.push_back(a); o.tri.push_back(ta);
+            o.tri.push_back(b); o.tri.push_back(ta); o.tri.push_back(tb);
+        }
+        computeObjectDerived(o);
+        return;
+    }
+
+    if (d <= 0.0 && !dd.hasHigh) {
+        /* push rentrant : pas d'interpolation. Tout ce qui est au-dela du plan
+           est replie exactement sur le plan (translation ne dependant que du
+           sommet), les tris du patch restent, les aretesjointes s'alignent : coque
+           fermee par construction. */
+        const double tiny = 1e-7 * std::max(1.0, sizeW);
+        std::vector<Vec3> nv(dd.base.size());
+        std::vector<char> out(dd.base.size(), 0);
+        for (size_t i = 0; i < dd.base.size(); ++i) {
+            const double al = dot(dd.base[i] * o.scl - (dd.planePoint - o.pos), n);
+            out[i] = (al > d + tiny) ? 1 : 0;
+            nv[i] = out[i] ? dd.base[i] + n * ((d - al) / o.scl) : dd.base[i];
+        }
+        std::vector<char> isPatch(o.tri.size() / 3, 0);
+        for (size_t t : dd.patchTris) isPatch[t] = 1;
+        o.tri.clear();
+        o.tri.reserve(dd.tri.size());
+        for (size_t t = 0; t < dd.tri.size(); t += 3) {
+            const bool all = out[dd.tri[t]] && out[dd.tri[t + 1]] && out[dd.tri[t + 2]];
+            if (all && !isPatch[t / 3]) continue;
+            const Vec3 v0 = nv[dd.tri[t]], v1 = nv[dd.tri[t + 1]], v2 = nv[dd.tri[t + 2]];
+            const Vec3 e1 = v1 - v0, e2 = v2 - v0, e3 = v0 - v2;
+            const Vec3 cr = cross(e1, e2);
+            const double mm = std::max(dot(e1, e1), std::max(dot(e2, e2), dot(e3, e3)));
+            if (dot(cr, cr) <= 1e-7 * mm * mm) continue;
+            o.tri.push_back(dd.tri[t]); o.tri.push_back(dd.tri[t + 1]); o.tri.push_back(dd.tri[t + 2]);
+        }
+        o.v = std::move(nv);
+        computeObjectDerived(o);
+        return;
+    }
+
+    if (std::fabs(d) < 1e-9) {
+        o.v = dd.base;
+        o.tri = dd.tri;
+        computeObjectDerived(o);
+        return;
+    }
+
+    /* tirage : la face bouge ; les aretes de son perimetre partagees avec une
+       paroi voisine etirent celle-ci (indices partages, rien a creer) ; une
+       arete de bord non partagee recoit une jupe (double couche de la source) */
+    std::unordered_map<unsigned long long, int> globalEcount;
+    for (size_t t = 0; t < dd.tri.size(); t += 3)
+        for (int k = 0; k < 3; ++k) {
+            unsigned a = dd.tri[t + k], b = dd.tri[t + (k + 1) % 3];
+            const unsigned long long key = a < b ? ((unsigned long long)a << 32) | b : ((unsigned long long)b << 32) | a;
+            ++globalEcount[key];
+        }
+    o.v = dd.base;
+    for (unsigned i : dd.vset) o.v[i] = o.v[i] + dl;
+    o.tri = dd.tri;
+    for (const auto& e : dd.boundary) {
+        const unsigned long long key = e.first < e.second
+            ? ((unsigned long long)e.first << 32) | e.second
+            : ((unsigned long long)e.second << 32) | e.first;
+        auto it = globalEcount.find(key);
+        if (it != globalEcount.end() && it->second > 1) continue;
+        const unsigned ba = (unsigned)o.v.size(); o.v.push_back(dd.base[e.first]);
+        const unsigned bb = (unsigned)o.v.size(); o.v.push_back(dd.base[e.second]);
+        o.tri.push_back(ba); o.tri.push_back(bb); o.tri.push_back(e.second);
+        o.tri.push_back(ba); o.tri.push_back(e.second); o.tri.push_back(e.first);
+    }
+    computeObjectDerived(o);
+}
+
+static void ppCancel() {
+    if (!g_ppActive || g_pp.obj < 0 || g_pp.obj >= (int)g_objs.size()) { g_ppActive = false; return; }
+    Object& o = g_objs[(size_t)g_pp.obj];
+    o.v = g_pp.base;
+    o.tri = g_pp.tri;
+    computeObjectDerived(o);
+    g_ppActive = false;
+    g_pp = Extrude();
+    std::printf("\nextrusion annulee\n");
+}
+
+static void ppCommit() {
+    std::printf("\nface posee — extrusion : %.3f\n", g_pp.d);
+    g_ppActive = false;
+    g_pp = Extrude();
+}
+
+static void updatePP(GLFWwindow* w) {
+    if (!g_ppActive || g_pp.obj < 0 || g_pp.obj >= (int)g_objs.size()) return;
+    Vec3 org, dir;
+    if (!rayFromMouse(w, org, dir)) return;
+    const double denom = dot(dir, g_pp.pn);
+    if (std::fabs(denom) < 1e-9) return;
+    const double t = dot(g_pp.planePoint - org, g_pp.pn) / denom;
+    if (t < 0.0) return;
+    const double d = dot((org + dir * t) - g_pp.planePoint, g_pp.normal);
+    applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, d);
+    g_pp.d = d;
+    const double now = glfwGetTime();
+    if (now - g_ppStatusTick > 0.12) {
+        g_ppStatusTick = now;
+        std::printf("\rExtrusion : %+.3f (clic pour poser, clic droit pour annuler)   ", d);
+        std::fflush(stdout);
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* Callbacks                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -678,8 +1080,46 @@ static void onScroll(GLFWwindow*, double, double dy) {
 }
 
 static void onMouseButton(GLFWwindow* w, int button, int action, int) {
+    if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+        if (action == GLFW_PRESS && g_ppActive) ppCancel();
+        return;                     /* menu contextuel : arrive avec l IHM (N5) */
+    }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
+        if (g_ppActive) { ppCommit(); return; }   /* second clic gauche : pose la face */
+        if (g_ppMode) {
+            Vec3 org, dir;
+            if (!rayFromMouse(w, org, dir)) return;
+            int hit = -1;
+            double bestT = 1e300;
+            size_t bestTri = 0;
+            for (size_t i = 0; i < g_objs.size(); ++i) {
+                double t;
+                size_t ti;
+                if (rayObjectTri(org, dir, g_objs[i], t, &ti) && t < bestT) {
+                    bestT = t; hit = (int)i; bestTri = ti;
+                }
+            }
+            if (hit < 0) return;
+            g_selected = hit;
+            Extrude dd;
+            if (!makeExtrude(g_objs[(size_t)hit], bestTri, dd)) {
+                std::printf("Face non plane — Push/Pull indisponible sur cette surface.\n");
+                return;
+            }
+            dd.obj = hit;
+            const Vec3 camDir = g_cam.forward();
+            Vec3 pn = camDir - dd.normal * dot(camDir, dd.normal);
+            if (dot(pn, pn) < 0.04) {
+                if (std::fabs(dd.normal.y) > 0.9) pn = Vec3(1, 0, 0);
+                else pn = Vec3(dd.normal.z, 0, -dd.normal.x);
+            }
+            dd.pn = pn;      /* plan de souris : passe par la face, face a l ecran */
+            g_pp = std::move(dd);
+            g_ppActive = true;
+            std::printf("face capturee — deplacez le long de la normale, cliquez pour poser la face (clic droit ou Echap : annuler ; chiffres + Entree : dimension exacte)\n");
+            return;
+        }
         const double now = glfwGetTime();
         const bool dbl = (now - g_lastClickTime) < 0.3;
         g_lastClickTime = now;
@@ -710,8 +1150,43 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
 }
 
 static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
+    if (g_ppActive) {
+        if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
+        if ((key >= GLFW_KEY_0 && key <= GLFW_KEY_9) || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA) {
+            if (g_pp.numBuf.size() < 16)
+                g_pp.numBuf += (key == GLFW_KEY_COMMA) ? char('.') : char(key);
+            std::printf("\rValeur saisie : %s — Entree pour appliquer (Retour arriere pour corriger)   ", g_pp.numBuf.c_str());
+            std::fflush(stdout);
+        } else if (key == GLFW_KEY_BACKSPACE) {
+            if (!g_pp.numBuf.empty()) g_pp.numBuf.pop_back();
+            std::printf("\rValeur saisie : %s — Entree pour appliquer   ", g_pp.numBuf.c_str());
+            std::fflush(stdout);
+        } else if (key == GLFW_KEY_ENTER) {
+            const double v = std::atof(g_pp.numBuf.c_str());
+            if (!std::isfinite(v) || v <= 0.0) {
+                std::printf("\nValeur invalide — tapez un nombre positif puis Entree.\n");
+            } else {
+                applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, v);
+                g_pp.d = v;
+                g_pp.numBuf.clear();
+                std::printf("\nExtrusion posee : %.3f — cliquez pour valider, ou continuez a deplacer\n", v);
+            }
+        } else if (key == GLFW_KEY_ESCAPE) {
+            ppCancel();
+        }
+        return;
+    }
     if (action == GLFW_PRESS) {
-        if (key == GLFW_KEY_ESCAPE) glfwSetWindowShouldClose(w, GLFW_TRUE);
+        if (key == GLFW_KEY_ESCAPE) {
+            if (g_ppMode) { g_ppMode = false; std::printf("mode selection\n"); return; }
+            glfwSetWindowShouldClose(w, GLFW_TRUE);
+        }
+        if (key == GLFW_KEY_P) {
+            g_ppMode = !g_ppMode;
+            std::printf(g_ppMode
+                ? "mode Push/Pull : cliquez une face (dessus ou cote), deplacez, puis re-cliquez pour poser\n"
+                : "mode selection\n");
+        }
         if (key == GLFW_KEY_F) frameSelected();
         if (key == GLFW_KEY_H) { goHome(); std::printf("vue d'origine\n"); }
         if (key == GLFW_KEY_I) { importFile(); }   /* importer OBJ/STL */
@@ -827,8 +1302,8 @@ static void drawAxisGuide() {
 /* ------------------------------------------------------------------ */
 
 int main() {
-    std::printf("Sketch3D natif — lot N3 (import/export OBJ + STL)\n");
-    std::printf("I : importer ; O : export OBJ ; S : export STL ; double-clic : rapprochement ; F : cadrage ; H : origine\n");
+    std::printf("Sketch3D natif — lot N4 (push/pull + soudure des sommets a l'import)\n");
+    std::printf("P : mode Push/Pull (clic sur face, deplacement, re-clic pour poser) ; I/O/S : import/exports ; F : cadrage ; H : origine\n");
     buildScene();
     if (!glfwInit()) { std::fprintf(stderr, "glfwInit a echoue\n"); return 1; }
 
@@ -836,7 +1311,7 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* win = glfwCreateWindow(g_winW, g_winH, "Sketch3D — build N3", nullptr, nullptr);
+    GLFWwindow* win = glfwCreateWindow(g_winW, g_winH, "Sketch3D — build N4", nullptr, nullptr);
     if (!win) { std::fprintf(stderr, "creation de fenetre impossible\n"); glfwTerminate(); return 1; }
     glfwMakeContextCurrent(win);
     glfwSwapInterval(1);
@@ -857,6 +1332,8 @@ int main() {
             g_prevX = x; g_prevY = y;
         } else if (g_mode == M_Drag) {
             updateDrag(win);
+        } else if (g_ppActive) {
+            updatePP(win);
         }
         render();
         drawAxisGuide();

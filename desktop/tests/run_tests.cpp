@@ -1,0 +1,338 @@
+/* Sketch3D natif — harnais de tests geometrique (sans fenetre, sans GLFW reel).
+   Compile avec les stubs de ./stub ; inclut directement src/main.cpp.
+   Lancer : cmake --build build --target sketch3d_tests puis executez build/sketch3d_tests */
+
+#include <cstdio>
+#include <cstring>
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <array>
+#include <set>
+#include <unordered_map>
+#include <cstdint>
+
+#define main sketch3d_unused_main
+#include "../src/main.cpp"
+#undef main
+
+static int g_fail = 0;
+#define CHECK(cond, msg) do { if (!(cond)) { std::printf("ECHEC: %s\n", (msg)); ++g_fail; } \
+                              else { std::printf("ok : %s\n", (msg)); } } while (0)
+
+static std::string testsDir() {
+    static const std::string d = [] {
+        namespace fs = std::filesystem;
+        std::string f = __FILE__;
+        const size_t s = f.find_last_of("/\\");
+        const std::string rel = f.substr(0, s);
+        if (fs::exists(rel + "/data")) return rel;
+        for (fs::path p = fs::current_path(); !p.empty(); p = p.parent_path()) {
+            const fs::path cand = p / "desktop" / "tests";
+            if (fs::exists(cand / "data")) return cand.string();
+        }
+        return rel;
+    }();
+    return d;
+}
+static std::string dataPath(const char* name) { return testsDir() + "/data/" + name; }
+static std::string tmpPath(const char* name) {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "sketch3d_tests";
+    fs::create_directories(dir);
+    return (dir / name).string();
+}
+
+static size_t countNonManifold(const Object& o) {
+    std::unordered_map<unsigned long long, int> arity;
+    for (size_t i = 0; i < o.tri.size(); i += 3)
+        for (int k = 0; k < 3; ++k) {
+            unsigned e0 = o.tri[i + k], e1 = o.tri[i + (k + 1) % 3];
+            if (e0 > e1) { unsigned t = e0; e0 = e1; e1 = t; }
+            ++arity[((unsigned long long)e0 << 32) | e1];
+        }
+    size_t nm = 0;
+    for (const auto& kv : arity) if (kv.second != 2) ++nm;
+    return nm;
+}
+
+static double signedVolume(const Object& o) {
+    double vol = 0.0;
+    for (size_t i = 0; i < o.tri.size(); i += 3)
+        vol += dot(o.v[o.tri[i]], cross(o.v[o.tri[i + 1]], o.v[o.tri[i + 2]]));
+    return vol / 6.0;
+}
+
+int main() {
+    /* cube de reference genere par le code lui-meme : unite, 12 tris, coque fermee */
+    const double col[3] = {0.5, 0.5, 0.5};
+    const Object cube = makeBoxObject("Cube A", Vec3(0.5, 0.5, 0.5), Vec3(0.5, 0.5, 0.5), col);
+    CHECK(cube.tri.size() == 36 && cube.edges.size() == 18, "boite de reference : 12 tris, 18 aretes");
+    CHECK(std::fabs(signedVolume(cube) - 1.0) < 1e-12, "boite de reference : volume signe = 1");
+
+    /* --- 1. OBJ simple --- */
+    {
+        std::ofstream f(tmpPath("cube.obj"));
+        for (const Vec3& p : cube.v) f << "v " << p.x + cube.pos.x << " " << p.y + cube.pos.y << " " << p.z + cube.pos.z << "\n";
+        for (size_t i = 0; i < cube.tri.size(); i += 3)
+            f << "f " << cube.tri[i] + 1 << " " << cube.tri[i + 1] + 1 << " " << cube.tri[i + 2] + 1 << "\n";
+    }
+    Object a; std::string err;
+    CHECK(loadMeshFile(tmpPath("cube.obj"), a, err), err.c_str());
+    CHECK(a.v.size() == 8 && a.tri.size() == 36, "OBJ : 8 sommets, 12 tris");
+    CHECK(std::fabs(signedVolume(a) - 1.0) < 1e-12, "OBJ : volume signe = 1");
+    CHECK(countNonManifold(a) == 0 && a.edges.size() == 18, "OBJ : coque fermee, 18 aretes uniques");
+
+    /* --- 2. OBJ avec slashes et indices negatifs --- */
+    {
+        std::ofstream f(tmpPath("cube2.obj"));
+        f << "# objet de test\nusemtl rien\n";
+        for (const Vec3& p : cube.v) f << "v " << p.x + cube.pos.x << " " << p.y + cube.pos.y << " " << p.z + cube.pos.z << "\n";
+        for (size_t i = 0; i < cube.tri.size(); i += 3)
+            f << "f " << cube.tri[i] + 1 << "/1/" << cube.tri[i] + 1 << " "
+              << cube.tri[i + 1] + 1 << "/1/" << cube.tri[i + 1] + 1 << " "
+              << cube.tri[i + 2] + 1 << "/1/" << cube.tri[i + 2] + 1 << "\n";
+        f << "f -8 -7 -6\n";
+    }
+    Object b; err.clear();
+    CHECK(loadMeshFile(tmpPath("cube2.obj"), b, err), err.c_str());
+    CHECK(b.tri.size() == 39, "OBJ : vt/vn ignores, indice negatif => 13 tris");
+
+    /* --- 3. STL binaire avec entete "solid..." (piege de detection), soudure N4 --- */
+    {
+        std::string bytes(80, '\0');
+        std::memcpy(bytes.data(), "solid ce nest pas du texte", 26);
+        const uint32_t cnt = 12;
+        bytes.append((const char*)&cnt, 4);
+        for (size_t i = 0; i < cube.tri.size(); i += 3) {
+            const Vec3 n = cube.n[i / 3];
+            float rec[12] = {(float)n.x, (float)n.y, (float)n.z, 0,0,0,0,0,0,0,0,0};
+            for (int k = 0; k < 3; ++k) {
+                const Vec3 w = cube.pos + cube.v[cube.tri[i + k]];
+                rec[3 + k * 3] = (float)w.x; rec[4 + k * 3] = (float)w.y; rec[5 + k * 3] = (float)w.z;
+            }
+            bytes.append((const char*)rec, sizeof(rec));
+            const uint16_t attr = 0;
+            bytes.append((const char*)&attr, 2);
+        }
+        std::ofstream f(tmpPath("cube_b.stl"), std::ios::binary);
+        f.write(bytes.data(), (std::streamsize)bytes.size());
+    }
+    Object c; err.clear();
+    CHECK(loadMeshFile(tmpPath("cube_b.stl"), c, err), err.c_str());
+    CHECK(c.v.size() == 8 && c.tri.size() == 36, "STL binaire : soudure => 8 sommets (36 coins fondus), 12 tris");
+    CHECK(std::fabs(signedVolume(c) - 1.0) < 1e-5, "STL binaire : volume signe = 1");
+    CHECK(countNonManifold(c) == 0 && c.edges.size() == 18, "STL binaire : coque fermee soudee, 18 aretes");
+
+    /* --- 4. STL ASCII (soudure aussi) --- */
+    {
+        std::ofstream f(tmpPath("cube_a.stl"));
+        f << "solid test\n";
+        for (size_t i = 0; i < cube.tri.size(); i += 3) {
+            f << "facet normal 0 0 0\nouter loop\n";
+            for (int k = 0; k < 3; ++k) {
+                const Vec3 w = cube.pos + cube.v[cube.tri[i + k]];
+                f << "vertex " << w.x << " " << w.y << " " << w.z << "\n";
+            }
+            f << "endloop\nendfacet\n";
+        }
+        f << "endsolid test\n";
+    }
+    Object d; err.clear();
+    CHECK(loadMeshFile(tmpPath("cube_a.stl"), d, err), err.c_str());
+    CHECK(d.v.size() == 8 && d.tri.size() == 36 && std::fabs(signedVolume(d) - 1.0) < 1e-12, "STL ASCII : soudure => 8 sommets, 12 tris, volume = 1");
+
+    /* --- 5. round-trip export OBJ -> relecture --- */
+    {
+        g_objs.clear();
+        g_objs.push_back(makeBoxObject("Pave", Vec3(2, 0.6, 1), Vec3(1.5, 0.6, 0.8), col));
+        g_objs.push_back(std::move(a));   /* cube lu en (1), tel quel */
+        exportOBJ(tmpPath("scene_export.obj"));
+        g_objs.clear();
+        Object r; err.clear();
+        CHECK(loadMeshFile(tmpPath("scene_export.obj"), r, err), err.c_str());
+        CHECK(r.tri.size() == 72 && std::fabs(signedVolume(r)) > 0.0, "round-trip OBJ : 24 tris, lecture reussie");
+    }
+
+    /* --- 6. fichier reel de l'utilisateur (SketchUp : 2 meshes, coordonnees en mm) --- */
+    {
+        Object r; err.clear();
+        if (loadMeshFile(dataPath("cube_sketchup.obj"), r, err)) {
+            std::printf("fichier reel : %zu sommets soudes, %zu tris, volume signe %.6g, non-manifold %zu\n",
+                        r.v.size(), r.tri.size(), signedVolume(r), countNonManifold(r));
+            CHECK(r.tri.size() >= 2600 && r.tri.size() <= 2769, "fichier reel : environ 2769 tris (Steve + cube)");
+            placeImport(r);
+            CHECK(std::fabs(signedVolume(r)) > 1e9, "fichier reel : pose au sol sans alterer le maillage");
+        } else {
+            std::printf("fichier reel : echec lecture (%s)\n", err.c_str());
+            ++g_fail;
+        }
+    }
+
+    /* --- 7. anti-superposition : deux imports identiques se decalent --- */
+    {
+        g_objs.clear();
+        Object p1 = makeBoxObject("P1", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), col);
+        g_objs.push_back(p1);
+        Object p2 = makeBoxObject("P2", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), col);
+        placeImport(p2);
+        CHECK(std::fabs(p2.pos.x) > 0.1, "anti-superposition : le second objet est decale");
+        g_objs.clear();
+    }
+
+    /* --- 8. echelle par objet : normalisation, picking et export avec echelle --- */
+    {
+        Object r; err.clear();
+        CHECK(loadMeshFile(dataPath("cube_sketchup.obj"), r, err), err.c_str());
+        const double rawSpan = std::max(std::max(r.bmax.x - r.bmin.x, r.bmax.y - r.bmin.y), r.bmax.z - r.bmin.z);
+        normalizeImportScale(r);
+        CHECK(r.scl < 1.0 && std::fabs(rawSpan * r.scl - 4.0) < 1e-9, "fichier reel : normalisation a 4 unites de haut");
+    }
+    {
+        Object b2 = makeBoxObject("B2", Vec3(0, 0, 0), Vec3(1, 1, 1), col);
+        b2.scl = 2.0;
+        b2.pos = Vec3(5, 2, 0);   /* monde : x 3..7, y 0..4, z -2..2 */
+        Vec3 org(5, 2, 20), dir(0, 0, -1);
+        double t;
+        CHECK(rayObject(org, dir, b2, t) && std::fabs(t - 18.0) < 1e-9, "picking avec echelle : hit calculé en monde (t = 18)");
+        g_objs.clear();
+        g_objs.push_back(b2);
+        exportOBJ(tmpPath("scaled.obj"));
+        g_objs.clear();
+        Object q; err.clear();
+        CHECK(loadMeshFile(tmpPath("scaled.obj"), q, err), err.c_str());
+        CHECK(std::fabs((q.bmax.x - q.bmin.x) - 4.0) < 1e-9 && std::fabs(q.bmax.y - q.bmin.y - 4.0) < 1e-9,
+              "export avec echelle : coordonnees monde (-2..2 en x local x2 => 4)");
+    }
+    g_selected = -1;
+
+    /* --- 9. import reel sur scene de demo : anticollision + cadrage (retour utilisateur N3.1) --- */
+    {
+        buildScene();
+        Object imp; err.clear();
+        CHECK(loadMeshFile(dataPath("cube_sketchup.obj"), imp, err), err.c_str());
+        normalizeImportScale(imp);
+        const int shifts = placeImport(imp);
+        bool anyOverlap = false, onGround = std::fabs(imp.pos.y + imp.bmin.y * imp.scl) < 1e-9;
+        for (const Object& o : g_objs) if (overlapsWorld(imp, o)) anyOverlap = true;
+        CHECK(!anyOverlap, "import reel : aucun chevauchement avec la scene de demo apres placement");
+        CHECK(onGround, "import reel : pose au sol (bmin.y monde = 0)");
+        CHECK(shifts > 0, "import reel : au moins un decalage anticollision applique");
+
+        const double firstX = imp.pos.x;
+        g_objs.push_back(std::move(imp));
+        g_selected = (int)g_objs.size() - 1;
+        frameSelected();
+        const Object& sel = g_objs[(size_t)g_selected];
+        const Vec3 expectT = sel.pos + (sel.bmin + sel.bmax) * (0.5 * sel.scl);
+        CHECK(std::fabs(g_cam.target.x - expectT.x) < 1e-9 && std::fabs(g_cam.target.y - expectT.y) < 1e-9
+              && std::fabs(g_cam.target.z - expectT.z) < 1e-9,
+              "cadrage post-import : cible = centre bbox en coordonnees MONDE (bug scl corrige)");
+        const double rr = ((sel.bmax - sel.bmin) * (0.5 * sel.scl)).norm();
+        const double expectD = std::max(rr / std::tan(kFovDeg * 3.14159265358979 / 360.0), 1.0) * 1.5;
+        CHECK(std::fabs(g_cam.dist - expectD) < 1e-9 && g_cam.dist < 40.0,
+              "cadrage post-import : distance = formule tangente, vue lisible (pas de zoom ecrase)");
+
+        Object imp2; err.clear();
+        CHECK(loadMeshFile(dataPath("cube_sketchup.obj"), imp2, err), err.c_str());
+        normalizeImportScale(imp2);
+        placeImport(imp2);
+        bool anyOverlap2 = false;
+        for (const Object& o : g_objs) if (overlapsWorld(imp2, o)) anyOverlap2 = true;
+        CHECK(!anyOverlap2, "second import successif : aucun chevauchement (ni scene, ni premier import)");
+        CHECK(imp2.pos.x > firstX, "second import successif : pousse plus loin en +X que le premier");
+        g_objs.clear();
+    }
+    g_selected = -1;
+
+    /* --- 10. Push/Pull (lots web 3.x, etat final 3.10.3) : tirage d'une face --- */
+    {
+        Object box = makeBoxObject("Boite", Vec3(0.5, 0.5, 0.5), Vec3(0.5, 0.5, 0.5), col);
+        Extrude dd;
+        /* tri 2 = premiere moitie de la face du dessus ({4,5,6}) */
+        CHECK(makeExtrude(box, 2, dd), "push/pull : la face du dessus est capturable (patch coplanaire connecte)");
+        CHECK(dd.vset.size() == 4 && dd.boundary.size() == 4, "push/pull : patch = 4 sommets, 4 aretes de perimetre");
+        applyExtrude(box, dd, 1.0);
+        CHECK(std::fabs(signedVolume(box) - 2.0) < 1e-9, "push/pull tirage +1 : volume = 2");
+        CHECK(countNonManifold(box) == 0 && box.tri.size() == 36, "push/pull tirage : coque fermee, 12 tris");
+        CHECK(box.v.size() == 8 && std::fabs(box.bmax.y - 0.5) < 1e-9, "push/pull tirage : les parois inchangees restent a 0.5 (indices partages, aucune jupe)");
+        CHECK(std::fabs(box.bmax.z - 1.5) < 1e-9, "push/pull tirage : la face monte a 1.5 en local (dessus du cube natif = +Z)");
+    }
+
+    /* --- 11. push rentrant intermediaire : la face plie, pas de penetration --- */
+    {
+        Object box = makeBoxObject("Boite", Vec3(0.5, 0.5, 0.5), Vec3(0.5, 0.5, 0.5), col);
+        Extrude dd;
+        CHECK(makeExtrude(box, 2, dd), "push/pull : capture du dessus (11)");
+        applyExtrude(box, dd, -0.2);
+        CHECK(std::fabs(signedVolume(box) - 0.8) < 1e-9, "push/pull enfoncement -0.2 : volume = 0.8");
+        CHECK(countNonManifold(box) == 0, "push/pull enfoncement : coque fermee (parois repliees, pas de penetration)");
+        CHECK(std::fabs(box.bmax.z - 0.3) < 1e-9, "push/pull enfoncement : la face descend (0.3 local = 0.8 monde), pas a travers");
+    }
+
+    /* --- 12. butee : feuille a zero, puis pull = le volume est recree (3.10.3) --- */
+    {
+        Object box = makeBoxObject("Boite", Vec3(0.5, 0.5, 0.5), Vec3(0.5, 0.5, 0.5), col);
+        Extrude dd;
+        makeExtrude(box, 2, dd);
+        applyExtrude(box, dd, -1.0);
+        CHECK(dd.hasLow && std::fabs(dd.dLow + 1.0) < 1e-9, "push/pull : butee detectee a -1 (epaisseur de la boite)");
+        CHECK(std::fabs(signedVolume(box)) < 1e-9 && (box.bmax.z - box.bmin.z) < 1e-9, "push/pull butee : feuille aplatie, volume zero, epaisseur nulle");
+        CHECK(countNonManifold(box) == 8, "push/pull butee : feuille = 4 tris coplanaires (2 windings), 8 bords ouverts en index (fidele au pliage web)");
+        size_t triTop = 0;
+        for (size_t i = 0; i < box.n.size(); ++i)
+            if (dot(box.n[i], Vec3(0, 0, 1)) > 0.9) { triTop = i; break; }
+        Extrude dd2;
+        CHECK(makeExtrude(box, triTop, dd2), "push/pull : la feuille est capturable");
+        applyExtrude(box, dd2, 0.5);
+        CHECK(std::fabs(signedVolume(box) - 0.5) < 1e-9, "push/pull depuis la feuille : le volume est recree (0.5)");
+        CHECK(countNonManifold(box) == 0 && std::fabs((box.bmax.z - box.bmin.z) - 0.5) < 1e-9, "push/pull depuis la feuille : solide referme, hauteur 0.5");
+    }
+
+    /* --- 13. face aux coins separes des parois (source type STL non soudable) : jupe --- */
+    {
+        Object soup;
+        /* 0..7 = boite weld ; 8..13 = coins du top DUPLIQUES (copies separees) :
+           la face du dessus n'est pas indexee sur les parois, comme dans un STL */
+        soup.v = {
+            {0,0,0},{1,0,0},{1,1,0},{0,1,0},
+            {0,0,1},{1,0,1},{1,1,1},{0,1,1},
+            {0,0,1},{1,0,1},{1,1,1},{0,1,1}
+        };
+        const unsigned top[2][3] = {{8, 9, 10}, {8, 10, 11}};
+        const unsigned rest[10][3] = {
+            {0,2,1},{0,3,2},
+            {0,1,5},{1,6,5},{1,2,6},
+            {2,7,6},{2,3,7},{3,0,4},
+            {3,4,7},{0,5,4}
+        };
+        for (const auto& f : top) { soup.tri.push_back(f[0]); soup.tri.push_back(f[1]); soup.tri.push_back(f[2]); }
+        for (const auto& f : rest) { soup.tri.push_back(f[0]); soup.tri.push_back(f[1]); soup.tri.push_back(f[2]); }
+        computeObjectDerived(soup);
+        CHECK(std::fabs(signedVolume(soup) - 1.0) < 1e-9, "push/pull jupe : maillage de depart ferme, volume 1");
+        Extrude dd;
+        CHECK(makeExtrude(soup, 0, dd), "push/pull jupe : face (copies separees) capturable");
+        CHECK(dd.boundary.size() == 4, "push/pull jupe : 4 aretes de perimetre sur la face a copies separees");
+        applyExtrude(soup, dd, 1.0);
+        CHECK(std::fabs(signedVolume(soup) - 2.0) < 1e-9, "push/pull jupe : volume augmente de l'aire x tirage");
+        CHECK(std::fabs(soup.bmax.z - 2.0) < 1e-9, "push/pull jupe : la face est montee a z = 2");
+        CHECK(countNonManifold(soup) == 16, "push/pull jupe : coque fermee geometriquement ; 16 bords ouverts en index (4 carré soudé + 3 par arete de jupe, comme le tri-soup du web)");
+    }
+
+    /* --- 14. push/pull avec echelle par objet (imports en mm normalises) --- */
+    {
+        Object b2 = makeBoxObject("B2", Vec3(0.5, 0.5, 0.5), Vec3(0.5, 0.5, 0.5), col);
+        b2.scl = 2.0;   /* monde : cube 2x2x2 */
+        Extrude dd;
+        CHECK(makeExtrude(b2, 2, dd), "push/pull echelle : capture avec scl=2");
+        applyExtrude(b2, dd, 1.0);
+        CHECK(std::fabs(signedVolume(b2) * b2.scl * b2.scl * b2.scl - 12.0) < 1e-9,
+              "push/pull echelle : monde = 12 (8 + aire 4 x tirage 1)");
+        CHECK(std::fabs(b2.bmax.z - 1.0) < 1e-9, "push/pull echelle : sommet local monte a 1.0 (deplacement local 0.5)");
+    }
+
+    std::printf("resume : %d echec(s)\n", g_fail);
+    return g_fail ? 1 : 0;
+}
