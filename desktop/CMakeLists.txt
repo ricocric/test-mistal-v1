@@ -33,6 +33,8 @@ else()
     endif()
     set(glfw3_INCLUDE_DIR "${GLFW_HOME}/include")
     find_library(glfw3_LIBRARY glfw3dll HINTS "${GLFW_HOME}/lib-vc2022")
+    get_filename_component(S3D_GLFW_LIBDIR "${glfw3_LIBRARY}" DIRECTORY)
+    set(S3D_GLFW_DLL "${S3D_GLFW_LIBDIR}/glfw3.dll")
     if(NOT EXISTS "${glfw3_INCLUDE_DIR}/GLFW/glfw3.h")
         message(FATAL_ERROR
             "GLFW_HOME = ${GLFW_HOME}\n"
@@ -58,6 +60,11 @@ find_package(OpenGL REQUIRED)
 
 add_executable(sketch3d src/main.cpp)
 target_link_libraries(sketch3d PRIVATE ${S3D_GLFW_TARGET} OpenGL::GL)
+
+if(S3D_GLFW_DLL)
+    add_custom_command(TARGET sketch3d POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${S3D_GLFW_DLL}" "$<TARGET_FILE_DIR:sketch3d>")
+endif()
 
 if(MSVC)
     target_compile_options(sketch3d PRIVATE /W4)
