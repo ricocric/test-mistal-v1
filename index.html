@@ -155,7 +155,7 @@
       <b>Sélection</b> : clic sur un objet pour le sélectionner, glisser pour le déplacer, <kbd>Suppr</kbd> pour supprimer<br>
       <b>Caméra</b> : clic-glisser dans le vide = rotation, molette ou boutons 🔍 = zoom, clic droit = déplacement latéral<br>
       <b>Cadrer</b> : touche <kbd>F</kbd> ou 🎯 pour ajuster la vue sur la sélection (ou toute la scène)<br>
-      <b>Mesurer</b> : mode 📏 (touche <kbd>M</kbd>), cliquez 2 points pour créer une cote ; les points accrochent les sommets (marqueur vert) et les arêtes (bleu) des objets ; unité mm/cm/m/km dans la barre ; Fichier > Effacer les cotes<br>
+      <b>Mesurer</b> : mode 📏 (touche <kbd>M</kbd>), cliquez 2 points pour créer une cote ; les points accrochent les sommets (marqueur vert) et les arêtes (bleu) des objets ; unité mm/cm/m/km dans la barre ; clic droit sur une cote pour la supprimer ; Fichier > Effacer les cotes (tout)<br>
       <b>Cote en continu</b> : pendant un Push/Pull, la dimension suit la face en direct ; tapez une valeur + <kbd>Entrée</kbd> pendant le glissement pour poser une dimension exacte ; clic droit > 📐 Dimension précise… pour repréciser L l H (ou diamètre/hauteur)<br>
       <b>Push/Pull sur objet importé</b> : extrusion des faces planes (sommets/côtés de cube, disques) ; les faces courbes ne sont pas extrudables<br>
       <b>Ctrl+Z</b> : annuler<br>
@@ -755,7 +755,18 @@ function makeImportExtrudeData(mobj, hit) {
   const fi = hit.faceIndex;
   if (fi === undefined || fi === null || fi < 0 || fi >= triCount) return null;
   const mw = mobj.matrixWorld;
-  const vkey = i => arr3Key(arr, 3 * i);
+  const weps = 1e-3 * Math.max(1, mobj.scale.x, mobj.scale.y, mobj.scale.z);
+  const wgrid = new Map();
+  const vkey = i => {
+    const cx = arr[3 * i], cy = arr[3 * i + 1], cz = arr[3 * i + 2];
+    const bx = Math.round(cx / weps), by = Math.round(cy / weps), bz = Math.round(cz / weps);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const rep = wgrid.get((bx + dx) + ',' + (by + dy) + ',' + (bz + dz));
+      if (rep !== undefined && Math.hypot(arr[3 * rep] - cx, arr[3 * rep + 1] - cy, arr[3 * rep + 2] - cz) <= weps) return 'w' + rep;
+    }
+    wgrid.set(bx + ',' + by + ',' + bz, i);
+    return 'w' + i;
+  };
   const worldVertex = i => new THREE.Vector3(arr[3 * i], arr[3 * i + 1], arr[3 * i + 2]).applyMatrix4(mw);
   const triNormal = t => {
     const a = worldVertex(3 * t), b = worldVertex(3 * t + 1), c = worldVertex(3 * t + 2);
@@ -785,7 +796,7 @@ function makeImportExtrudeData(mobj, hit) {
       const ek = ekey(ks[e], ks[(e + 1) % 3]);
       for (const t2 of (edgeTris.get(ek) || [])) {
         if (patch.has(t2)) continue;
-        if (triNormal(t2).dot(n0) < 0.999) continue;
+        if (Math.abs(triNormal(t2).dot(n0)) < 0.999) continue;
         patch.add(t2);
         queue.push(t2);
       }
@@ -797,18 +808,18 @@ function makeImportExtrudeData(mobj, hit) {
     }
   }
   const ecount = new Map();
-  const pvidx = [];
-  const pseen = new Set();
+  const pKeys = new Set();
   for (const t of patch) {
     const ks = [vkey(3 * t), vkey(3 * t + 1), vkey(3 * t + 2)];
-    for (const k of ks) {
-      const i = vidx.get(k);
-      if (i !== undefined && !pseen.has(k)) { pseen.add(k); pvidx.push(i); }
-    }
+    for (const k of ks) pKeys.add(k);
     for (let e = 0; e < 3; e++) {
       const ek = ekey(ks[e], ks[(e + 1) % 3]);
       ecount.set(ek, (ecount.get(ek) || 0) + 1);
     }
+  }
+  const pvidx = [];
+  for (let i = 0; i < posAttr.count; i++) {
+    if (pKeys.has(vkey(i))) pvidx.push(i);
   }
   const boundary = [];
   for (const [ek, c] of ecount) {
@@ -1254,6 +1265,38 @@ function clearCotes() {
   measures.length = 0;
 }
 
+function removeCote(m) {
+  const idx = measures.indexOf(m);
+  if (idx < 0) return;
+  measures.splice(idx, 1);
+  measureGroup.remove(m.line, m.dotA, m.dotB, m.sprite);
+  m.line.geometry.dispose();
+  disposeSprite(m.sprite);
+}
+
+function nearestCote(px, py, tolPx) {
+  const r = renderer.domElement.getBoundingClientRect();
+  let best = null, bestD = tolPx;
+  const pa = new THREE.Vector3(), pb = new THREE.Vector3();
+  for (const m of measures) {
+    pa.copy(m.a).project(camera);
+    pb.copy(m.b).project(camera);
+    const ax = r.left + (pa.x + 1) / 2 * r.width, ay = r.top + (1 - (pa.y + 1) / 2) * r.height;
+    const bx = r.left + (pb.x + 1) / 2 * r.width, by = r.top + (1 - (pb.y + 1) / 2) * r.height;
+    const abx = bx - ax, aby = by - ay;
+    const ab2 = abx * abx + aby * aby;
+    let d;
+    if (ab2 < 1e-12) d = Math.hypot(px - ax, py - ay);
+    else {
+      let u = ((px - ax) * abx + (py - ay) * aby) / ab2;
+      u = Math.max(0, Math.min(1, u));
+      d = Math.hypot(px - (ax + abx * u), py - (ay + aby * u));
+    }
+    if (d < bestD) { bestD = d; best = m; }
+  }
+  return best;
+}
+
 function clearMeasureLive() {
   pendingA = null;
   pendingASnap = null;
@@ -1267,7 +1310,7 @@ function clearMeasureLive() {
   }
 }
 
-const VERT_TOL_PX = 14, EDGE_TOL_PX = 10;
+const VERT_TOL_PX = 20, EDGE_TOL_PX = 16;
 function pickMeasurePoint(e) {
   pointerToNDC(e);
   const hits = raycaster.intersectObjects(objects, false);
@@ -1375,10 +1418,10 @@ unitSel.addEventListener('change', () => {
 
 document.getElementById('clearMeasuresBtn').addEventListener('click', () => {
   closeFileMenu();
-  if (!measures.length) { setStatus('Aucune cote à effacer.'); return; }
-  const n = measures.length;
+  clearMeasureLive();
   clearCotes();
-  setStatus(n + ' cote(s) effacée(s).');
+  setMode('select');
+  setStatus('Cotes effacées — outil mesure désactivé.');
 });
 
 /* ------------------------------------------------------------------ */
@@ -1788,6 +1831,15 @@ renderer.domElement.addEventListener('pointerdown', e => {
 });
 
 renderer.domElement.addEventListener('contextmenu', e => {
+  if (mode === 'measure') {
+    e.preventDefault();
+    const cote = nearestCote(e.clientX, e.clientY, 12);
+    if (cote) {
+      removeCote(cote);
+      setStatus('Cote supprimée — ' + measures.length + ' cote(s) restante(s).');
+    }
+    return;
+  }
   if (mode === 'pushpull' && drawing && drawing.kind === 'face') {
     e.preventDefault();
     cancelDraw();
