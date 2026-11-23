@@ -892,6 +892,14 @@ static bool makeExtrude(const Object& o, size_t clickedTri, Extrude& dd) {
     dd.boundary = std::move(boundary);
     dd.dLow = flip ? -dHigh : dLow;   dd.hasLow  = flip ? hasHigh : hasLow;
     dd.dHigh = flip ? -dLow : dHigh;  dd.hasHigh = flip ? hasLow : hasHigh;
+    if (!hasLow && !hasHigh) {
+        /* feuille a la capture : aucune matiere des deux cotes, tout est
+           consomme. Le push n'a rien a enfoncer : bloque au plan (SketchUp
+           cale le push-pull a la surface opposee), seul le pull redeplie la
+           matiere du cote camera. */
+        dd.dLow = 0.0;
+        dd.hasLow = true;
+    }
     dd.inCompVert = std::move(inCompVert);
     dd.inCompTri = std::move(inCompTri);
     dd.d = 0.0;
@@ -1014,8 +1022,14 @@ static void applyExtrude(Object& o, const Extrude& dd, double d) {
             o.tri.push_back(remap[dd.tri[t + 2]]);
         }
         if (std::fabs(d) < 1e-9) {
+            /* couche seule : les deux windings, comme l'etat de butee (le pli
+               rentrant laisse 2 windings coplanaires) — volume exactement nul,
+               feuille visible des deux cotes, pas de pop visuel en cours de drag */
             for (const auto& ids : trisB) {
                 o.tri.push_back(ids[0]); o.tri.push_back(ids[1]); o.tri.push_back(ids[2]);
+            }
+            for (const auto& ids : trisB) {
+                o.tri.push_back(ids[2]); o.tri.push_back(ids[1]); o.tri.push_back(ids[0]);
             }
             computeObjectDerived(o);
             return;

@@ -306,8 +306,8 @@ int main() {
 
     /* --- 12.2 : capture de la couche opposee de la feuille (le rayon pille le
             premier triangle venu entre les deux couches coïncidentes) : la normale
-            doit etre reorientee du cote camera, le pull redeplie la matiere du
-            cote original, le push passe de l'autre cote --- */
+            doit etre reorientee du cote camera, le push est bloque au plan (rien
+            a enfoncer), le pull redeplie la matiere du cote original --- */
     {
         Object box = makeBoxObject("Boite", Vec3(0.5, 0.5, 0.5), Vec3(0.5, 0.5, 0.5), col);
         Extrude dd;
@@ -315,7 +315,11 @@ int main() {
         applyExtrude(box, dd, -1.0);
         Extrude dd3;
         CHECK(makeExtrude(box, 0, dd3), "push/pull feuille : capture de la couche opposee (tri 0) possible");
-        CHECK(std::fabs(dd3.normal.z - 1.0) < 1e-9, "push/pull feuille : normale reorientee du cote de la camera");
+        CHECK(std::fabs(dd3.normal.z - 1.0) < 1e-9 && dd3.hasLow && std::fabs(dd3.dLow) < 1e-9,
+              "push/pull feuille : normale reorientee du cote de la camera, butee nulle (push borde)");
+        applyExtrude(box, dd3, -0.7);
+        CHECK(std::fabs(signedVolume(box)) < 1e-9 && (box.bmax.z - box.bmin.z) < 1e-9,
+              "push/pull feuille : le push est bloque au plan (rien a enfoncer, comme SketchUp, pas de volume inverse)");
         applyExtrude(box, dd3, 0.5);
         CHECK(std::fabs(signedVolume(box) - 0.5) < 1e-9 && countNonManifold(box) == 0
               && std::fabs(box.bmin.z + 0.5) < 1e-9 && std::fabs(box.bmax.z) < 1e-9,
@@ -398,8 +402,11 @@ int main() {
         /* capture de la feuille (couche opposee, comme le rayon qui pille la couche basse) */
         Extrude dd3;
         CHECK(makeExtrude(compo, 0, dd3), "composite : capture de la feuille");
-        CHECK(std::fabs(dd3.normal.z - 1.0) < 1e-9 && !dd3.hasLow && !dd3.hasHigh,
-              "composite : normale feuille reorientee du cote camera, aucune butee gauche");
+        CHECK(std::fabs(dd3.normal.z - 1.0) < 1e-9 && dd3.hasLow && std::fabs(dd3.dLow) < 1e-9,
+              "composite : normale feuille reorientee du cote camera, push borde au plan");
+        applyExtrude(compo, dd3, -0.7);
+        CHECK(std::fabs(signedVolume(compo) - 1.0) < 1e-9 && std::fabs(compo.bmin.z + 0.5) < 1e-9,
+              "composite : push depuis la feuille bloque (coque 2 seule, rien ne se developpe en dessous)");
         applyExtrude(compo, dd3, 0.5);
         CHECK(std::fabs(signedVolume(compo) - 1.5) < 1e-9 && countNonManifold(compo) == 0
               && std::fabs(compo.bmin.z + 0.5) < 1e-9 && std::fabs(compo.bmax.z - 2.5) < 1e-9,

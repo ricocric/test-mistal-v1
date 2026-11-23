@@ -48,8 +48,12 @@ build\Debug\sketch3d_tests.exe
 - **orientation de la feuille** : les deux windings de la couche coïncident
   a epaisseur nulle, le rayon en capture un au hasard (presque toujours la face
   opposee a la vue). La normale capturee est desormais orientee du cote
-  camera : le pull redeplie la matiere du cote visible (comme SketchUp), le
-  push traverse de l'autre cote ;
+  camera : le pull redeplie la matiere du cote visible (comme SketchUp) ;
+- **push depuis la feuille bloque au plan** (retour de test : le push
+  developpait un volume inverse de l'autre cote) : quand la coque capturee est
+  deja reduite a une feuille, il n'y a plus rien a enfoncer — le push cale la
+  feuille au plan et seul le pull redeplie la matiere, comme SketchUp, qui
+  cale le push-pull a la surface opposee ;
 - **composante connexe (N4.1bis cause du retour « la feuille ne se deplie
   toujours que du cote oppose »)** : la capture d'une feuille admet toujours
   les sommets situes au-dela du plan (pour la butee et la detection) ; sur un
@@ -65,7 +69,7 @@ build\Debug\sketch3d_tests.exe
 - la grille souris -> d (plan de souris pn face a l'ecran, construite dans
   onMouseButton) est verifiee sans NaN et monotone sur toute la fenetre, y
   compris sur une feuille vue de face (fallback pn automatique) ;
-- la batterie monte a **73 verifications** (nouvelle famille composite).
+- la batterie monte a **75 verifications** (familles composite et feuille bloquee).
 
 ## Lot N3
 
