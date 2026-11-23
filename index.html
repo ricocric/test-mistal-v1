@@ -837,8 +837,11 @@ function makeImportExtrudeData(mobj, hit) {
     if (along < -1e-7 && (!hasLow || along < dLow)) { dLow = along; hasLow = true; }
     if (along > 1e-7 && (!hasHigh || along > dHigh)) { dHigh = along; hasHigh = true; }
   }
-  return { normal: n0, planePoint, fixed: planePoint.dot(n0), base: arr.slice(), vset: pvidx, boundary,
-    dLow: hasLow ? dLow : undefined, dHigh: hasHigh ? dHigh : undefined };
+  const flip = hasHigh && !hasLow;
+  const normal = flip ? n0.clone().negate() : n0;
+  const dLo = flip ? (hasHigh ? -dHigh : undefined) : (hasLow ? dLow : undefined);
+  const dHi = flip ? (hasLow ? -dLow : undefined) : (hasHigh ? dHigh : undefined);
+  return { normal, planePoint, fixed: planePoint.dot(normal), base: arr.slice(), vset: pvidx, boundary, dLow: dLo, dHigh: dHi };
 }
 
 function applyTypedExtrusion(dg) {
@@ -879,11 +882,32 @@ function placeOnGround(mesh, x, z) {
   mesh.position.y -= bb.min.y;
 }
 
+function placeWithoutOverlap(mesh, placed) {
+  placeOnGround(mesh, snap(controls.target.x), snap(controls.target.z));
+  let shifts = 0;
+  for (let tries = 0; tries < 20; tries++) {
+    mesh.updateMatrixWorld(true);
+    const bb = new THREE.Box3().setFromObject(mesh);
+    let hit = null;
+    for (const o of placed) {
+      if (o === mesh) continue;
+      const ob = new THREE.Box3().setFromObject(o);
+      if (ob.isEmpty()) continue;
+      if (bb.intersectsBox(ob)) { hit = ob; break; }
+    }
+    if (!hit) return shifts;
+    mesh.position.x += (hit.max.x - bb.min.x) + 0.25;
+    shifts++;
+  }
+  return shifts;
+}
+
 function importMeshes(name, data) {
   try {
     const isStl = name.toLowerCase().endsWith('.stl');
     const meshes = isStl ? stlToMeshes(data) : objToMeshes(data);
     let resized = false;
+    let shifted = 0;
     for (const m of meshes) {
       m.geometry.computeBoundingBox();
       const bb = m.geometry.boundingBox;
@@ -892,7 +916,7 @@ function importMeshes(name, data) {
         m.scale.setScalar(4 / size);
         resized = true;
       }
-      placeOnGround(m, snap(controls.target.x), snap(controls.target.z));
+      if (placeWithoutOverlap(m, objects) > 0) shifted++;
       add(m);
       pushUndo({ type: 'add', obj: m });
     }
@@ -901,7 +925,9 @@ function importMeshes(name, data) {
       for (const m of meshes) bb.expandByObject(m);
       frameBounds(bb);
     }
-    setStatus(meshes.length + ' objet(s) importé(s)' + (resized ? ' — dimensions ajustées à ~4 unités' : '') + ' depuis ' + name + ' — vue recentrée');
+    let msg = meshes.length + ' objet(s) importé(s)' + (resized ? ' — dimensions ajustées à ~4 unités' : '') + ' depuis ' + name + ' — vue recentrée';
+    if (shifted) msg = 'Superpositions évitées par décalage, ' + msg.charAt(0).toLowerCase() + msg.slice(1);
+    setStatus(msg);
   } catch (err) {
     setStatus('Import impossible : ' + err.message);
   }
