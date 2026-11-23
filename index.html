@@ -734,24 +734,50 @@ function applyImportExtrude(mobj, data, d) {
   const allSheet = Array.isArray(data.patchTris) && data.patchTris.length === base.length / 9;
   if (allSheet) {
     // feuille aplatie (solide reduit a zero a la butee) : le pull recree du volume.
-    // fond = une seule couche a la position d origine (doublons coplanaires fondus,
-    // winding normalise oppose au deplacement), couche deplacee = copie inversee translatée,
+    // fond = une seule couche a la position d origine : sommets regroupes en clusters
+    // (tolerance au-dessus du bruit Float32 du round-trip monde, tres sous l espacement
+    // reel des sommets), doublons coplanaires fondus, coords snapées sur les representants ;
+    // winding normalise oppose au deplacement, couche deplacee = copie inversee translatée,
     // jupe = perimetre de la couche fondue, orientation sortante par construction
-    const kk = (x, y, z) => x.toFixed(4) + ',' + y.toFixed(4) + ',' + z.toFixed(4);
+    let mx = 1e-9;
+    for (let i = 0; i < base.length; i++) { const aa = Math.abs(base[i]); if (aa > mx) mx = aa; }
+    const tol = 1e-3 * mx;
+    const cells = new Map(), repPt = [];
+    const cid = (x, y, z) => {
+      const cx = Math.floor(x / tol), cy = Math.floor(y / tol), cz = Math.floor(z / tol);
+      const t2 = tol * tol;
+      for (let u = -1; u <= 1; u++) for (let w = -1; w <= 1; w++) for (let q2 = -1; q2 <= 1; q2++) {
+        const b2 = cells.get((cx + u) + ',' + (cy + w) + ',' + (cz + q2));
+        if (b2) for (const r of b2) {
+          const rp = repPt[r];
+          const ddx = rp[0] - x, ddy = rp[1] - y, ddz = rp[2] - z;
+          if (ddx * ddx + ddy * ddy + ddz * ddz <= t2) return r;
+        }
+      }
+      const id = repPt.length;
+      repPt.push([Math.fround(x), Math.fround(y), Math.fround(z)]);
+      const k2 = cx + ',' + cy + ',' + cz;
+      if (!cells.has(k2)) cells.set(k2, []);
+      cells.get(k2).push(id);
+      return id;
+    };
     const seen = new Set();
     const bottom = [], trisB = [];
     for (let t = 0; t < base.length / 9; t++) {
-      const pts = [0, 1, 2].map(e => [base[9 * t + 3 * e], base[9 * t + 3 * e + 1], base[9 * t + 3 * e + 2]]);
-      const e1 = [pts[1][0] - pts[0][0], pts[1][1] - pts[0][1], pts[1][2] - pts[0][2]];
-      const e2 = [pts[2][0] - pts[0][0], pts[2][1] - pts[0][1], pts[2][2] - pts[0][2]];
-      const cx = Math.fround(e1[1] * e2[2] - e1[2] * e2[1]);
-      const cy = Math.fround(e1[2] * e2[0] - e1[0] * e2[2]);
-      const cz = Math.fround(e1[0] * e2[1] - e1[1] * e2[0]);
-      if (cx * cx + cy * cy + cz * cz <= 1e-12 * (e1[0] * e1[0] + e1[1] * e1[1] + e1[2] * e1[2]) * (e2[0] * e2[0] + e2[1] * e2[1] + e2[2] * e2[2])) continue;
-      const kb = pts.map(p => kk(p[0], p[1], p[2])).sort().join('|');
+      const idp = [0, 1, 2].map(e => cid(base[9 * t + 3 * e], base[9 * t + 3 * e + 1], base[9 * t + 3 * e + 2]));
+      const p0 = repPt[idp[0]], p1 = repPt[idp[1]], p2 = repPt[idp[2]];
+      const e1x = p1[0] - p0[0], e1y = p1[1] - p0[1], e1z = p1[2] - p0[2];
+      const e2x = p2[0] - p0[0], e2y = p2[1] - p0[1], e2z = p2[2] - p0[2];
+      const crx = e1y * e2z - e1z * e2y, cry = e1z * e2x - e1x * e2z, crz = e1x * e2y - e1y * e2x;
+      const m1 = e1x * e1x + e1y * e1y + e1z * e1z;
+      const m2 = e2x * e2x + e2y * e2y + e2z * e2z;
+      const m3 = (p0[0] - p2[0]) * (p0[0] - p2[0]) + (p0[1] - p2[1]) * (p0[1] - p2[1]) + (p0[2] - p2[2]) * (p0[2] - p2[2]);
+      const mmax = Math.max(m1, m2, m3);
+      if (crx * crx + cry * cry + crz * crz <= 1e-7 * mmax * mmax) continue;
+      const kb = [idp[0], idp[1], idp[2]].sort((a, b) => a - b).join('|');
       if (seen.has(kb)) continue;
       seen.add(kb);
-      trisB.push(pts);
+      trisB.push([p0, p1, p2]);
     }
     let sgn = 0;
     for (const pts of trisB) {
@@ -766,12 +792,12 @@ function applyImportExtrude(mobj, data, d) {
       return;
     }
     for (const pts of trisB) for (const p of pts) bottom.push(p[0], p[1], p[2]);
+    const key2 = (a, b) => a < b ? a + '|' + b : b + '|' + a;
     const edir = new Map();
     for (const pts of trisB) {
       for (let e = 0; e < 3; e++) {
         const a = pts[e], b = pts[(e + 1) % 3];
-        const ka = kk(a[0], a[1], a[2]), kbb = kk(b[0], b[1], b[2]);
-        const key = ka < kbb ? ka + '|' + kbb : kbb + '|' + ka;
+        const key = key2(a[0] + ',' + a[1] + ',' + a[2], b[0] + ',' + b[1] + ',' + b[2]);
         edir.set(key, edir.has(key) ? null : [a, b]);
       }
     }
@@ -832,9 +858,12 @@ function applyImportExtrude(mobj, data, d) {
       const e1x = v[3] - v[0], e1y = v[4] - v[1], e1z = v[5] - v[2];
       const e2x = v[6] - v[0], e2y = v[7] - v[1], e2z = v[8] - v[2];
       const crx = e1y * e2z - e1z * e2y, cry = e1z * e2x - e1x * e2z, crz = e1x * e2y - e1y * e2x;
+      const e3x = v[0] - v[6], e3y = v[1] - v[7], e3z = v[2] - v[8];
       const m1 = e1x * e1x + e1y * e1y + e1z * e1z;
       const m2 = e2x * e2x + e2y * e2y + e2z * e2z;
-      if (crx * crx + cry * cry + crz * crz <= 1e-12 * m1 * m2) continue;
+      const m3 = e3x * e3x + e3y * e3y + e3z * e3z;
+      const mmax = Math.max(m1, m2, m3);
+      if (crx * crx + cry * cry + crz * crz <= 1e-7 * mmax * mmax) continue;
       out2.push(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
     }
     setImportGeometry(mobj, new Float32Array(out2));
