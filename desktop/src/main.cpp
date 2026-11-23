@@ -234,7 +234,10 @@ static void beginDrag(GLFWwindow* w, int idx) {
 static bool g_axisHeld[3] = {false, false, false};
 
 static void recordAxisKey(int scancode, int action) {
-    const char* name = glfwGetKeyName(0, scancode);
+    /* premier parametre = GLFW_KEY_UNKNOWN (-1) : on demunde la traduction
+       du scancode selon le layout courant ; passer 0 reviendrait a demander
+       le nom de la touche Espace pour toute touche. */
+    const char* name = glfwGetKeyName(-1, scancode);
     if (!name || name[0] == '\0') return;
     const char c = (name[0] >= 'A' && name[0] <= 'Z') ? char(name[0] - 'A' + 'a') : name[0];
     if (c == 'x') g_axisHeld[0] = (action == GLFW_PRESS);
