@@ -66,6 +66,11 @@ build\Debug\sketch3d_tests.exe
   sommet partage avec la coque voisine est clone au pli (le tri voisin ne se
   deforme plus) ; la reconstruction feuille preserve verbatim les tris hors
   composante ;
+- **sortie du mode Push/Pull (N4.2)** : pendant une extrusion active, la
+  touche **P** annule la face en cours ET quitte le mode (retour mode
+  selection) — avant, P n'etait actif qu'hors extrusion et il fallait deux
+  Echap risque de confusion ; Echap garde son role (annule la face, reste en
+  mode), P sort a tout moment ;
 - la grille souris -> d (plan de souris pn face a l'ecran, construite dans
   onMouseButton) est verifiee sans NaN et monotone sur toute la fenetre, y
   compris sur une feuille vue de face (fallback pn automatique) ;

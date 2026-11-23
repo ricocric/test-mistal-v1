@@ -1298,7 +1298,11 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
                 std::printf("\nExtrusion posee : %.3f — cliquez pour valider, ou continuez a deplacer\n", v);
             }
         } else if (key == GLFW_KEY_ESCAPE) {
-            ppCancel();
+            ppCancel();                 /* premier Echap : annule la face, reste en mode */
+        } else if (key == GLFW_KEY_P) {
+            ppCancel();                 /* P disponible a tout moment : quitte le mode */
+            g_ppMode = false;
+            std::printf("\nmode selection\n");
         }
         return;
     }
