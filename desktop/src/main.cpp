@@ -980,7 +980,7 @@ static void applyExtrude(Object& o, const Extrude& dd, double d) {
             out[i] = (al > d + tiny) ? 1 : 0;
             nv[i] = out[i] ? dd.base[i] + n * ((d - al) / o.scl) : dd.base[i];
         }
-        std::vector<char> isPatch(o.tri.size() / 3, 0);
+        std::vector<char> isPatch(dd.tri.size() / 3, 0);   /* indexe par les positions de dd.tri, pas par o.tri (rappels a chaque frame) */
         for (size_t t : dd.patchTris) isPatch[t] = 1;
         o.tri.clear();
         o.tri.reserve(dd.tri.size());

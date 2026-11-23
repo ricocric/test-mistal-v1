@@ -291,6 +291,19 @@ int main() {
         CHECK(countNonManifold(box) == 0 && std::fabs((box.bmax.z - box.bmin.z) - 0.5) < 1e-9, "push/pull depuis la feuille : solide referme, hauteur 0.5");
     }
 
+    /* --- 12.1 : rappels d'applyExtrude a la butee (la souris continue de bouger,
+            l'application rapelle la fonction a chaque frame sur l'objet deja plie) --- */
+    {
+        Object box = makeBoxObject("Boite", Vec3(0.5, 0.5, 0.5), Vec3(0.5, 0.5, 0.5), col);
+        Extrude dd;
+        CHECK(makeExtrude(box, 4, dd), "push/pull : capture d'une face laterale (11, patch = tris 4-5)");
+        applyExtrude(box, dd, dd.dLow);
+        const size_t trisApres = box.tri.size();
+        applyExtrude(box, dd, dd.dLow);
+        CHECK(box.tri.size() == trisApres && std::fabs(signedVolume(box)) < 1e-9,
+              "push/pull butee + rappel frame suivante : geometrie stable, pas de crash (isPatch indexe dd.tri)");
+    }
+
     /* --- 13. face aux coins separes des parois (source type STL non soudable) : jupe --- */
     {
         Object soup;
