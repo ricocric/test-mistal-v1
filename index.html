@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sketch3D — dessin 3D façon SketchUp</title>
+<title>Sketch3D — dessin 3D façon SketchUp — build 3.10.2</title>
 <style>
   :root {
     --bg: #1e2127;
@@ -83,7 +83,7 @@
 <body>
 <div id="app">
   <div id="topbar">
-    <div class="logo">✏️ <span>Sketch3D</span></div>
+    <div class="logo">✏️ <span>Sketch3D</span> <small style="opacity:.55;font-weight:400">build 3.10.2</small></div>
 
     <div class="menu">
       <button class="btn" id="fileMenuBtn">📁 Fichier ▾</button>
@@ -179,6 +179,8 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+console.log('Sketch3D build 3.10.2 (lot 3.10 : pull sur feuille a la butee recree du volume)');
 
 /* ------------------------------------------------------------------ */
 /* Scène, caméra, rendu                                                */
