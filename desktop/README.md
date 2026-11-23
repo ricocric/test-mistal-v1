@@ -4,16 +4,32 @@ Transcription du prototype web (`index.html` a la racine du depot) en programme
 natif Windows, par petits lots testables. Modele geometrique en **double
 precision** natif (la version web stockait en Float32).
 
-## Lot N1 (celui-ci)
+## Lot N3 (celui-ci)
 
-Fenetre OpenGL + camera orbitale + grille + cube. Eprouvette de la chaine de
-build, aucune fonction d edition.
+Scene d'objets (boites) maillage indexe en doubles : selection au clic,
+deplacement (fluide, verrouillable X/Y/Z touches tenues),
+**import/export OBJ et STL** natifs.
 
-- Rotation autour de la scene : **clic gauche** maintenu + glisser
-- Zoom : **molette**
-- Cadrage de la scene : **touche F**
-- Quitter : **Echap**
-- Console : affiche `Sketch3D natif — lot N1` au demarrage
+- **I** : importer (*.obj, *.stl) — boite de dialogue Windows ; pose au sol,
+  anti-superposition, invariants affiches en console (volume signe, aretes
+  non-manifold) ;
+- **O** : exporter la scene en OBJ (coordonnees monde, un bloc `o` par objet) ;
+- **S** : exporter en STL binaire (normales calculees, coords monde) ;
+- Selection : clic gauche sur un objet (console : nom + tris) ; glisser :
+  deplace sur plan face a la camera ; touches **X/Y/Z** tenues : axe verrouille
+  (le verrouillage marche sur AZERTY et QWERTY) ; double-clic : rapprochement ;
+- **F** : cadrage (selection, sinon boite englobante de la scene) ; **H** :
+  vue d'origine ; clic dans le vide : deselection + orbite ; **Echap** : quitter ;
+- la molette : zoom.
+
+Fichier de test conseille : le cube SketchUp deja utilise en web sert de reference
+(600+ tris, volume et coque verifiees a l'import).
+
+## Lots precedents
+
+- **N1** : fenetre OpenGL + camera orbitale + grille + cube (eprouvette du build).
+- **N2** : selection au clic + deplacement, verrouillage d'axe X/Y/Z, cadrage
+  (transcription des lots web 2 et 2.1).
 
 ## Prerequis
 
@@ -52,9 +68,8 @@ build\Debug\sketch3d.exe
 
 ## Organiseur des prochains lots
 
-- N2 : selection, deplacement d objets, zoom/cadrage (transcription du lot web 2)
-- N3 : import/export OBJ + STL (transcription du parseur web)
-- N4 : push/pull + invariants (coque fermee, arêtes ×2, NaN) + batterie de tests portee du web
+- N4 : push/pull sur imports + soudure de sommets (invariants portés du web :
+  coque fermee, aretes ×2, NaN, anti-penetration) + batterie de tests native
 - N5 : interface (Dear ImGui), cotes, unites, menu Fichier
 - ensuite : pipeline par shaders (PBR) pour le rendu photorealiste
 
