@@ -825,7 +825,14 @@ static bool makeExtrude(const Object& o, size_t clickedTri, Extrude& dd) {
         if (along < -tiny) { if (!hasLow || along < dLow) { dLow = along; hasLow = true; } }
         if (along >  tiny) { if (!hasHigh || along > dHigh) { dHigh = along; hasHigh = true; } }
     }
-    const bool flip = hasHigh && !hasLow;
+    bool flip = hasHigh && !hasLow;
+    if (!hasLow && !hasHigh && dot(n0, g_cam.pos() - planePoint) < 0.0) {
+        /* feuille : les deux couches coïncident, le rayon capture l'une des deux
+           windings indifféremment ; on oriente la normale du cote de la camera
+           pour que le pull redeplie la matiere du cote visible (le push passe
+           de l'autre cote, comme SketchUp) */
+        flip = true;
+    }
 
     dd.normal = flip ? n0 * -1.0 : n0;
     dd.planePoint = planePoint;

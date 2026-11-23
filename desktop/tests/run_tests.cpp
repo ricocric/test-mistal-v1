@@ -304,6 +304,24 @@ int main() {
               "push/pull butee + rappel frame suivante : geometrie stable, pas de crash (isPatch indexe dd.tri)");
     }
 
+    /* --- 12.2 : capture de la couche opposee de la feuille (le rayon pille le
+            premier triangle venu entre les deux couches coïncidentes) : la normale
+            doit etre reorientee du cote camera, le pull redeplie la matiere du
+            cote original, le push passe de l'autre cote --- */
+    {
+        Object box = makeBoxObject("Boite", Vec3(0.5, 0.5, 0.5), Vec3(0.5, 0.5, 0.5), col);
+        Extrude dd;
+        makeExtrude(box, 2, dd);
+        applyExtrude(box, dd, -1.0);
+        Extrude dd3;
+        CHECK(makeExtrude(box, 0, dd3), "push/pull feuille : capture de la couche opposee (tri 0) possible");
+        CHECK(std::fabs(dd3.normal.z - 1.0) < 1e-9, "push/pull feuille : normale reorientee du cote de la camera");
+        applyExtrude(box, dd3, 0.5);
+        CHECK(std::fabs(signedVolume(box) - 0.5) < 1e-9 && countNonManifold(box) == 0
+              && std::fabs(box.bmin.z + 0.5) < 1e-9 && std::fabs(box.bmax.z) < 1e-9,
+              "push/pull feuille : le pull redeplie la matiere du cote original (volume referme au-dessus de la feuille)");
+    }
+
     /* --- 13. face aux coins separes des parois (source type STL non soudable) : jupe --- */
     {
         Object soup;
