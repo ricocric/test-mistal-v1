@@ -11,8 +11,9 @@ deplacement (fluide, verrouillable X/Y/Z touches tenues),
 **import/export OBJ et STL** natifs.
 
 - **I** : importer (*.obj, *.stl) — boite de dialogue Windows ; pose au sol,
-  anti-superposition, invariants affiches en console (volume signe, aretes
-  non-manifold) ;
+  anti-superposition (decalage juste apres le bord de l'objet en collision,
+  marge 0.25, annonce en console), cadrage immediat sur l'objet importe,
+  invariants affiches en console (volume signe, aretes non-manifold) ;
 - **O** : exporter la scene en OBJ (coordonnees monde, un bloc `o` par objet) ;
 - **S** : exporter en STL binaire (normales calculees, coords monde) ;
 - Selection : clic gauche sur un objet (console : nom + tris) ; glisser :
@@ -24,6 +25,18 @@ deplacement (fluide, verrouillable X/Y/Z touches tenues),
 
 Fichier de test conseille : le cube SketchUp deja utilise en web sert de reference
 (600+ tris, volume et coque verifiees a l'import).
+
+## Lot N3.1 (correctifs retour de test)
+
+- **Anticollision a l'import** : transcription fidele du web (`placeWithoutOverlap`)
+  — l'objet importe est decale en X juste apres le bord de la boite englobante
+  en collision + 0.25, jusqu'a un emplacement libre ; le nombre de decalages est
+  affiche en console ;
+- **Cadrage post-import** : la cible camera est calculee en coordonnees MONDE
+  (le facteur d'echelle par objet manquait : la camera visait un point situe a
+  des milliers d'unites du vrai centre pour un fichier en millimetres) et la
+  distance reprend la formule tangente du cadrage de scene (vue lisible sans
+  devoir presser H).
 
 ## Lots precedents
 

@@ -234,9 +234,13 @@ static void frameSelected() {
     if (g_selected < 0) { frameScene(); return; }
     const Object& o = g_objs[(size_t)g_selected];
     const Vec3 d = (o.bmax - o.bmin) * (0.5 * o.scl);
-    g_cam.target = o.pos + (o.bmin + o.bmax) * 0.5;
+    /* cible en coordonnees MONDE : pos est deja monde, bmin/bmax sont locaux
+       donc l'echelle par objet s'applique (sinon la camera vise un point situe
+       a des milliers d'unites du vrai centre pour un import en millimetres) */
+    g_cam.target = o.pos + (o.bmin + o.bmax) * (0.5 * o.scl);
     const double r = d.norm();
-    if (r > 1e-12) g_cam.dist = 4.0 * r;
+    if (r > 1e-12)
+        g_cam.dist = std::max(r / std::tan(kFovDeg * 3.14159265358979 / 360.0), 1.0) * 1.5;
 }
 
 /* ------------------------------------------------------------------ */
@@ -543,21 +547,29 @@ static void normalizeImportScale(Object& o) {
     else if (span < 1.0) o.scl = 1.0 / span;
 }
 
-/* Pose au sol + anti-superposition (transcription du lot web 2.x) */
-static void placeImport(Object& o) {
-    const Vec3 dim = (o.bmax - o.bmin) * o.scl;
+/* Pose au sol + anti-superposition (transcription du lot web 2.x :
+   placeOnGround + placeWithoutOverlap). Comme le web, on pose au sol a
+   l'origine, puis on decale en X juste apres le bord de la boite en collision
+   avec une marge de 0.25, jusqu'a un emplacement libre. */
+/* renvoie le nombre de decalages effectues pour eviter les superpositions */
+static int placeImport(Object& o) {
     o.pos = Vec3(0, 0, 0) - Vec3((o.bmin.x + o.bmax.x) * 0.5, o.bmin.y, (o.bmin.z + o.bmax.z) * 0.5) * o.scl;
-    double stepX = std::max(dim.x, 1.0) * 1.5;
-    Vec3 tried = o.pos;
+    int shifts = 0;
+    Vec3 amin, amax;
     for (int tries = 0; tries < 64; ++tries) {
-        bool clash = false;
+        amin = o.pos + o.bmin * o.scl;
+        amax = o.pos + o.bmax * o.scl;
+        const Object* hit = nullptr;
         for (const Object& other : g_objs) {
-            if (overlapsWorld(o, other)) { clash = true; break; }
+            if (overlapsWorld(o, other)) { hit = &other; break; }
         }
-        if (!clash) return;
-        tried.x += stepX;
-        o.pos = tried;
+        if (!hit) return shifts;
+        const Vec3 hmax = hit->pos + hit->bmax * hit->scl;
+        o.pos.x += (hmax.x - amin.x) + 0.25;
+        ++shifts;
     }
+    std::printf("attention : pas d'emplacement libre trouve, objet laisse en surimpression\n");
+    return shifts;
 }
 
 static void importFile() {
@@ -589,12 +601,15 @@ static void importFile() {
     size_t nonManifold = 0;
     for (const auto& kv : arity) if (kv.second != 2) ++nonManifold;
 
-    placeImport(o);
+    const int shifts = placeImport(o);
     const Vec3 dim = (o.bmax - o.bmin) * o.scl;
     std::printf("import : %s — %zu sommets, %zu tris, dimensions locales %.4g x %.4g x %.4g, echelle %.6g, dimensions affichees %.4g x %.4g x %.4g, volume local %.6g, volume affiche %.6g, aretes non-manifold %zu\n",
                 o.name.c_str(), o.v.size(), o.tri.size(),
                 o.bmax.x - o.bmin.x, o.bmax.y - o.bmin.y, o.bmax.z - o.bmin.z, o.scl,
                 dim.x, dim.y, dim.z, vol, vol * o.scl * o.scl * o.scl, nonManifold);
+    if (shifts > 0)
+        std::printf("superposition evitee : objet decale de %d pas vers +X, pose a x = %.3f (comme le lot web 2.x)\n",
+                    shifts, o.pos.x);
     g_objs.push_back(std::move(o));
     g_selected = (int)g_objs.size() - 1;
     frameSelected();
