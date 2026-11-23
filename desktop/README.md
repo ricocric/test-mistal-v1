@@ -72,6 +72,8 @@ build\Debug\sketch3d.exe
   coque fermee, aretes ×2, NaN, anti-penetration) + batterie de tests native
 - N5 : interface (Dear ImGui), cotes, unites, menu Fichier
 - ensuite : pipeline par shaders (PBR) pour le rendu photorealiste
+- a planifier : fichier de setup utilisateur (regles d import comme la
+  normalisation d'echelle, unites par defaut, chemins recents...)
 
 ## Notes techniques du lot N1
 
