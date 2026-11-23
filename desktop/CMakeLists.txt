@@ -61,6 +61,10 @@ find_package(OpenGL REQUIRED)
 add_executable(sketch3d src/main.cpp)
 target_link_libraries(sketch3d PRIVATE ${S3D_GLFW_TARGET} OpenGL::GL)
 
+if(WIN32)
+    target_link_libraries(sketch3d PRIVATE comdlg32)
+endif()
+
 if(S3D_GLFW_DLL AND EXISTS "${S3D_GLFW_DLL}")
     add_custom_command(TARGET sketch3d POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${S3D_GLFW_DLL}" "$<TARGET_FILE_DIR:sketch3d>")
