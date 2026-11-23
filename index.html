@@ -730,16 +730,55 @@ function applyImportExtrude(mobj, data, d) {
   const lin = new THREE.Matrix3().setFromMatrix4(mobj.matrixWorld);
   const inv = lin.clone().invert();
   const dl = new THREE.Vector3(n.x * d, n.y * d, n.z * d).applyMatrix3(inv);
-  const flat = d <= 0 && data.dHigh === undefined;
-  const arr = new Float32Array(base.length + (flat ? 0 : data.boundary.length * 18));
-  arr.set(base);
   const ox = dl.x, oy = dl.y, oz = dl.z;
+  if (d <= 0 && data.dHigh === undefined) {
+    // push rentrant : pas d interpolation. Tout ce qui est au-dessus du plan est replie
+    // exactement sur le plan, par une translation qui ne depend que du sommet
+    // (copies soudées identiques, jonctions des strips alignées, coque fermee par construction)
+    if (d > -1e-9) {
+      setImportGeometry(mobj, new Float32Array(base));
+      return;
+    }
+    const mw = mobj.matrixWorld;
+    const pp = data.planePoint;
+    const cnt = base.length / 3;
+    const along = new Float64Array(cnt);
+    for (let i = 0; i < cnt; i++) {
+      const v = new THREE.Vector3(base[3 * i], base[3 * i + 1], base[3 * i + 2]).applyMatrix4(mw);
+      along[i] = v.sub(pp).dot(n);
+    }
+    const lo = new Float64Array(cnt * 3);
+    for (let i = 0; i < cnt; i++) {
+      if (along[i] <= d + 1e-7) continue;
+      const o = new THREE.Vector3(n.x * (d - along[i]), n.y * (d - along[i]), n.z * (d - along[i])).applyMatrix3(inv);
+      lo[3 * i] = o.x; lo[3 * i + 1] = o.y; lo[3 * i + 2] = o.z;
+    }
+    const patchSet = new Set(data.patchTris || []);
+    const out2 = [];
+    for (let t = 0; t < cnt / 3; t++) {
+      const idx = [3 * t, 3 * t + 1, 3 * t + 2];
+      const out = idx.map(i => along[i] > d + 1e-7);
+      if (out.every(x => x) && !patchSet.has(t)) continue;
+      const v = [];
+      for (let k = 0; k < 3; k++) {
+        const i = idx[k];
+        v.push(Math.fround(base[3 * i] + lo[3 * i]), Math.fround(base[3 * i + 1] + lo[3 * i + 1]), Math.fround(base[3 * i + 2] + lo[3 * i + 2]));
+      }
+      const e1x = v[3] - v[0], e1y = v[4] - v[1], e1z = v[5] - v[2];
+      const e2x = v[6] - v[0], e2y = v[7] - v[1], e2z = v[8] - v[2];
+      const crx = e1y * e2z - e1z * e2y, cry = e1z * e2x - e1x * e2z, crz = e1x * e2y - e1y * e2x;
+      const m1 = e1x * e1x + e1y * e1y + e1z * e1z;
+      const m2 = e2x * e2x + e2y * e2y + e2z * e2z;
+      if (crx * crx + cry * cry + crz * crz <= 1e-12 * m1 * m2) continue;
+      out2.push(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
+    }
+    setImportGeometry(mobj, new Float32Array(out2));
+    return;
+  }
+  const arr = new Float32Array(base.length + data.boundary.length * 18);
+  arr.set(base);
   for (const i of data.vset) {
     arr[3 * i] += ox; arr[3 * i + 1] += oy; arr[3 * i + 2] += oz;
-  }
-  if (flat) {
-    setImportGeometry(mobj, arr);
-    return;
   }
   let o = base.length;
   for (const [ia, ib] of data.boundary) {
@@ -828,6 +867,10 @@ function makeImportExtrudeData(mobj, hit) {
   for (let i = 0; i < posAttr.count; i++) {
     if (pKeys.has(vkey(i))) pvidx.push(i);
   }
+  const patchVset = [];
+  for (const t of patch) {
+    patchVset.push(3 * t, 3 * t + 1, 3 * t + 2);
+  }
   const boundary = [];
   for (const [ek, c] of ecount) {
     if (c !== 1) continue;
@@ -846,7 +889,7 @@ function makeImportExtrudeData(mobj, hit) {
   const normal = flip ? n0.clone().negate() : n0;
   const dLo = flip ? (hasHigh ? -dHigh : undefined) : (hasLow ? dLow : undefined);
   const dHi = flip ? (hasLow ? -dLow : undefined) : (hasHigh ? dHigh : undefined);
-  return { normal, planePoint, fixed: planePoint.dot(normal), base: arr.slice(), vset: pvidx, boundary, dLow: dLo, dHigh: dHi };
+  return { normal, planePoint, fixed: planePoint.dot(normal), base: arr.slice(), vset: patchVset, vsetAll: pvidx, patchTris: [...patch], boundary, dLow: dLo, dHigh: dHi };
 }
 
 function applyTypedExtrusion(dg) {
