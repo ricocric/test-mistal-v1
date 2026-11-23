@@ -731,6 +731,71 @@ function applyImportExtrude(mobj, data, d) {
   const inv = lin.clone().invert();
   const dl = new THREE.Vector3(n.x * d, n.y * d, n.z * d).applyMatrix3(inv);
   const ox = dl.x, oy = dl.y, oz = dl.z;
+  const allSheet = Array.isArray(data.patchTris) && data.patchTris.length === base.length / 9;
+  if (allSheet) {
+    // feuille aplatie (solide reduit a zero a la butee) : le pull recree du volume.
+    // fond = une seule couche a la position d origine (doublons coplanaires fondus,
+    // winding normalise oppose au deplacement), couche deplacee = copie inversee translatée,
+    // jupe = perimetre de la couche fondue, orientation sortante par construction
+    const kk = (x, y, z) => x.toFixed(4) + ',' + y.toFixed(4) + ',' + z.toFixed(4);
+    const seen = new Set();
+    const bottom = [], trisB = [];
+    for (let t = 0; t < base.length / 9; t++) {
+      const pts = [0, 1, 2].map(e => [base[9 * t + 3 * e], base[9 * t + 3 * e + 1], base[9 * t + 3 * e + 2]]);
+      const e1 = [pts[1][0] - pts[0][0], pts[1][1] - pts[0][1], pts[1][2] - pts[0][2]];
+      const e2 = [pts[2][0] - pts[0][0], pts[2][1] - pts[0][1], pts[2][2] - pts[0][2]];
+      const cx = Math.fround(e1[1] * e2[2] - e1[2] * e2[1]);
+      const cy = Math.fround(e1[2] * e2[0] - e1[0] * e2[2]);
+      const cz = Math.fround(e1[0] * e2[1] - e1[1] * e2[0]);
+      if (cx * cx + cy * cy + cz * cz <= 1e-12 * (e1[0] * e1[0] + e1[1] * e1[1] + e1[2] * e1[2]) * (e2[0] * e2[0] + e2[1] * e2[1] + e2[2] * e2[2])) continue;
+      const kb = pts.map(p => kk(p[0], p[1], p[2])).sort().join('|');
+      if (seen.has(kb)) continue;
+      seen.add(kb);
+      trisB.push(pts);
+    }
+    let sgn = 0;
+    for (const pts of trisB) {
+      const e1 = [pts[1][0] - pts[0][0], pts[1][1] - pts[0][1], pts[1][2] - pts[0][2]];
+      const e2 = [pts[2][0] - pts[0][0], pts[2][1] - pts[0][1], pts[2][2] - pts[0][2]];
+      sgn += (e1[1] * e2[2] - e1[2] * e2[1]) * dl.x + (e1[2] * e2[0] - e1[0] * e2[2]) * dl.y + (e1[0] * e2[1] - e1[1] * e2[0]) * dl.z;
+    }
+    if (sgn > 0) { for (const pts of trisB) pts.reverse(); }
+    if (Math.abs(d) < 1e-9) {
+      for (const pts of trisB) for (const p of pts) bottom.push(p[0], p[1], p[2]);
+      setImportGeometry(mobj, new Float32Array(bottom));
+      return;
+    }
+    for (const pts of trisB) for (const p of pts) bottom.push(p[0], p[1], p[2]);
+    const edir = new Map();
+    for (const pts of trisB) {
+      for (let e = 0; e < 3; e++) {
+        const a = pts[e], b = pts[(e + 1) % 3];
+        const ka = kk(a[0], a[1], a[2]), kbb = kk(b[0], b[1], b[2]);
+        const key = ka < kbb ? ka + '|' + kbb : kbb + '|' + ka;
+        edir.set(key, edir.has(key) ? null : [a, b]);
+      }
+    }
+    const per = [];
+    for (const v of edir.values()) if (v) per.push(v);
+    const arr = new Float32Array(2 * bottom.length + per.length * 18);
+    arr.set(bottom, 0);
+    let o = bottom.length;
+    for (const pts of trisB) {
+      arr[o++] = pts[2][0] + ox; arr[o++] = pts[2][1] + oy; arr[o++] = pts[2][2] + oz;
+      arr[o++] = pts[1][0] + ox; arr[o++] = pts[1][1] + oy; arr[o++] = pts[1][2] + oz;
+      arr[o++] = pts[0][0] + ox; arr[o++] = pts[0][1] + oy; arr[o++] = pts[0][2] + oz;
+    }
+    for (const [a, b] of per) {
+      arr[o++] = b[0]; arr[o++] = b[1]; arr[o++] = b[2];
+      arr[o++] = a[0]; arr[o++] = a[1]; arr[o++] = a[2];
+      arr[o++] = a[0] + ox; arr[o++] = a[1] + oy; arr[o++] = a[2] + oz;
+      arr[o++] = b[0]; arr[o++] = b[1]; arr[o++] = b[2];
+      arr[o++] = a[0] + ox; arr[o++] = a[1] + oy; arr[o++] = a[2] + oz;
+      arr[o++] = b[0] + ox; arr[o++] = b[1] + oy; arr[o++] = b[2] + oz;
+    }
+    setImportGeometry(mobj, arr);
+    return;
+  }
   if (d <= 0 && data.dHigh === undefined) {
     // push rentrant : pas d interpolation. Tout ce qui est au-dessus du plan est replie
     // exactement sur le plan, par une translation qui ne depend que du sommet
