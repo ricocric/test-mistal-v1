@@ -730,11 +730,16 @@ function applyImportExtrude(mobj, data, d) {
   const lin = new THREE.Matrix3().setFromMatrix4(mobj.matrixWorld);
   const inv = lin.clone().invert();
   const dl = new THREE.Vector3(n.x * d, n.y * d, n.z * d).applyMatrix3(inv);
-  const arr = new Float32Array(base.length + data.boundary.length * 18);
+  const flat = d <= 0 && data.dHigh === undefined;
+  const arr = new Float32Array(base.length + (flat ? 0 : data.boundary.length * 18));
   arr.set(base);
   const ox = dl.x, oy = dl.y, oz = dl.z;
   for (const i of data.vset) {
     arr[3 * i] += ox; arr[3 * i + 1] += oy; arr[3 * i + 2] += oz;
+  }
+  if (flat) {
+    setImportGeometry(mobj, arr);
+    return;
   }
   let o = base.length;
   for (const [ia, ib] of data.boundary) {
