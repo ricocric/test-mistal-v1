@@ -319,6 +319,7 @@ function undo() {
   else if (a.type === 'resize') { a.obj.scale.copy(a.fromScale); a.obj.position.copy(a.fromPos); setStatus('Dimension annulée'); }
   else if (a.type === 'import-extrude') { setImportGeometry(a.obj, a.base); if (selected === a.obj) outline.setFromObject(a.obj); setStatus('Extrusion (import) annulée'); }
   else if (a.type === 'clear') { for (const o of a.items) add(o); setStatus('Effacement annulé'); }
+  refreshCotes();
 }
 
 /* ------------------------------------------------------------------ */
@@ -531,6 +532,7 @@ function rotateObject(obj, deg, axis) {
     obj.position.y -= after.min.y;
   }
   if (selected === obj) outline.setFromObject(obj);
+  refreshCotes();
   setStatus('Rotation de ' + deg + '° autour de ' + axis.toUpperCase() + ' — Ctrl+Z pour annuler.');
 }
 
@@ -595,6 +597,7 @@ document.getElementById('ctxDimBtn').addEventListener('click', () => {
   if (Math.abs(t.quaternion.x) < 1e-4 && Math.abs(t.quaternion.z) < 1e-4) t.position.y = t.scale.y / 2;
   pushUndo({ type: 'resize', obj: t, fromScale, fromPos });
   outline.setFromObject(t);
+  refreshCotes();
   setStatus('Objet dimensionné : ' + fmtLen(t.scale.x) + ' × ' + fmtLen(t.scale.z) + ' × ' + fmtLen(t.scale.y) + ' — Ctrl+Z pour annuler.');
 });
 
@@ -842,6 +845,7 @@ function applyTypedExtrusion(dg) {
     pushUndo({ type: 'import-extrude', obj, base: dg.base });
     setStatus('Extrusion posée : ' + fmtLen(d) + ' — Ctrl+Z pour annuler.');
   }
+  refreshCotes();
   drawing = null;
   controls.enabled = true;
 }
@@ -1134,6 +1138,8 @@ const measureGroup = new THREE.Group();
 scene.add(measureGroup);
 const measures = [];
 let pendingA = null;
+let pendingASnap = null;
+let pendingAObj = null;
 let mLive = null;
 let leftDownPos = null;
 const coteDotGeo = new THREE.SphereGeometry(0.07, 12, 12);
@@ -1191,7 +1197,7 @@ function disposeSprite(sp) {
   sp.material.dispose();
 }
 
-function addCote(a, b) {
+function addCote(a, b, aA, aB) {
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), coteLineMat);
   const dotA = new THREE.Mesh(coteDotGeo, coteDotMat);
   const dotB = new THREE.Mesh(coteDotGeo, coteDotMat);
@@ -1200,7 +1206,43 @@ function addCote(a, b) {
   const sprite = makeCoteLabel(fmtLen(a.distanceTo(b)));
   sprite.position.copy(a).add(b).multiplyScalar(0.5);
   measureGroup.add(line, dotA, dotB, sprite);
-  measures.push({ a: a.clone(), b: b.clone(), line, dotA, dotB, sprite });
+  measures.push({ a: a.clone(), b: b.clone(), line, dotA, dotB, sprite, aA: aA || null, aB: aB || null });
+}
+
+function anchorFromSnap(s, obj) {
+  if (!s || !obj) return null;
+  if (s.type === 'vertex') return { obj, i: s.vi };
+  if (s.type === 'edge') return { obj, i: s.vi, j: s.vj, u: s.u };
+  return null;
+}
+
+function anchorW(an) {
+  if (!an || !an.obj || !objects.includes(an.obj)) return null;
+  const arr = an.obj.geometry.attributes.position.array;
+  const v = new THREE.Vector3();
+  if (an.j !== undefined) {
+    const ia = 3 * an.i, ib = 3 * an.j;
+    v.set(arr[ia] + (arr[ib] - arr[ia]) * an.u, arr[ia + 1] + (arr[ib + 1] - arr[ia + 1]) * an.u, arr[ia + 2] + (arr[ib + 2] - arr[ia + 2]) * an.u);
+  } else {
+    v.set(arr[3 * an.i], arr[3 * an.i + 1], arr[3 * an.i + 2]);
+  }
+  return v.applyMatrix4(an.obj.matrixWorld);
+}
+
+function refreshCotes() {
+  for (const m of measures) {
+    m.a.copy(anchorW(m.aA) || m.a);
+    m.b.copy(anchorW(m.aB) || m.b);
+    m.line.geometry.setFromPoints([m.a, m.b]);
+    m.dotA.position.copy(m.a);
+    m.dotB.position.copy(m.b);
+    m.sprite.position.copy(m.a).add(m.b).multiplyScalar(0.5);
+    const txt = fmtLen(m.a.distanceTo(m.b));
+    if (m._txt !== txt) {
+      m._txt = txt;
+      setSpriteLabel(m.sprite, txt);
+    }
+  }
 }
 
 function clearCotes() {
@@ -1214,6 +1256,8 @@ function clearCotes() {
 
 function clearMeasureLive() {
   pendingA = null;
+  pendingASnap = null;
+  pendingAObj = null;
   measureMarker.visible = false;
   if (mLive) {
     measureGroup.remove(mLive.line, mLive.sprite);
@@ -1223,27 +1267,22 @@ function clearMeasureLive() {
   }
 }
 
-const VERT_TOL_PX = 14;
+const VERT_TOL_PX = 14, EDGE_TOL_PX = 10;
 function pickMeasurePoint(e) {
   pointerToNDC(e);
   const hits = raycaster.intersectObjects(objects, false);
   if (hits.length) {
-    const vs = vertexSnapPoint(e, hits[0].object);
-    if (vs) return { p: vs, onVertex: true };
-    return { p: hits[0].point.clone(), onVertex: false };
+    const s = snapTargetPoint(e, hits[0].object);
+    if (s) return { p: s.p, obj: hits[0].object, snap: s, onVertex: s.type === 'vertex', onEdge: s.type === 'edge' };
+    return { p: hits[0].point.clone(), obj: hits[0].object, snap: null, onVertex: false, onEdge: false };
   }
   const p = new THREE.Vector3();
   if (raycaster.ray.intersectPlane(groundPlane, p)) {
     p.x = snap(p.x);
     p.z = snap(p.z);
-    return { p, onVertex: false, onEdge: false };
+    return { p, obj: null, snap: null, onVertex: false, onEdge: false };
   }
   return null;
-}
-
-function vertexSnapPoint(e, mobj) {
-  const s = snapTargetPoint(e, mobj);
-  return s ? s.p : null;
 }
 
 function snapTargetPoint(e, mobj) {
@@ -1267,14 +1306,14 @@ function snapTargetPoint(e, mobj) {
       if (pr.z > 1) continue;
       idx = verts.length;
       seenV.set(wkey, idx);
-      verts.push({ x: wp.x, y: wp.y, z: wp.z, sx: r.left + (pr.x + 1) / 2 * r.width, sy: r.top + (1 - (pr.y + 1) / 2) * r.height });
+      verts.push({ x: wp.x, y: wp.y, z: wp.z, sx: r.left + (pr.x + 1) / 2 * r.width, sy: r.top + (1 - (pr.y + 1) / 2) * r.height, li: i });
     }
     seenL.set(lkey, idx);
   }
   let best = null;
   for (const v of verts) {
     const d = Math.hypot(v.sx - e.clientX, v.sy - e.clientY);
-    if (d <= VERT_TOL_PX && (!best || d < best.d)) best = { d, p: new THREE.Vector3(v.x, v.y, v.z), type: 'vertex' };
+    if (d <= VERT_TOL_PX && (!best || d < best.d)) best = { d, p: new THREE.Vector3(v.x, v.y, v.z), type: 'vertex', vi: v.li };
   }
   if (best) return best;
   const edges = [];
@@ -1302,9 +1341,10 @@ function snapTargetPoint(e, mobj) {
     const cx = A.sx + abx * u, cy = A.sy + aby * u;
     const d = Math.hypot(cx - e.clientX, cy - e.clientY);
     if (d <= EDGE_TOL_PX && (!bestE || d < bestE.d)) {
-      bestE = { d, p: new THREE.Vector3(A.x + (B.x - A.x) * u, A.y + (B.y - A.y) * u, A.z + (B.z - A.z) * u), type: 'edge' };
+      bestE = { d, p: new THREE.Vector3(A.x + (B.x - A.x) * u, A.y + (B.y - A.y) * u, A.z + (B.z - A.z) * u), type: 'edge', vi: A.li, vj: B.li, u };
     }
   }
+  if (!bestE) return null;
   return bestE;
 }
 
@@ -1328,10 +1368,8 @@ function showMeasureLive(b) {
 const unitSel = document.getElementById('unitSel');
 unitSel.addEventListener('change', () => {
   unit = unitSel.value;
-  for (const m of measures) {
-    setSpriteLabel(m.sprite, fmtLen(m.a.distanceTo(m.b)));
-    m.sprite.position.copy(m.a).add(m.b).multiplyScalar(0.5);
-  }
+  for (const m of measures) delete m._txt;
+  refreshCotes();
   setStatus('Unités : ' + unit + ' (' + measures.length + ' cote(s) affichée(s))');
 });
 
@@ -1380,16 +1418,19 @@ function cancelDraw() {
   if (drawing && drawing.kind === 'import-face' && drawing.obj) {
     setImportGeometry(drawing.obj, drawing.base);
     if (selected === drawing.obj) outline.setFromObject(drawing.obj);
+    refreshCotes();
   }
   if (drawing && drawing.kind === 'extrude' && drawing.obj) {
     drawing.obj.scale.y = drawing.from;
     drawing.obj.position.y = drawing.fromObjY;
     if (selected === drawing.obj) outline.setFromObject(drawing.obj);
+    refreshCotes();
   }
   if (drawing && drawing.kind === 'face' && drawing.obj) {
     drawing.obj.scale.copy(drawing.fromScale);
     drawing.obj.position.copy(drawing.fromPos);
     if (selected === drawing.obj) outline.setFromObject(drawing.obj);
+    refreshCotes();
   }
   drawing = null;
   orbitDrag = false;
@@ -1441,6 +1482,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
         const applied = drawing.appliedD || 0;
         if (Math.abs(applied) < 1e-6) {
           setImportGeometry(drawing.obj, drawing.base);
+          refreshCotes();
           setStatus('Extrusion annulée (aucun déplacement) — cliquez une face pour recommencer.');
         } else {
           pushUndo({ type: 'import-extrude', obj: drawing.obj, base: drawing.base });
@@ -1465,7 +1507,14 @@ renderer.domElement.addEventListener('pointerdown', e => {
           return;
         }
         controls.enabled = false;
-        ext.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(ext.normal, ext.planePoint);
+        const camDirPull = camera.getWorldDirection(new THREE.Vector3());
+        const pn = camDirPull.clone().addScaledVector(ext.normal, -camDirPull.dot(ext.normal));
+        if (pn.lengthSq() < 0.04) {
+          if (Math.abs(ext.normal.y) > 0.9) pn.set(1, 0, 0);
+          else pn.set(ext.normal.z, 0, -ext.normal.x);
+        }
+        pn.normalize();
+        ext.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(pn, ext.planePoint);
         drawing = Object.assign({ kind: 'import-face', obj: eobj, appliedD: 0, numBuf: '', statusTick: 0 }, ext);
         setStatus('Glissez le long de la normale, cliquez pour poser la face (ou tapez une valeur + Entrée, Échap pour annuler).');
         return;
@@ -1550,6 +1599,7 @@ renderer.domElement.addEventListener('pointermove', e => {
     selected.position.copy(drawing.from).add(delta);
     if (selected.position.y < 0) selected.position.y = 0;
     outline.setFromObject(selected);
+    refreshCotes();
     return;
   }
   if (drawing && drawing.kind === 'rect' && gp) {
@@ -1586,6 +1636,7 @@ renderer.domElement.addEventListener('pointermove', e => {
       if (snapping) d = Math.round(d / SNAP) * SNAP;
       drawing.appliedD = d;
       applyImportExtrude(drawing.obj, drawing, d);
+      refreshCotes();
       const nowF = performance.now();
       if (!drawing.statusTick || nowF - drawing.statusTick > 120) {
         drawing.statusTick = nowF;
@@ -1609,6 +1660,7 @@ renderer.domElement.addEventListener('pointermove', e => {
       }
       obj.position.setComponent(axis, drawing.fixed + sign * span / 2);
       outline.setFromObject(obj);
+      refreshCotes();
     }
     return;
   }
@@ -1627,6 +1679,7 @@ renderer.domElement.addEventListener('pointermove', e => {
       obj.scale.y = h;
       obj.position.y = h / 2;
       outline.setFromObject(obj);
+      refreshCotes();
     }
     return;
   }
@@ -1646,12 +1699,14 @@ renderer.domElement.addEventListener('pointerup', e => {
       if (hit) {
         if (!pendingA) {
           pendingA = hit.p;
+          pendingASnap = hit.snap;
+          pendingAObj = hit.obj;
           measureMarker.position.copy(hit.p);
           measureMarker.visible = true;
           setStatus('Cote : premier point posé' + (hit.onVertex ? ' (sommet)' : hit.onEdge ? ' (arête)' : '') + ' — cliquez le second point (Échap pour annuler).');
         } else {
           const d = pendingA.distanceTo(hit.p);
-          addCote(pendingA, hit.p);
+          addCote(pendingA, hit.p, anchorFromSnap(pendingASnap, pendingAObj), anchorFromSnap(hit.snap, hit.obj));
           clearMeasureLive();
           setStatus('Cote créée : ' + fmtLen(d) + ' — cliquez pour une nouvelle cote (Échap ou changement d’outil pour finir).');
         }
