@@ -15,7 +15,7 @@ else()
             "GLFW introuvable :\n"
             "  - soit GLFW est installe systeme (vcpkg, MSYS2, homebrew) ;\n"
             "  - soit recompilez avec -DGLFW_HOME=<chemin vers le dossier GLFW dezippe>,\n"
-            "    exemple : cmake -B build -G \"Visual Studio 17 2022\" -DGLFW_HOME=C:/libs/glfw-3.4.bin.WIN64")
+            "    exemple : cmake -B build -DGLFW_HOME=C:/libs/glfw-3.5.1.bin.WIN64")
     endif()
     set(glfw3_INCLUDE_DIR "${GLFW_HOME}/include")
     find_library(glfw3_LIBRARY glfw3dll HINTS "${GLFW_HOME}/lib-vc2022")

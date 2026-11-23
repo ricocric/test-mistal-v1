@@ -24,7 +24,8 @@ build, aucune fonction d edition.
 2. **GLFW 3** (la seule bibliotheque externe du lot N1). Deux facons :
    - Deja installe (vcpkg, MSYS2...) : rien a faire de special.
    - Sinon : telecharger le binaire Windows sur https://www.glfw.org/download.html
-     (fichier `glfw-3.4.bin.WIN64.zip`), dezipper par exemple dans `C:\libs\`.
+     (fichier `glfw-3.5.1.bin.WIN64.zip` ou plus recent),
+     dezipper par exemple dans `C:\libs\`.
 
 ## Compiler (invite « Developer PowerShell for VS ... »)
 
@@ -34,7 +35,7 @@ embarque un CMake assez recent pour la gerer).
 
 ```
 cd desktop
-cmake -B build -DGLFW_HOME=C:/libs/glfw-3.4.bin.WIN64
+cmake -B build -DGLFW_HOME=C:/libs/glfw-3.5.1.bin.WIN64
 cmake --build build
 ```
 
