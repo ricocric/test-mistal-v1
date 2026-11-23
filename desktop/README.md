@@ -4,7 +4,41 @@ Transcription du prototype web (`index.html` a la racine du depot) en programme
 natif Windows, par petits lots testables. Modele geometrique en **double
 precision** natif (la version web stockait en Float32).
 
-## Lot N3 (celui-ci)
+## Lot N4 (celui-ci)
+
+**Push/Pull** (extrusion de face), **soudure des sommets a l'import** et
+**batterie de tests native** (`desktop/tests/`).
+
+- **P** : bascule le mode Push/Pull — cliquez une face d'un objet (create ou
+  importe), **deplacez la souris sans bouton tenu**, la face suit le curseur
+  sur son plan ; **second clic gauche** : pose ; **clic droit ou Echap** :
+  annule et restaure la piece ;
+- pendant le deplacement : tapez des **chiffres** (+ virgule ou point, Retour
+  arriere pour corriger) puis **Entree** pour poser une **dimension exacte**
+  (toujours positive, comme le web 3.10.3) ;
+- **butee** : quand la piece est deterree a zero, la face devient une **feuille**
+  (couche unique) ; un nouveau **pull sur la feuille recree le volume** (fond +
+  copie translatée + jupe, comme le web) ; le push dans la matiere **plie les
+  parois sans jamais penetrer** (repli exact sur le plan) ;
+- la transcription est fidele au web 3.10.3 : patch coplanaire connexe (BFS sur
+  aretes), parois voisines etirees par indices partages (aucune jupe en double),
+  jupe uniquement sur les aretes de bord non partagees ;
+- **soudure a l'import** : les sommets coïncidents des OBJ/STL sont fondus
+  (tolerance 1e-6 relatif, grille spatiale) et les tris degeneres supprimes —
+  message console `import OBJ : N sommets soudes (M restants)` ; sans elle le
+  push/pull sur imports en tri-soup deconnait (face entiere = un seul triangle) ;
+- **tests** : `desktop/tests/` contient un harnais geometrique sans fenetre
+  (stubs GLFW/GL versionnes) et 58 verifications : lecteurs/exporteurs, soudure,
+  anti-superposition, cadrage, plus les familles push/pull (tirage, enfoncement,
+  butee + feuille, pull de la feuille, face a coins separes = jupe, echelle par
+  objet). Compilation et execution :
+
+```
+cmake --build build --target sketch3d_tests
+build\Debug\sketch3d_tests.exe
+```
+
+## Lot N3
 
 Scene d'objets (boites) maillage indexe en doubles : selection au clic,
 deplacement (fluide, verrouillable X/Y/Z touches tenues),
@@ -81,12 +115,15 @@ build\Debug\sketch3d.exe
 
 ## Organiseur des prochains lots
 
-- N4 : push/pull sur imports + soudure de sommets (invariants portés du web :
-  coque fermee, aretes ×2, NaN, anti-penetration) + batterie de tests native
-- N5 : interface (Dear ImGui), cotes, unites, menu Fichier
+- N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils
+  façon Windows), barres d'outils flottantes dockables (branch docking),
+  multi-viewport (deuxieme ecran), cotes, unites, menu Fichier complet
+  (ouvrir/enregistrer un projet, importer, quitter)
+- ensuite : pipeline par shaders (PBR) pour le rendu photorealiste
 - ensuite : pipeline par shaders (PBR) pour le rendu photorealiste
 - a planifier : fichier de setup utilisateur (regles d import comme la
-  normalisation d'echelle, unites par defaut, chemins recents...)
+  normalisation d'echelle, unites par defaut, chemins recents...) ; edition
+  libre de maillage (deformations a volonte)
 
 ## Notes techniques du lot N1
 
