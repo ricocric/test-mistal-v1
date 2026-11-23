@@ -123,7 +123,9 @@ static void buildScene() {
 enum Mode { M_None, M_Orbit, M_Drag };
 static Mode g_mode = M_None;
 static Camera g_cam;
+static Camera g_camHome;               // vue d'origine (H)
 static double g_prevX = 0, g_prevY = 0;
+static double g_lastClickTime = -1.0;
 static int g_winW = 1280, g_winH = 800;
 static int g_lockAxis = -1;            // 0=X, 1=Y, 2=Z pendant un drag
 static Vec3 g_grabPoint;               // point de saisie (monde)
@@ -131,6 +133,11 @@ static Vec3 g_startPos;                // position de l'objet au moment de la sa
 
 static const char* axisName(int a) { return a == 0 ? "X" : a == 1 ? "Y" : "Z"; }
 static Vec3 axisVec(int a) { return a == 0 ? Vec3(1, 0, 0) : a == 1 ? Vec3(0, 1, 0) : Vec3(0, 0, 1); }
+
+static void goHome() {
+    g_cam = g_camHome;
+    g_selected = -1;
+}
 
 static void frameScene() {
     if (g_objs.empty()) { g_cam.target = Vec3(0, 0.8, 0); g_cam.dist = 9.0; return; }
@@ -284,6 +291,9 @@ static void onScroll(GLFWwindow*, double, double dy) {
 static void onMouseButton(GLFWwindow* w, int button, int action, int) {
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
+        const double now = glfwGetTime();
+        const bool dbl = (now - g_lastClickTime) < 0.3;
+        g_lastClickTime = now;
         const int hit = pickAt(w);
         if (hit != g_selected) {
             g_selected = hit;
@@ -296,7 +306,13 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
                 std::printf("deselection\n");
             }
         }
-        if (hit >= 0) { beginDrag(w, hit); }
+        if (hit >= 0) {
+            beginDrag(w, hit);
+            if (dbl) {
+                g_selected = hit;
+                frameSelected();
+            }
+        }
         else { g_mode = M_Orbit; }
         glfwGetCursorPos(w, &g_prevX, &g_prevY);
     } else {
@@ -309,6 +325,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
     if (action == GLFW_PRESS) {
         if (key == GLFW_KEY_ESCAPE) glfwSetWindowShouldClose(w, GLFW_TRUE);
         if (key == GLFW_KEY_F) frameSelected();
+        if (key == GLFW_KEY_H) { goHome(); std::printf("vue d'origine\n"); }
     }
     recordAxisKey(scancode, action);
 }
@@ -435,6 +452,7 @@ static void drawAxisGuide() {
 
 int main() {
     std::printf("Sketch3D natif — lot N2 (selection au clic + deplacement, verrouillage X/Y/Z)\n");
+    std::printf("double-clic sur un objet : rapprochement ; H : vue d'origine ; F : cadrage\n");
     buildScene();
     if (!glfwInit()) { std::fprintf(stderr, "glfwInit a echoue\n"); return 1; }
 
@@ -446,6 +464,7 @@ int main() {
     if (!win) { std::fprintf(stderr, "creation de fenetre impossible\n"); glfwTerminate(); return 1; }
     glfwMakeContextCurrent(win);
     glfwSwapInterval(1);
+    g_camHome = g_cam;
     glfwSetScrollCallback(win, onScroll);
     glfwSetMouseButtonCallback(win, onMouseButton);
     glfwSetKeyCallback(win, onKey);
