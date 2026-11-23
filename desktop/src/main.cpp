@@ -15,6 +15,7 @@
 // dedie. Modele geometrique en double precision.
 
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -131,13 +132,27 @@ static Vec3 g_startPos;                // position de l'objet au moment de la sa
 static const char* axisName(int a) { return a == 0 ? "X" : a == 1 ? "Y" : "Z"; }
 static Vec3 axisVec(int a) { return a == 0 ? Vec3(1, 0, 0) : a == 1 ? Vec3(0, 1, 0) : Vec3(0, 0, 1); }
 
-static void frameAll() {
-    g_cam.target = Vec3(0, 0.8, 0);
-    g_cam.dist = 9.0;
+static void frameScene() {
+    if (g_objs.empty()) { g_cam.target = Vec3(0, 0.8, 0); g_cam.dist = 9.0; return; }
+    Vec3 lo = g_objs[0].pos - g_objs[0].half;
+    Vec3 hi = g_objs[0].pos + g_objs[0].half;
+    for (size_t i = 1; i < g_objs.size(); ++i) {
+        const Vec3 m = g_objs[i].pos - g_objs[i].half;
+        const Vec3 M = g_objs[i].pos + g_objs[i].half;
+        if (m.x < lo.x) lo.x = m.x;
+        if (m.y < lo.y) lo.y = m.y;
+        if (m.z < lo.z) lo.z = m.z;
+        if (M.x > hi.x) hi.x = M.x;
+        if (M.y > hi.y) hi.y = M.y;
+        if (M.z > hi.z) hi.z = M.z;
+    }
+    g_cam.target = (lo + hi) * 0.5;
+    const double r = ((hi - lo) * 0.5).norm();
+    g_cam.dist = std::max(r / std::tan(kFovDeg * 3.14159265358979 / 360.0), 1.0) * 1.5;
 }
 
 static void frameSelected() {
-    if (g_selected < 0) { frameAll(); return; }
+    if (g_selected < 0) { frameScene(); return; }
     const Object& o = g_objs[(size_t)g_selected];
     g_cam.target = o.pos;
     const double r = o.half.norm();
@@ -211,11 +226,25 @@ static void beginDrag(GLFWwindow* w, int idx) {
 
 /* Glisser : le point saisi reste sous le curseur sur un plan face a la
    camera (copie du dragPlane web). Touche X/Y/Z maintenue : restriction. */
+/* Etat des touches d'axe : remplies par le callback clavier a partir du
+   scancode, car glfwGetKey donne la position physique QWERTY US — sur un
+   clavier AZERTY la touche etiquetee Z arrive en GLFW_KEY_W et le lock Z
+   ne se declenchait jamais. glfwGetKeyName traduit le scancode selon le
+   layout courant, donc X/Y/Z marchent sur AZERTY comme QWERTY. */
+static bool g_axisHeld[3] = {false, false, false};
+
+static void recordAxisKey(int scancode, int action) {
+    const char* name = glfwGetKeyName(0, scancode);
+    if (!name || name[0] == '\0') return;
+    const char c = (name[0] >= 'A' && name[0] <= 'Z') ? char(name[0] - 'A' + 'a') : name[0];
+    if (c == 'x') g_axisHeld[0] = (action == GLFW_PRESS);
+    else if (c == 'y') g_axisHeld[1] = (action == GLFW_PRESS);
+    else if (c == 'z') g_axisHeld[2] = (action == GLFW_PRESS);
+}
+
 static void updateDrag(GLFWwindow* w) {
     if (g_selected < 0) { g_mode = M_None; return; }
-    const int axis = (glfwGetKey(w, GLFW_KEY_X) == GLFW_PRESS) ? 0
-                   : (glfwGetKey(w, GLFW_KEY_Y) == GLFW_PRESS) ? 1
-                   : (glfwGetKey(w, GLFW_KEY_Z) == GLFW_PRESS) ? 2 : -1;
+    const int axis = (g_axisHeld[0]) ? 0 : (g_axisHeld[1]) ? 1 : (g_axisHeld[2]) ? 2 : -1;
     if (axis != g_lockAxis) {
         g_lockAxis = axis;
         if (axis >= 0) std::printf("deplacement verrouille sur %s\n", axisName(axis));
@@ -270,10 +299,12 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
     }
 }
 
-static void onKey(GLFWwindow* w, int key, int, int action, int) {
-    if (action != GLFW_PRESS) return;
-    if (key == GLFW_KEY_ESCAPE) glfwSetWindowShouldClose(w, GLFW_TRUE);
-    if (key == GLFW_KEY_F) frameSelected();
+static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
+    if (action == GLFW_PRESS) {
+        if (key == GLFW_KEY_ESCAPE) glfwSetWindowShouldClose(w, GLFW_TRUE);
+        if (key == GLFW_KEY_F) frameSelected();
+    }
+    recordAxisKey(scancode, action);
 }
 
 /* ------------------------------------------------------------------ */
