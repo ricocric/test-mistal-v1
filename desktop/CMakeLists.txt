@@ -11,6 +11,20 @@ if(glfw3_FOUND)
 else()
     set(GLFW_HOME "" CACHE PATH "Dossier racine des binaires GLFW (contient include/ et lib-vc2022/)")
     if(NOT GLFW_HOME)
+        foreach(_dir IN ITEMS "C:/libs" "$ENV{USERPROFILE}/libs" "$ENV{USERPROFILE}/Downloads" "$ENV{USERPROFILE}/Desktop")
+            file(GLOB _cand "${_dir}/*glfw*" "${_dir}/*GLFW*")
+            foreach(_c IN LISTS _cand)
+                if(IS_DIRECTORY "${_c}" AND EXISTS "${_c}/include/GLFW/glfw3.h")
+                    set(GLFW_HOME "${_c}")
+                    break()
+                endif()
+            endforeach()
+            if(GLFW_HOME)
+                break()
+            endif()
+        endforeach()
+    endif()
+    if(NOT GLFW_HOME)
         message(FATAL_ERROR
             "GLFW introuvable :\n"
             "  - soit GLFW est installe systeme (vcpkg, MSYS2, homebrew) ;\n"
@@ -20,7 +34,13 @@ else()
     set(glfw3_INCLUDE_DIR "${GLFW_HOME}/include")
     find_library(glfw3_LIBRARY glfw3dll HINTS "${GLFW_HOME}/lib-vc2022")
     if(NOT EXISTS "${glfw3_INCLUDE_DIR}/GLFW/glfw3.h")
-        message(FATAL_ERROR "GLFW_HOME ne contient pas include/GLFW/glfw3.h")
+        message(FATAL_ERROR
+            "GLFW_HOME = ${GLFW_HOME}\n"
+            "ce dossier ne contient pas include/GLFW/glfw3.h\n"
+            "Verifier que le chemin pointe vers le dossier extrait de l archive GLFW\n"
+            "(celui qui contient directement include/ et lib-vc2022/), pas un parent\n"
+            "ni un dossier vide. Test rapide sous PowerShell :\n"
+            "  Get-ChildItem -Recurse -Filter glfw3.h C:/libs | Select-Object FullName")
     endif()
     if(NOT glfw3_LIBRARY)
         message(FATAL_ERROR "GLFW_HOME/lib-vc2022 ne contient pas glfw3dll.lib")
