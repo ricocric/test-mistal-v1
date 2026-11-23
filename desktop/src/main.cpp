@@ -234,7 +234,10 @@ static void beginDrag(GLFWwindow* w, int idx) {
 static bool g_axisHeld[3] = {false, false, false};
 
 static void recordAxisKey(int scancode, int action) {
-    /* premier parametre = GLFW_KEY_UNKNOWN (-1) : on demunde la traduction
+    /* GLFW_KEY_REPEAT arrive en continu pendant une touche tenue : ne pas
+       le confondre avec un relachement (il effacait le verrou aussitot). */
+    if (action == GLFW_REPEAT) return;
+    /* premier parametre = GLFW_KEY_UNKNOWN (-1) : on demande la traduction
        du scancode selon le layout courant ; passer 0 reviendrait a demander
        le nom de la touche Espace pour toute touche. */
     const char* name = glfwGetKeyName(-1, scancode);
@@ -378,7 +381,7 @@ static void drawBox(const Object& o, bool selected) {
 
 static void render() {
     glViewport(0, 0, g_winW, g_winH);
-    glClearColor(0.12, 0.13, 0.16, 1.0);
+    glClearColor(0.12f, 0.13f, 0.16f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
 
