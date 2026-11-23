@@ -113,6 +113,7 @@ struct Camera {
 struct Object {
     std::string name;
     Vec3 pos{0, 0, 0};
+    double scl = 1.0;   /* echelle uniforme monde = pos + scl * local */
     double col[3] = {0.55, 0.35, 0.2};
     std::vector<Vec3> v;
     std::vector<unsigned> tri;
@@ -212,11 +213,11 @@ static void goHome() {
 
 static void frameScene() {
     if (g_objs.empty()) { g_cam.target = Vec3(0, 0.8, 0); g_cam.dist = 9.0; return; }
-    Vec3 lo = g_objs[0].pos + g_objs[0].bmin;
-    Vec3 hi = g_objs[0].pos + g_objs[0].bmax;
+    Vec3 lo = g_objs[0].pos + g_objs[0].bmin * g_objs[0].scl;
+    Vec3 hi = g_objs[0].pos + g_objs[0].bmax * g_objs[0].scl;
     for (size_t i = 1; i < g_objs.size(); ++i) {
-        const Vec3 m = g_objs[i].pos + g_objs[i].bmin;
-        const Vec3 M = g_objs[i].pos + g_objs[i].bmax;
+        const Vec3 m = g_objs[i].pos + g_objs[i].bmin * g_objs[i].scl;
+        const Vec3 M = g_objs[i].pos + g_objs[i].bmax * g_objs[i].scl;
         if (m.x < lo.x) lo.x = m.x;
         if (m.y < lo.y) lo.y = m.y;
         if (m.z < lo.z) lo.z = m.z;
@@ -232,7 +233,7 @@ static void frameScene() {
 static void frameSelected() {
     if (g_selected < 0) { frameScene(); return; }
     const Object& o = g_objs[(size_t)g_selected];
-    const Vec3 d = (o.bmax - o.bmin) * 0.5;
+    const Vec3 d = (o.bmax - o.bmin) * (0.5 * o.scl);
     g_cam.target = o.pos + (o.bmin + o.bmax) * 0.5;
     const double r = d.norm();
     if (r > 1e-12) g_cam.dist = 4.0 * r;
@@ -295,11 +296,15 @@ static bool rayTri(const Vec3& org, const Vec3& dir, const Vec3& a, const Vec3& 
 
 static bool rayObject(const Vec3& org, const Vec3& dir, const Object& o, double& tHit) {
     double t0;
-    if (!rayAABB(org, dir, o.pos + o.bmin, o.pos + o.bmax, t0)) return false;
+    if (!rayAABB(org, dir, o.pos + o.bmin * o.scl, o.pos + o.bmax * o.scl, t0)) return false;
+    /* rayon ramene en local : orgL + dirL*t = vlocal, meme parametre t (monde) */
+    const double inv = (o.scl > 1e-12) ? 1.0 / o.scl : 1.0;
+    const Vec3 orgL = (org - o.pos) * inv;
+    const Vec3 dirL = dir * inv;
     double best = 1e300;
     for (size_t i = 0; i < o.tri.size(); i += 3) {
         double t;
-        if (rayTri(org, dir, o.v[o.tri[i]] + o.pos, o.v[o.tri[i + 1]] + o.pos, o.v[o.tri[i + 2]] + o.pos, t)
+        if (rayTri(orgL, dirL, o.v[o.tri[i]], o.v[o.tri[i + 1]], o.v[o.tri[i + 2]], t)
             && t < best) best = t;
     }
     if (best >= 1e300) return false;
@@ -520,18 +525,28 @@ static bool loadMeshFile(const std::string& path, Object& o, std::string& err) {
 
 /* AABB (monde) avec recouvrement sur les 3 axes = contact */
 static bool overlapsWorld(const Object& a, const Object& b) {
-    const Vec3 amin = a.pos + a.bmin, amax = a.pos + a.bmax;
-    const Vec3 bmin = b.pos + b.bmin, bmax = b.pos + b.bmax;
+    const Vec3 amin = a.pos + a.bmin * a.scl, amax = a.pos + a.bmax * a.scl;
+    const Vec3 bmin = b.pos + b.bmin * b.scl, bmax = b.pos + b.bmax * b.scl;
     for (int i = 0; i < 3; ++i) {
         if ((&amax.x)[i] <= (&bmin.x)[i] || (&bmax.x)[i] <= (&amin.x)[i]) return false;
     }
     return true;
 }
 
+/* Normalisation d'echelle : l'objet importe doit tenir entre 1 et 4 unites,
+   comme la scene de demonstration (le web inserait un facteur 4/3019 sur le
+   fichier reel). Le facteur reste object par objet. */
+static void normalizeImportScale(Object& o) {
+    const double mx = o.bmax.x - o.bmin.x, my = o.bmax.y - o.bmin.y, mz = o.bmax.z - o.bmin.z;
+    const double span = std::max(std::max(mx, my), mz);
+    if (span > 4.0) o.scl = 4.0 / span;
+    else if (span < 1.0) o.scl = 1.0 / span;
+}
+
 /* Pose au sol + anti-superposition (transcription du lot web 2.x) */
 static void placeImport(Object& o) {
-    const Vec3 dim = o.bmax - o.bmin;
-    o.pos = Vec3(0, 0, 0) - Vec3((o.bmin.x + o.bmax.x) * 0.5, o.bmin.y, (o.bmin.z + o.bmax.z) * 0.5);
+    const Vec3 dim = (o.bmax - o.bmin) * o.scl;
+    o.pos = Vec3(0, 0, 0) - Vec3((o.bmin.x + o.bmax.x) * 0.5, o.bmin.y, (o.bmin.z + o.bmax.z) * 0.5) * o.scl;
     double stepX = std::max(dim.x, 1.0) * 1.5;
     Vec3 tried = o.pos;
     for (int tries = 0; tries < 64; ++tries) {
@@ -556,6 +571,7 @@ static void importFile() {
     o.name = baseNameOf(path);
     o.col[0] = 0.35; o.col[1] = 0.55; o.col[2] = 0.35;
     computeObjectDerived(o);
+    normalizeImportScale(o);
 
     /* Diagnostics portes du web : volume signe + invariant de coque fermee
        (chaque arete d'une coque fermee est partagee par exactement 2 tris) */
@@ -574,9 +590,11 @@ static void importFile() {
     for (const auto& kv : arity) if (kv.second != 2) ++nonManifold;
 
     placeImport(o);
-    const Vec3 dim = o.bmax - o.bmin;
-    std::printf("import : %s — %zu sommets, %zu tris, dimensions %.4g x %.4g x %.4g, volume signe %.6g, aretes non-manifold %zu\n",
-                o.name.c_str(), o.v.size(), o.tri.size(), dim.x, dim.y, dim.z, vol, nonManifold);
+    const Vec3 dim = (o.bmax - o.bmin) * o.scl;
+    std::printf("import : %s — %zu sommets, %zu tris, dimensions locales %.4g x %.4g x %.4g, echelle %.6g, dimensions affichees %.4g x %.4g x %.4g, volume local %.6g, volume affiche %.6g, aretes non-manifold %zu\n",
+                o.name.c_str(), o.v.size(), o.tri.size(),
+                o.bmax.x - o.bmin.x, o.bmax.y - o.bmin.y, o.bmax.z - o.bmin.z, o.scl,
+                dim.x, dim.y, dim.z, vol, vol * o.scl * o.scl * o.scl, nonManifold);
     g_objs.push_back(std::move(o));
     g_selected = (int)g_objs.size() - 1;
     frameSelected();
@@ -594,7 +612,7 @@ static void exportOBJ(const std::string& path) {
     for (const Object& o : g_objs) {
         f << "o " << o.name << "\n";
         for (const Vec3& p : o.v) {
-            const Vec3 w = o.pos + p;
+            const Vec3 w = o.pos + p * o.scl;
             f << "v " << w.x << " " << w.y << " " << w.z << "\n";
         }
         for (size_t i = 0; i < o.tri.size(); i += 3)
@@ -621,7 +639,7 @@ static void exportSTL(const std::string& path) {
                 0, 0, 0, 0, 0, 0, 0, 0, 0
             };
             for (int k = 0; k < 3; ++k) {
-                const Vec3 w = o.pos + o.v[o.tri[i + k]];
+                const Vec3 w = o.pos + o.v[o.tri[i + k]] * o.scl;
                 rec[3 + k * 3] = (float)w.x;
                 rec[4 + k * 3] = (float)w.y;
                 rec[5 + k * 3] = (float)w.z;
@@ -718,6 +736,7 @@ static void drawGrid(int span, double step) {
 static void drawObject(const Object& o, bool selected) {
     glPushMatrix();
     glTranslated(o.pos.x, o.pos.y, o.pos.z);
+    glScaled(o.scl, o.scl, o.scl);
     glEnable(GL_LIGHTING);
     glBegin(GL_TRIANGLES);
     for (size_t i = 0, t = 0; i < o.tri.size(); i += 3, ++t) {
