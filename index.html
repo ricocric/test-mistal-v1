@@ -779,6 +779,11 @@ function applyImportExtrude(mobj, data, d) {
       cells.get(k2).push(id);
       return id;
     };
+    // une seule couche : les deux couches coïncidentes ont des windings opposés
+    // (chapeau vs face opposée), parfois des triangulations différentes (diagonales
+    // croisées) : on ne peut pas fusionner les triangles, on garde la couche du côté
+    // de la normale capturée (winding· normale > 0) puis on fond les doublons identiques
+    const nlS = new THREE.Vector3(n.x, n.y, n.z).applyMatrix3(inv).normalize();
     const seen = new Set();
     const bottom = [], trisB = [];
     for (let t = 0; t < base.length / 9; t++) {
@@ -792,6 +797,7 @@ function applyImportExtrude(mobj, data, d) {
       const m3 = (p0[0] - p2[0]) * (p0[0] - p2[0]) + (p0[1] - p2[1]) * (p0[1] - p2[1]) + (p0[2] - p2[2]) * (p0[2] - p2[2]);
       const mmax = Math.max(m1, m2, m3);
       if (crx * crx + cry * cry + crz * crz <= 1e-7 * mmax * mmax) continue;
+      if (crx * nlS.x + cry * nlS.y + crz * nlS.z <= 0) continue;
       const kb = [idp[0], idp[1], idp[2]].sort((a, b) => a - b).join('|');
       if (seen.has(kb)) continue;
       seen.add(kb);
