@@ -731,7 +731,23 @@ function applyImportExtrude(mobj, data, d) {
   const inv = lin.clone().invert();
   const dl = new THREE.Vector3(n.x * d, n.y * d, n.z * d).applyMatrix3(inv);
   const ox = dl.x, oy = dl.y, oz = dl.z;
-  const allSheet = Array.isArray(data.patchTris) && data.patchTris.length === base.length / 9;
+  // detection de feuille : tous les sommets quasi coplanaires au plan capture.
+  // On ne peut pas se fier au patch BFS (arretes a cles exactes : le bruit Float32 du
+  // round-trip monde empeche de traverser entre les deux couches coïncidentes).
+  let aMin = Infinity, aMax = -Infinity, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  const mwS = mobj.matrixWorld, ppS = data.planePoint;
+  const wvS = new THREE.Vector3();
+  for (let i = 0; i < base.length / 3; i++) {
+    wvS.set(base[3 * i], base[3 * i + 1], base[3 * i + 2]).applyMatrix4(mwS);
+    if (wvS.x < x0) x0 = wvS.x; if (wvS.x > x1) x1 = wvS.x;
+    if (wvS.y < y0) y0 = wvS.y; if (wvS.y > y1) y1 = wvS.y;
+    if (wvS.z < z0) z0 = wvS.z; if (wvS.z > z1) z1 = wvS.z;
+    const al = wvS.sub(ppS).dot(n);
+    if (al < aMin) aMin = al;
+    if (al > aMax) aMax = al;
+  }
+  const sizeW = Math.max(x1 - x0, y1 - y0, z1 - z0, 1e-12);
+  const allSheet = (aMax - aMin) <= 1e-3 * sizeW;
   if (allSheet) {
     // feuille aplatie (solide reduit a zero a la butee) : le pull recree du volume.
     // fond = une seule couche a la position d origine : sommets regroupes en clusters
