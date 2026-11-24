@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.8";
+static const char* BUILD_VERSION = "T1.9.1";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1798,6 +1798,17 @@ static int g_rotAxis = -1;            /* 0 = X, 1 = Y, 2 = Z */
 static Vec3 g_rotPivot;               /* centre (monde) de la piece a la capture */
 static std::vector<Vec3> g_rotBase;   /* sommets locaux a la capture */
 static double g_rotAngle = 0.0;       /* angle courant (degres) */
+
+/* rotation multi (T1.9, cas 1) : chaque objet de la selection tourne autour
+   de son PROPRE centre, avec un angle et un axe communs ; les cas suivants
+   (pivot barycentre / pivot utilisateur) en decouleront : la capture stocke
+   deja une base + un pivot PAR objet, seul le calcul du pivot changera. */
+struct RotCapture {
+    int idx;                     /* objet tourne */
+    std::vector<Vec3> base;      /* sommets locaux a la capture */
+    Vec3 pivot;                  /* pivot propre (monde) : centre de la piece */
+};
+static std::vector<RotCapture> g_rotMulti;   /* vide = rotation mono inchangee */
 static double g_rotLastX = 0.0;       /* curseur a la capture (0.25 deg/pixel) */
 static std::string g_rotNumBuf;
 static double g_rotStatusTick = 0.0;
@@ -1815,15 +1826,34 @@ static Vec3 rotateAroundAxis(const Vec3& pw, const Vec3& pivot, int axis, double
 }
 
 /* applique l'angle : v local = (pivot + R*(pos + base*scl - pivot) - pos)/scl */
-static void applyRotationAt(Object& o, const std::vector<Vec3>& base, int axis, double angDeg) {
+static void applyRotationAt(Object& o, const std::vector<Vec3>& base, const Vec3& pivot,
+                            int axis, double angDeg) {
     if (o.scl <= 1e-12) return;
     const double inv = 1.0 / o.scl;
     o.v.resize(base.size());
     for (size_t i = 0; i < base.size(); ++i) {
         const Vec3 w = o.pos + base[i] * o.scl;
-        o.v[i] = (rotateAroundAxis(w, g_rotPivot, axis, angDeg) - o.pos) * inv;
+        o.v[i] = (rotateAroundAxis(w, pivot, axis, angDeg) - o.pos) * inv;
     }
     computeObjectDerived(o);
+}
+
+/* applique l'angle courant a la selection tournee (mono OU multi) */
+static void rotApplyCurrent(int axis, double angDeg) {
+    if (!g_rotMulti.empty()) {
+        for (size_t k = 0; k < g_rotMulti.size(); ++k) {
+            RotCapture& rc = g_rotMulti[k];
+            if (rc.idx < 0 || rc.idx >= (int)g_objs.size()) continue;
+            applyRotationAt(g_objs[(size_t)rc.idx], rc.base, rc.pivot, axis, angDeg);
+        }
+    } else if (g_rotObj >= 0 && g_rotObj < (int)g_objs.size()) {
+        applyRotationAt(g_objs[(size_t)g_rotObj], g_rotBase, g_rotPivot, axis, angDeg);
+    }
+}
+
+/* pivot propre (monde) : centre de la piece = meme formule que le mono */
+static Vec3 objectRotationPivot(const Object& o) {
+    return o.pos + (o.bmin + o.bmax) * (0.5 * o.scl);
 }
 
 static char axisLetterFromScancode(int scancode) {
@@ -1847,29 +1877,64 @@ static bool isSeparatorKey(int key, int scancode) {
 }
 
 static void rotBegin(GLFWwindow* w, int axis) {
-    if (g_selected < 0 || g_selected >= (int)g_objs.size()) {
+    const std::vector<int> sel = selectedIndices();
+    if (sel.empty()) {
         std::printf("rotation : selectionnez d'abord un objet (clic gauche)\n");
         return;
     }
-    Object& o = g_objs[(size_t)g_selected];
-    g_rotObj = g_selected;
+    g_rotMulti.clear();
+    if (sel.size() > 1) {   /* cas 1 : rotation individuelle de chaque membre, angle commun */
+        g_rotMulti.reserve(sel.size());
+        for (size_t k = 0; k < sel.size(); ++k) {
+            const int i = sel[k];
+            if (i < 0 || i >= (int)g_objs.size()) continue;
+            const Object& o = g_objs[(size_t)i];
+            RotCapture rc;
+            rc.idx = i;
+            rc.base = o.v;
+            rc.pivot = objectRotationPivot(o);
+            g_rotMulti.push_back(std::move(rc));
+        }
+        if (g_rotMulti.empty()) return;
+        g_rotObj = g_rotMulti[0].idx;   /* objet de reference (messages, signe) */
+    } else {
+        g_rotObj = g_selected;          /* mono : objet tourne = selection principale */
+    }
+    Object& o = g_objs[(size_t)(sel.size() > 1 ? g_rotObj : g_selected)];
     g_rotAxis = axis;
     g_rotBase = o.v;
-    g_rotPivot = o.pos + (o.bmin + o.bmax) * (0.5 * o.scl);
+    g_rotPivot = objectRotationPivot(o);
     g_rotAngle = 0.0;
     g_rotNumBuf.clear();
     double dummy = 0.0;
     glfwGetCursorPos(w, &g_rotLastX, &dummy);
     g_rotActive = true;
-    std::printf("rotation %s de %s autour de son centre : souris pour tourner, ou chiffres + Entree (tapez dans la fenetre ; Entree pose et quitte)\n",
-                axisName(axis), o.name.c_str());
+    if (!g_rotMulti.empty()) {
+        std::printf("rotation multi %s de %zu objets, chacun autour de son propre centre : souris pour tourner, ou chiffres + Entree (tapez dans la fenetre ; Entree pose et quitte)\n",
+                    axisName(axis), g_rotMulti.size());
+    } else {
+        std::printf("rotation %s de %s autour de son centre : souris pour tourner, ou chiffres + Entree (tapez dans la fenetre ; Entree pose et quitte)\n",
+                    axisName(axis), o.name.c_str());
+    }
 }
 
 static void rotCancel() {
-    if (!g_rotActive || g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) { g_rotActive = false; return; }
-    Object& o = g_objs[(size_t)g_rotObj];
-    o.v = g_rotBase;
-    computeObjectDerived(o);
+    if (!g_rotActive) { return; }
+    if (!g_rotMulti.empty()) {          /* multi : restaure chaque base capturee */
+        for (size_t k = 0; k < g_rotMulti.size(); ++k) {
+            const RotCapture& rc = g_rotMulti[k];
+            if (rc.idx < 0 || rc.idx >= (int)g_objs.size()) continue;
+            Object& o = g_objs[(size_t)rc.idx];
+            o.v = rc.base;
+            computeObjectDerived(o);
+        }
+        g_rotMulti.clear();
+    } else {
+        if (g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) { g_rotActive = false; return; }
+        Object& o = g_objs[(size_t)g_rotObj];
+        o.v = g_rotBase;
+        computeObjectDerived(o);
+    }
     g_rotActive = false;
     g_rotAxis = -1;
     g_rotNumBuf.clear();
@@ -1877,15 +1942,22 @@ static void rotCancel() {
 }
 
 static void rotCommit() {
-    if (!g_rotActive || g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) { g_rotActive = false; return; }
-    std::printf("\nrotation posee : %+.2f deg sur %s\n", g_rotAngle, g_objs[(size_t)g_rotObj].name.c_str());
+    if (!g_rotActive) { return; }
+    if (!g_rotMulti.empty()) {
+        std::printf("\nrotation posee : %+.2f deg sur %zu objets\n", g_rotAngle, g_rotMulti.size());
+        g_rotMulti.clear();
+    } else {
+        if (g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) { g_rotActive = false; return; }
+        std::printf("\nrotation posee : %+.2f deg sur %s\n", g_rotAngle, g_objs[(size_t)g_rotObj].name.c_str());
+    }
     g_rotActive = false;
     g_rotAxis = -1;
     g_rotNumBuf.clear();
 }
 
 static void updateRot(GLFWwindow* w) {
-    if (!g_rotActive || g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) return;
+    if (!g_rotActive) return;
+    if (g_rotMulti.empty() && (g_rotObj < 0 || g_rotObj >= (int)g_objs.size())) return;
     /* saisie au clavier en cours : la piece est figee (le moindre mouvement
        de souris ne modifie plus l'angle accumule) ; Entree pose et quitte. */
     if (!g_rotNumBuf.empty()) return;
@@ -1893,7 +1965,7 @@ static void updateRot(GLFWwindow* w) {
     glfwGetCursorPos(w, &x, &y);
     g_rotAngle += (x - g_rotLastX) * 0.25;
     g_rotLastX = x;
-    applyRotationAt(g_objs[(size_t)g_rotObj], g_rotBase, g_rotAxis, g_rotAngle);
+    rotApplyCurrent(g_rotAxis, g_rotAngle);
     const double now = glfwGetTime();
     if (now - g_rotStatusTick > 0.12) {
         g_rotStatusTick = now;
@@ -2091,7 +2163,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
                 std::printf("\nAngle invalide — tapez un nombre (degres, signe autorise) puis Entree.\n");
             } else {
                 g_rotAngle = a;
-                applyRotationAt(g_objs[(size_t)g_rotObj], g_rotBase, g_rotAxis, a);
+                rotApplyCurrent(g_rotAxis, a);
                 g_rotNumBuf.clear();
                 rotCommit();           /* Entree = pose, comme le clic gauche */
                 g_rotMode = false;     /* sortie du mode (meme contrat que l'extrusion) */
@@ -2184,7 +2256,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             g_rotMode = !g_rotMode;
             if (g_rotMode) g_ppMode = false;
             std::printf(g_rotMode
-                ? "mode Rotation : selectionnez un objet, puis X, Y ou Z (lettre) pour fixer l'axe\n"
+                ? "mode Rotation : selectionnez un objet (Ctrl+clic pour en selectionner plusieurs), puis X, Y ou Z (lettre) pour fixer l'axe\n"
                 : "mode selection\n");
         }
         if (g_rotMode && !g_rotActive) {
@@ -2320,6 +2392,8 @@ static std::string statusPrompt() {
         return "Dupliquer : tapez le nombre d instances puis Entree (vide = 1, negatif = retrait, Echap pour annuler)";
     else if (g_ppActive)
         std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (clic gauche : poser ; chiffres puis Entree : dimension exacte, + = tirer / - = pousser ; clic droit ou Echap : annuler)", g_pp.d);
+    else if (g_rotActive && !g_rotMulti.empty())
+        std::snprintf(buf, sizeof(buf), "Rotation multi %s de %zu objets : %+.1f deg  (clic gauche : poser ; chiffres + Entree : angle exact ; clic droit : annuler)", axisName(g_rotAxis), g_rotMulti.size(), g_rotAngle);
     else if (g_rotActive)
         std::snprintf(buf, sizeof(buf), "Rotation %s : %+.1f deg  (clic gauche : poser ; X/Y/Z : changer d axe ; chiffres puis Entree : angle exact pose et quitte le mode ; clic droit ou Echap : annuler)", axisName(g_rotAxis), g_rotAngle);
     else if (g_ppMode) {
@@ -2345,13 +2419,20 @@ static void drawTextClipped(float x, float y, const char* s, float maxW) {
 #ifdef _WIN32
     const std::string str(s);
     if (textWidthPx(str.c_str()) <= maxW) { drawText2D(x, y, s); return; }
+    /* reduction REELLE du texte : la longueur de reference diminue d'un pas a
+       chaque tour. L'ancien code repartait de la taille GONFLEE par les "..."
+       rajoutes (substr sur txt.size() - 1, puis + "...") : aucun tour ne
+       pouvait passer sous la largeur une fois le message trop long, la boucle
+       tournait a l'infini = fenetre grisee "ne repond pas" (retour de test
+       T1.9 : bandeau rotation multi a chaque essai). */
     std::string txt(s);
-    while (txt.size() > 1) {
-        txt = str.substr(0, txt.size() - 1);
-        txt += "...";
+    size_t n = txt.size();
+    while (n > 1) {
+        txt = str.substr(0, n - 1) + "...";
         if (textWidthPx(txt.c_str()) <= maxW) break;
+        --n;
     }
-    if (txt == "...") txt.clear();
+    if (textWidthPx(txt.c_str()) > maxW) txt.clear();   /* rien ne rentre : plus rien */
     drawText2D(x, y, txt.c_str());
 #else
     (void)x; (void)y; (void)s; (void)maxW;

@@ -210,6 +210,34 @@ build\Debug\sketch3d.exe
   et echelle exactes), hauteur de fenetre nulle ignoree, impact objet,
   impact sol, rayon vers le ciel = aucun point ; sur la base durcie T1.7.1).
 
+## Rotation multi T1.9 (cas 1 : chaque objet sur son propre centre, angle commun)
+
+- **en selection multiple (Ctrl+clic), R + lettre d'axe (X/Y/Z)** tourne les
+  objets selectionnes **individuellement** : chacun autour de son PROPRE
+  centre (comme le mono), avec le **meme angle et le meme axe** pour tous ;
+- les objets restent a leur place (pas de translation de groupe) - futur cas
+  2 (pivot = barycentre du groupe) et cas 3 (pivot choisi par clic) utilisent
+  le meme moteur : la capture stocke deja une base + un pivot PAR objet ;
+- mêmes revues que la rotation mono : souris en direct (0.25 deg/pixel),
+  chiffres + Entree = angle exact pose et quitte le mode, clic gauche pose,
+  clic droit ou Echap annule TOUT (chaque objet retrouve sa base capturee) ;
+- bandeau : `Rotation multi Z : +12.0 deg sur 3 objets (chacun sur son propre centre)` ;
+- en mono (un seul objet selectionne) : chemin historique strictement inchange ;
+- `applyRotationAt` gere desormais le pivot en parametre explicite (les 3 cas
+  de pivot multi n'ont plus qu'a fournir un pivot different) ;
+- **correctif T1.9.1 (fenetre entierement grisee pendant la rotation multi)** :
+  bug ancien de `drawTextClipped` mouille par le message de bandeau multi
+  (plus long) - l'abreviation repartait de la taille gonflee par les "..."
+  (substr sur `txt.size() - 1` puis `+= "..."`) : aucune iteration ne pouvait
+  repasser sous la largeur une fois le message trop long, boucle infinie =
+  fenetre sans pompage = grisee "ne repond pas", bandeau fige. Correction :
+  la longueur de reference diminue reellement a chaque tour + garde-fou final ;
+  message bandeau multi raccourci ;
+- batterie : **159 verifications, 0 echec** (+12 : capture d'une base par
+  objet, pivot propre, angle commun a la souris, preview exacte au vertex,
+  voie numerique 90 + Entree, portees permutees par objet, position figee,
+  volumes preserves, annulation complete, regression mono).
+
 ## Outillages T1 : duplication + rotation
 
 - **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de
