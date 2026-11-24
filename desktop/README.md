@@ -193,6 +193,22 @@ cd desktop
 cmake --build build
 build\Debug\sketch3d.exe
 ```
+## Point de vue T1.8 : deplacer la vue (pan) + recentrage (C)
+
+- **clic molette + glisser = pan de la vue** : la cible camera se deplace
+  dans le plan de l'ecran ; l'echelle suit la distance (l'objet sous le
+  curseur y reste pendant tout le pan) ; alternative **Shift + clic gauche
+  dans le vide + glisser** (souris sans molette) ; relacher = fin du pan ;
+- **C = centrer la vue sur le point vise** : le curseur vise un objet ->
+  la camera recentre sur le point d'impact ; sinon le sol (y = 0) si le
+  rayon le touche ; theta/phi/dist conserves (la vue tourne, ne zoome pas) ;
+  agir sur un objet lointain : pointez-le, C, puis F pour cadrer ;
+- la Camera reste une structure copiable et les helpers (`cameraPan`,
+  `pickPointFromRay`) sont purs sur `Camera&` : les futures vues multiples
+  (fenetres 2, trajectoires) reutiliseront les memes fonctions ;
+- batterie : **144 verifications** (+7 : pan vertical et horizontal (signe
+  et echelle exactes), hauteur de fenetre nulle ignoree, impact objet,
+  impact sol, rayon vers le ciel = aucun point ; sur la base durcie T1.7.1).
 
 ## Outillages T1 : duplication + rotation
 

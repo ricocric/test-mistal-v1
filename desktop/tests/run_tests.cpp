@@ -858,6 +858,49 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
     }
 
+    /* 23 - T1.8 : point de vue (pan molette/Shift, recentrage sur le point vise) */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        const double colM[3] = {0.6, 0.6, 0.6};
+        g_objs.push_back(makeBoxObject("C1", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+
+        Camera c;
+        c.theta = 0.0; c.phi = 0.5; c.dist = 9.0; c.target = Vec3(0, 0.5, 0);
+        const Camera c0 = c;
+        const double scaleRef = 2.0 * c.dist * std::tan(kFovDeg * 3.14159265358979 / 360.0) / 800.0;
+
+        cameraPan(c, 0.0, 100.0, 800.0);
+        const Vec3 dUp = c.target - c0.target;
+        CHECK(c.target.y > c0.target.y, "pan : glisser vers le bas deplace la cible vers le haut");
+        CHECK(std::fabs(dUp.x - c0.up().x * 100.0 * scaleRef) < 1e-9
+              && std::fabs(dUp.y - c0.up().y * 100.0 * scaleRef) < 1e-9
+              && std::fabs(dUp.z - c0.up().z * 100.0 * scaleRef) < 1e-9,
+              "pan : deplacement dans le plan camera, echelle = hauteur vue / hauteur fenetre");
+
+        cameraPan(c, 100.0, 0.0, 800.0);
+        const Camera c2 = c;
+        const Vec3 dR = c.target - c0.target - dUp;
+        CHECK(std::fabs(dR.x + c2.right().x * 100.0 * scaleRef) < 1e-9
+              && std::fabs(dR.y + c2.right().y * 100.0 * scaleRef) < 1e-9
+              && std::fabs(dR.z + c2.right().z * 100.0 * scaleRef) < 1e-9,
+              "pan : glisser a droite deplace la cible vers la gauche (l'objet suit le curseur)");
+        cameraPan(c, 100.0, 100.0, 0.0);
+        CHECK(c.target.x == c2.target.x && c.target.y == c2.target.y && c.target.z == c2.target.z,
+              "pan : fenetre de hauteur nulle ignore");
+
+        Vec3 p;
+        CHECK(pickPointFromRay(Vec3(0.25, 5, 0), Vec3(0, -1, 0), p)
+              && std::fabs(p.x - 0.25) < 1e-12 && std::fabs(p.y - 1.0) < 1e-9 && std::fabs(p.z) < 1e-12,
+              "C : rayon sur l'objet -> point d'impact sur la face superieure");
+        CHECK(pickPointFromRay(Vec3(100, 5, 0), Vec3(0, -1, 0), p)
+              && std::fabs(p.x - 100.0) < 1e-12 && p.y == 0.0,
+              "C : rayon dans le vide -> impact au sol (y = 0)");
+        CHECK(!pickPointFromRay(Vec3(100, 5, 0), Vec3(0, 1, 0), p),
+              "C : rayon vers le ciel, aucun point vise -> false");
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }
