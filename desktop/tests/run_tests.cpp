@@ -621,6 +621,42 @@ int main() {
             CHECK(std::fabs((spanA - spanB) - 1.25) < 1e-6 && countNonManifold(imp) == nmB,
                   "ancre extrusion : dimension tapee 1.25 (Entree) posee depuis la capture -> portee +1.25 le long de la normale, topologie inchangée");
         }
+
+        /* verrou de saisie (retour de test T1.5 : la valeur tapee n'avait aucun
+           effet visible - la relecture du curseur l'ecrasait des la frame
+           suivante, et l'effet ne reparaissait qu'a la capture suivante).
+           Contrat : Entree pose la valeur ET verrouille ; un mouvement du
+           curseur leve le verrou et la face suit de nouveau.             */
+        if (ddRefOk) {
+            g_cam.phi = 0.5; g_cam.theta = 0.8;
+            const Vec3 orgV = g_cam.pos();
+            const double ttV = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+            const double aspV = double(g_winW) / double(g_winH);
+            const auto rayV = [&](double mx, double my) {
+                const double nx = 2.0 * mx / double(g_winW) - 1.0;
+                const double ny = 1.0 - 2.0 * my / double(g_winH);
+                return normalized(g_cam.right() * (nx * ttV * aspV) + g_cam.up() * (ny * ttV) + g_cam.forward());
+            };
+            g_pp = ddRefVue;
+            CHECK(std::fabs(ppDragDelta(orgV, rayV(g_winW * 0.5, g_winH * 0.5))) < 1e-9,
+                  "verrou saisie extrusion : d = 0 au rayon de capture (calcul central ppDragDelta)");
+            const double q40 = ppDragDelta(orgV, rayV(g_winW * 0.5, g_winH * 0.5 - 40.0));
+            const double q80 = ppDragDelta(orgV, rayV(g_winW * 0.5, g_winH * 0.5 - 80.0));
+            CHECK(std::isfinite(q40) && q40 > 0.0 && q80 > q40,
+                  "verrou saisie extrusion : suivi du curseur (ppDragDelta) - souris vers le haut = tirage croissant");
+            CHECK(!Extrude().numLock,
+                  "verrou saisie extrusion : pas de verrou sur une capture neuve");
+            g_pp = ddRefVue;
+            CHECK(ppTakeControl(g_winW * 0.5, g_winH * 0.5),
+                  "verrou saisie extrusion : hors verrou, le suivi du curseur est permanent");
+            g_pp.numLock = true;
+            g_pp.lastX = g_winW * 0.5; g_pp.lastY = g_winH * 0.5;
+            CHECK(!ppTakeControl(g_winW * 0.5, g_winH * 0.5) && g_pp.numLock,
+                  "verrou saisie extrusion : la dimension tapee reste figee tant que le curseur ne bouge pas");
+            CHECK(ppTakeControl(g_winW * 0.5 + 0.5, g_winH * 0.5) && !g_pp.numLock,
+                  "verrou saisie extrusion : le moindre mouvement du curseur reprend la main");
+            g_pp = Extrude();
+        }
         g_objs.clear();
         g_selected = -1;
     }

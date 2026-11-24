@@ -28,9 +28,18 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   `angle :`, curseur clignotant) affiche la valeur en cours — la meme pour les
   trois cas qui acceptent une valeur clavier (duplication, extrusion,
   rotation) ; le texte d'invite est rogné si la fenetre est etroite ;
-- la batterie monte a **103 verifications** (famille ancre-extrusion sur le
-  cube SketchUp reel : d = 0 au rayon de capture, suivi croissant du curseur,
-  dimension tapee exacte).
+- **correctif "la valeur tapee n'a aucun effet visible"** : chiffres + Entree
+  pendant une extrusion posait bien la valeur, mais la relecture du curseur
+  (chaque frame) l'ecrasait des la frame suivante - la face retombait au
+  niveau du curseur et l'effet ne reparaissait qu'a la capture suivante
+  (impression de "sans effet", et effet devu "affecte a la selection
+  suivante"). La dimension tapee est desormais **figee** jusqu'au prochain
+  mouvement du curseur : Entree la pose et la tient ; le moindre mouvement
+  de souris leve le verrou et la face suit de nouveau le curseur ;
+- la batterie monte a **109 verifications** (ancre-extrusion sur le cube
+  SketchUp reel : d = 0 au rayon de capture, suivi croissant du curseur,
+  dimension tapee exacte ; puis le verrou de saisie : valeur figee, reprise
+  en main du curseur au moindre mouvement).
 
 ## Outillages T1 : duplication + rotation
 

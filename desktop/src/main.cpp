@@ -46,7 +46,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.5";
+static const char* BUILD_VERSION = "T1.5.1";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1086,6 +1086,8 @@ struct Extrude {
     bool hasLow = false, hasHigh = false;
     double d = 0.0;                  /* dernier deplacement applique (relatif a la capture) */
     double dRef = 0.0;               /* d brut mesure au rayon de capture : ancre du drag */
+    double lastX = 0.0, lastY = 0.0; /* curseur du dernier passage de updatePP (levee du verrou) */
+    bool numLock = false;            /* dimension tapee + Entree : figee jusqu'au prochain mouvement du curseur */
     std::string numBuf;              /* saisie de dimension exacte */
 };
 static bool g_ppMode = false;        /* touche P : mode Push/Pull */
@@ -1510,20 +1512,38 @@ static void ppCommit() {
     g_pp = Extrude();
 }
 
+/* d relatif au rayon de capture : d = 0 au curseur de la capture, positif
+   vers la normale (tirage). Pur : lit g_pp, ne touche pas au mesh.        */
+static double ppDragDelta(const Vec3& org, const Vec3& dir) {
+    const double denom = dot(dir, g_pp.pn);
+    if (std::fabs(denom) < 1e-9) return 0.0 / 0.0;
+    const double t = dot(g_pp.planePoint - org, g_pp.pn) / denom;
+    if (t < 0.0) return 0.0 / 0.0;
+    return dot((org + dir * t) - g_pp.planePoint, g_pp.normal) - g_pp.dRef;
+}
+
+/* verrou de saisie : renvoie true quand le suivi du curseur doit reprendre
+   (pas de verrou pose, ou curseur bouge depuis le dernier passage).       */
+static bool ppTakeControl(double mx, double my) {
+    if (!g_pp.numLock) return true;
+    if (mx != g_pp.lastX || my != g_pp.lastY) { g_pp.numLock = false; return true; }
+    return false;
+}
+
 static void updatePP(GLFWwindow* w) {
     if (!g_ppActive || g_pp.obj < 0 || g_pp.obj >= (int)g_objs.size()) return;
+    double mx, my;
+    glfwGetCursorPos(w, &mx, &my);
+    /* dimension tapee au clavier : figee jusqu'au prochain mouvement du
+       curseur, sinon la relecture du curseur l'ecrasait des la frame suivante
+       (retour de test T1.5 : aucun effet visible) ; moindre mouvement = la
+       face suit de nouveau le curseur (ancre dRef : d = 0 a la capture).   */
+    if (!ppTakeControl(mx, my)) return;
+    g_pp.lastX = mx; g_pp.lastY = my;
     Vec3 org, dir;
     if (!rayFromMouse(w, org, dir)) return;
-    const double denom = dot(dir, g_pp.pn);
-    if (std::fabs(denom) < 1e-9) return;
-    const double t = dot(g_pp.planePoint - org, g_pp.pn) / denom;
-    if (t < 0.0) return;
-    /* d relatif au rayon de capture : le plan de souris percé ailleurs qu'au
-       point cliqué (il passe par un sommet du triangle, pas par le curseur),
-       le d brut valait plusieurs unites des la capture - clampé d'emblée a la
-       butee : la face s'aplatissait au lieu de suivre le curseur. L'ancre
-       met le d a zero a la capture, la face suit ensuite le curseur. */
-    const double d = dot((org + dir * t) - g_pp.planePoint, g_pp.normal) - g_pp.dRef;
+    const double d = ppDragDelta(org, dir);
+    if (!std::isfinite(d)) return;
     applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, d);
     g_pp.d = d;
     const double now = glfwGetTime();
@@ -1825,7 +1845,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
                 applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, v);
                 g_pp.d = v;
                 g_pp.numBuf.clear();
-                std::printf("\nExtrusion posee : %.3f — cliquez pour valider, ou continuez a deplacer\n", v);
+                g_pp.numLock = true;   /* figee : le curseur n'ecrase la valeur tapee tant qu'il ne bouge pas */
+                std::printf("\nExtrusion posee : %.3f — cliquez pour valider, ou bougez la souris pour reprendre le suivi\n", v);
             }
         } else if (key == GLFW_KEY_ESCAPE) {
             ppCancel();                 /* premier Echap : annule la face, reste en mode */
