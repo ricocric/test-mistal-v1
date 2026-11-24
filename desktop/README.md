@@ -6,6 +6,11 @@ precision** natif (la version web stockait en Float32).
 
 ## Outillages T1 (celui-ci) : duplication + rotation
 
+**Version affichee** : la console et la barre de titre indiquent la build
+(macro `BUILD_VERSION` en tete de `src/main.cpp`, ex. `T1.3`) — incrementee a
+chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
+`git pull`.
+
 - **regle generale des transformations** : le **clic droit** revient au neutre
   partout — annule la transformation en cours (extrusion posee en suspens,
   rotation en cours) ET quitte le mode (le deplacement en vol ne peut pas etre

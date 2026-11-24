@@ -44,6 +44,10 @@
 #include <GLFW/glfw3native.h>
 #endif
 
+/* Version affichee dans la console et le titre de fenetre : maj a chaque
+   lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
+static const char* BUILD_VERSION = "T1.3";
+
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
 /* ------------------------------------------------------------------ */
@@ -1917,7 +1921,7 @@ static void drawAxisGuide() {
 /* ------------------------------------------------------------------ */
 
 int main() {
-    std::printf("Sketch3D natif — outillages T1 (duplication multi-instances, rotation autour des axes + menus du lot N5)\n");
+    std::printf("Sketch3D natif — build %s (outillages T1 : duplication multi-instances, rotation autour des axes + menus du lot N5)\n", BUILD_VERSION);
     std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer, exporter OBJ/STL, quitter ; menu contextuel (clic droit) : infos objet, duplication\n");
     std::printf("P : mode Push/Pull ; R : mode Rotation (X/Y/Z = axe, souris ou chiffres+Entree) ; I : import ; F : cadrage ; H : origine\n");
     buildScene();
@@ -1927,7 +1931,9 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* win = glfwCreateWindow(g_winW, g_winH, "Sketch3D — build T1", nullptr, nullptr);
+    char titre[64];
+    std::snprintf(titre, sizeof(titre), "Sketch3D — build %s", BUILD_VERSION);
+    GLFWwindow* win = glfwCreateWindow(g_winW, g_winH, titre, nullptr, nullptr);
     if (!win) { std::fprintf(stderr, "creation de fenetre impossible\n"); glfwTerminate(); return 1; }
     glfwMakeContextCurrent(win);
     glfwSwapInterval(1);
