@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+#include <limits>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -443,6 +444,269 @@ int main() {
               "infos objet : nom + dimensions presentes");
         std::error_code ec;
         std::filesystem::remove(ppath, ec);
+    }
+
+    /* 17 - outillage T1 : duplication multi-instances */
+    {
+        g_objs.clear();
+        const double colW[3] = {0.5, 0.5, 0.5};
+        g_objs.push_back(makeBoxObject("Solo", Vec3(0, 1, 0), Vec3(1, 1, 1), colW));
+        g_selected = 0;
+        duplicateObject(0, 3);
+        CHECK(g_objs.size() == 4, "duplication : 3 copies du cube seul");
+        bool nomOK = g_objs[1].name == "Solo (1)" && g_objs[2].name == "Solo (2)" && g_objs[3].name == "Solo (3)";
+        CHECK(nomOK, "duplication : noms numerotes");
+        CHECK(std::fabs(g_objs[1].pos.x - 2.25) < 1e-12 && std::fabs(g_objs[2].pos.x - 4.5) < 1e-12
+              && std::fabs(g_objs[3].pos.x - 6.75) < 1e-12,
+              "duplication : copies alignees vers +X (pas = portee + 0.25)");
+        bool sep = true;
+        for (size_t i = 0; sep && i < g_objs.size(); ++i)
+            for (size_t j = i + 1; sep && j < g_objs.size(); ++j)
+                sep = !overlapsWorld(g_objs[i], g_objs[j]);
+        CHECK(sep, "duplication : aucune superposition");
+        CHECK(g_objs[3].v.size() == g_objs[0].v.size() && g_objs[3].tri == g_objs[0].tri,
+              "duplication : copies identiques a l'original (meme mesh)");
+        buildScene();
+        g_selected = 0;                     /* voisin Pave B a droite : copies poussees au-dela */
+        duplicateObject(0, 1);
+        bool sepScene = true;
+        for (size_t i = 0; sepScene && i < g_objs.size(); ++i)
+            for (size_t j = i + 1; sepScene && j < g_objs.size(); ++j)
+                sepScene = !overlapsWorld(g_objs[i], g_objs[j]);
+        CHECK(sepScene && g_objs.size() == 4 && g_objs[3].pos.x > g_objs[1].bmax.x,
+              "duplication : copie poussee au-dela du voisin Pave B (anti-superpositionImport)");
+        /* champ nombre (retour de test T1.5.4 : signe non gere dans la duplication,
+           options proposees) : refuse proprement - aucune copie, aucun crash. */
+        const size_t nAvant = g_objs.size();
+        duplicateObject(0, -3);
+        duplicateObject(0, 0);
+        CHECK(g_objs.size() == nAvant,
+              "duplication : nombre negatif ou nul refuse (option retenue : aucune copie posee)");
+        /* T1.5.5 (retour de test) : champ nombre negatif = retrait d'instances.
+           -k retire les k dernieres copies numerotees de la serie de la source,
+           l'original est toujours epargne ; au-dela du disponible, on retire tout. */
+        g_objs.clear();
+        g_objs.push_back(makeBoxObject("Solo", Vec3(0, 1, 0), Vec3(1, 1, 1), colW));
+        g_selected = 0;
+        duplicateObject(0, 3);
+        CHECK(removeInstances(0, 2) == 2 && g_objs.size() == 2,
+              "retrait : -2 supprime les 2 dernieres copies numerotees (Solo (2) et Solo (3))");
+        CHECK(g_objs[0].name == "Solo" && g_objs[1].name == "Solo (1)",
+              "retrait : l'original epargne, la copie la plus ancienne reste");
+        CHECK(removeInstances(0, 9) == 1 && g_objs.size() == 1 && g_objs[0].name == "Solo",
+              "retrait : au-dela du disponible, on retire tout sauf l'original");
+        CHECK(removeInstances(0, 1) == 0 && g_objs.size() == 1,
+              "retrait : aucune copie numerotee = rien a retirer (retour 0)");
+    }
+
+    /* 18 - outillage T1 : rotation autour d'un axe monde par le centre */
+    {
+        buildScene();
+        Object& o2 = g_objs[1];             /* Pave B : 3 x 1.2 x 1.6 en monde */
+        const std::vector<Vec3> base2 = o2.v;
+        const Vec3 centre = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
+        const double volAvant = signedVolume(o2);
+        g_rotPivot = centre;
+        applyRotationAt(o2, base2, 2, 90.0);   /* Z de +90 deg */
+        const double dx = o2.bmax.x - o2.bmin.x, dy = o2.bmax.y - o2.bmin.y, dz = o2.bmax.z - o2.bmin.z;
+        const Vec3 centre2 = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
+        CHECK(std::fabs(dx - 1.2) < 1e-9 && std::fabs(dy - 3.0) < 1e-9 && std::fabs(dz - 1.6) < 1e-9,
+              "rotation : +90 deg en Z permute les portees X/Y (pave debout)");
+        CHECK((centre2 - centre).norm() < 1e-9, "rotation : le centre de la piece ne bouge pas (pivot)");
+        CHECK(std::fabs(signedVolume(o2) - volAvant) < 1e-9 && countNonManifold(o2) == 0,
+              "rotation : volume preserve, aretes toujours coherentes");
+        const std::vector<Vec3> at90 = o2.v;
+        applyRotationAt(o2, at90, 2, -90.0);
+        bool vRet = o2.v.size() == base2.size();
+        for (size_t i = 0; vRet && i < base2.size(); ++i) vRet = (o2.v[i] - base2[i]).norm() < 1e-12;
+        CHECK(vRet, "rotation : +90 puis -90 -> geometrie d'origine a 1e-12 pres");
+        applyRotationAt(o2, base2, 0, 180.0);   /* X de 180 deg */
+        bool v180 = o2.v.size() == base2.size();
+        for (size_t i = 0; v180 && i < base2.size(); ++i)
+            v180 = std::fabs(o2.v[i].x - base2[i].x) < 1e-12
+                && std::fabs(o2.v[i].y + base2[i].y) < 1e-12
+                && std::fabs(o2.v[i].z + base2[i].z) < 1e-12;
+        CHECK(v180 && (o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl) - centre).norm() < 1e-9,
+              "rotation : 180 deg en X -> miroir Y/Z, pivot fixe");
+        /* changement d'axe en chaine (lettre pendant une rotation) : +90 Z pose,
+           puis +90 X sur la geometrie courante avec pivot recadre */
+        applyRotationAt(o2, base2, 2, 90.0);
+        const std::vector<Vec3> z90 = o2.v;
+        g_rotPivot = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
+        applyRotationAt(o2, z90, 0, 90.0);
+        const Vec3 centre3 = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
+        CHECK(std::fabs(signedVolume(o2) - volAvant) < 1e-9 && countNonManifold(o2) == 0
+              && (centre3 - centre).norm() < 1e-9,
+              "rotation : chaine +90 Z puis +90 X -> volume, aretes et pivot stables");
+    }
+
+    /* --- 19. T1.5 : ancre du drag d'extrusion (d relatif au rayon de capture).
+       Retour de test : des la capture d'une face, la face passait en feuille
+       avant de suivre le curseur - le plan de souris est percé ailleurs qu'au
+       point clique (il passe par un sommet du triangle), le d brut valait
+       plusieurs unites des la premiere frame et etait clampé d'emblée a la
+       butee. Le correctif ancre d sur le rayon de capture (g_pp.dRef). */
+    {
+        g_objs.clear();
+        Object imp; std::string err;
+        CHECK(loadMeshFile(dataPath("cube_sketchup.obj"), imp, err), err.c_str());
+        imp.name = "cube";
+        computeObjectDerived(imp);
+        normalizeImportScale(imp);
+        weldObject(imp);
+        placeImport(imp);
+        const Vec3 centre = imp.pos + (imp.bmin + imp.bmax) * (0.5 * imp.scl);
+        const double rImp = ((imp.bmax - imp.bmin) * (0.5 * imp.scl)).norm();
+        g_cam.target = centre;
+        g_cam.dist = std::max(rImp / std::tan(kFovDeg * 3.14159265358979 / 360.0), 1.0) * 1.5;
+        g_winW = 1600; g_winH = 900;
+        const double tt = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+        const double aspect = double(g_winW) / double(g_winH);
+        bool captureVu = false, noJump = true;
+        Extrude ddRefVue;
+        bool ddRefOk = false;
+        for (double phi : {0.5, 0.2, 0.05}) {
+            for (double theta : {0.8, 2.0}) {
+                g_cam.phi = phi; g_cam.theta = theta;
+                auto rayFor = [&](double mx, double my) {
+                    const double nx = 2.0 * mx / double(g_winW) - 1.0;
+                    const double ny = 1.0 - 2.0 * my / double(g_winH);
+                    return normalized(g_cam.right() * (nx * tt * aspect) + g_cam.up() * (ny * tt) + g_cam.forward());
+                };
+                const Vec3 dir0 = rayFor(g_winW * 0.5, g_winH * 0.5);
+                const Vec3 org = g_cam.pos();
+                double tHit; size_t tri;
+                if (!rayObjectTri(org, dir0, imp, tHit, &tri)) continue;
+                Extrude dd;
+                if (!makeExtrude(imp, tri, dd)) continue;
+                const Vec3 camDir = g_cam.forward();
+                Vec3 pn = camDir - dd.normal * dot(camDir, dd.normal);
+                if (dot(pn, pn) < 0.04) {
+                    if (std::fabs(dd.normal.y) > 0.9) pn = Vec3(1, 0, 0);
+                    else pn = Vec3(dd.normal.z, 0, -dd.normal.x);
+                }
+                dd.pn = pn;
+                auto dBrut = [&](double mx, double my) -> double {
+                    const Vec3 d2 = rayFor(mx, my);
+                    const double den = dot(d2, dd.pn);
+                    if (std::fabs(den) < 1e-9) return std::numeric_limits<double>::quiet_NaN();
+                    const double tv = dot(dd.planePoint - org, dd.pn) / den;
+                    if (tv < 0.0) return std::numeric_limits<double>::quiet_NaN();
+                    return dot((org + d2 * tv) - dd.planePoint, dd.normal);
+                };
+                /* ancre posee comme au clic : d = 0 au rayon de capture */
+                const double dCap = dBrut(g_winW * 0.5, g_winH * 0.5);
+                if (!std::isfinite(dCap)) continue;
+                dd.dRef = dCap;
+                captureVu = true;
+                if (std::fabs(dBrut(g_winW * 0.5, g_winH * 0.5) - dd.dRef) > 1e-9) noJump = false;
+                if (phi == 0.5 && theta == 0.8) { ddRefVue = dd; ddRefOk = true; }
+            }
+        }
+        CHECK(captureVu, "ancre extrusion : faces capturees sur le cube SketchUp reel sous plusieurs vues");
+        CHECK(captureVu && noJump, "ancre extrusion : d = 0 au rayon de capture, quel que soit l'angle (fin de l'aplatissement immediat)");
+        CHECK(ddRefOk, "ancre extrusion : capture reproductible de la vue de reference (phi 0.5, theta 0.8)");
+        CHECK(ddRefOk && ddRefVue.hasLow && std::fabs(dot(ddRefVue.normal, ddRefVue.normal) - 1.0) < 1e-9,
+              "ancre extrusion : la face capturee a la vue de reference a une normale unitaire et de la matiere derriere (butee negative)");
+        if (ddRefOk) {
+            g_cam.phi = 0.5; g_cam.theta = 0.8;
+            const Vec3 org = g_cam.pos();
+            const double ttR = tt, aspectR = aspect;
+            auto dBrutRef = [&](double mx, double my) -> double {
+                const double nx = 2.0 * mx / double(g_winW) - 1.0;
+                const double ny = 1.0 - 2.0 * my / double(g_winH);
+                const Vec3 d2 = normalized(g_cam.right() * (nx * ttR * aspectR) + g_cam.up() * (ny * ttR) + g_cam.forward());
+                const double den = dot(d2, ddRefVue.pn);
+                if (std::fabs(den) < 1e-9) return std::numeric_limits<double>::quiet_NaN();
+                const double tv = dot(ddRefVue.planePoint - org, ddRefVue.pn) / den;
+                if (tv < 0.0) return std::numeric_limits<double>::quiet_NaN();
+                return dot((org + d2 * tv) - ddRefVue.planePoint, ddRefVue.normal);
+            };
+            const double d40 = dBrutRef(g_winW * 0.5, g_winH * 0.5 - 40.0) - ddRefVue.dRef;
+            const double d80 = dBrutRef(g_winW * 0.5, g_winH * 0.5 - 80.0) - ddRefVue.dRef;
+            const double d120 = dBrutRef(g_winW * 0.5, g_winH * 0.5 - 120.0) - ddRefVue.dRef;
+            CHECK(std::isfinite(d40) && std::isfinite(d80) && std::isfinite(d120)
+                  && d40 > 0.0 && d80 > d40 && d120 > d80,
+                  "ancre extrusion : la face suit le curseur - souris vers le haut = tirage positif croissant");
+            auto spanAlong = [](const Object& o, const Vec3& n) {
+                double lo = 1e300, hi = -1e300;
+                for (const Vec3& p : o.v) {
+                    const double al = dot(o.pos + p * o.scl, n);
+                    if (al < lo) lo = al;
+                    if (al > hi) hi = al;
+                }
+                return hi - lo;
+            };
+            const double spanB = spanAlong(imp, ddRefVue.normal);
+            const size_t nmB = countNonManifold(imp);
+            applyExtrude(imp, ddRefVue, 1.25);
+            const double spanA = spanAlong(imp, ddRefVue.normal);
+            CHECK(std::fabs((spanA - spanB) - 1.25) < 1e-6 && countNonManifold(imp) == nmB,
+                  "ancre extrusion : dimension tapee 1.25 (Entree) posee depuis la capture -> portee +1.25 le long de la normale, topologie inchangée");
+            /* signe de la saisie (retour de test T1.5.2 : tiret non branche, la
+               valeur tapee devenait un pull) : -0.5 = enfoncement, meme chemin
+               que le push a la souris (clamp sur les butees de makeExtrude). */
+            applyExtrude(imp, ddRefVue, -0.5);
+            const double spanP = spanAlong(imp, ddRefVue.normal);
+            CHECK(ddRefVue.hasLow && std::fabs((spanP - spanB) + 0.5) < 1e-6 && countNonManifold(imp) == nmB,
+                  "pose clavier extrusion : valeur negative (tiret) = enfoncement, portee -0.5 le long de la normale, topologie inchangée");
+            /* butee et saisie (demande de test) : une valeur tapee au-dela de la
+               butee ne traverse pas la matiere - le push se cale a la butee
+               (feuille) et rien ne ressort de l'autre cote du plan.          */
+            applyExtrude(imp, ddRefVue, -9999.0);
+            double hiPlane = -1e300;
+            for (const Vec3& p : imp.v) {
+                const double al = dot(imp.pos + p * imp.scl - ddRefVue.planePoint, ddRefVue.normal);
+                if (al > hiPlane) hiPlane = al;
+            }
+            /* le pli a la butee clone des sommets par construction (motif butee
+               eprouve dans les familles feuille) : on ne teste ici QUE la non
+               traversée du plan. */
+            CHECK(ddRefVue.hasLow && hiPlane < 1e-5,
+                  "pose clavier extrusion : valeur au-dela de la butee = calee (feuille), rien ne depasse le plan (pas de traversee)");
+        }
+
+        /* pose au clavier - retour de test T1.5 : la valeur tapee n'avait aucun
+           effet visible (la relecture du curseur l'ecrasait des la frame
+           suivante). Contrat T1.5.2 : Entree applique la valeur, pose la face
+           et quitte le mode P (une action complete, sans retoucher la souris) ;
+           ppDragDelta reste le calcul central du suivi du curseur.          */
+        if (ddRefOk) {
+            g_cam.phi = 0.5; g_cam.theta = 0.8;
+            const Vec3 orgV = g_cam.pos();
+            const double ttV = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+            const double aspV = double(g_winW) / double(g_winH);
+            const auto rayV = [&](double mx, double my) {
+                const double nx = 2.0 * mx / double(g_winW) - 1.0;
+                const double ny = 1.0 - 2.0 * my / double(g_winH);
+                return normalized(g_cam.right() * (nx * ttV * aspV) + g_cam.up() * (ny * ttV) + g_cam.forward());
+            };
+            g_pp = ddRefVue;
+            CHECK(std::fabs(ppDragDelta(orgV, rayV(g_winW * 0.5, g_winH * 0.5))) < 1e-9,
+                  "pose clavier extrusion : d = 0 au rayon de capture (calcul central ppDragDelta)");
+            const double q40 = ppDragDelta(orgV, rayV(g_winW * 0.5, g_winH * 0.5 - 40.0));
+            const double q80 = ppDragDelta(orgV, rayV(g_winW * 0.5, g_winH * 0.5 - 80.0));
+            CHECK(std::isfinite(q40) && q40 > 0.0 && q80 > q40,
+                  "pose clavier extrusion : suivi du curseur (ppDragDelta) - souris vers le haut = tirage croissant");
+            Vec3 vDeg = cross(ddRefVue.pn, Vec3(1, 0, 0));
+            if (dot(vDeg, vDeg) < 1e-12) vDeg = cross(ddRefVue.pn, Vec3(0, 1, 0));
+            CHECK(!std::isfinite(ppDragDelta(orgV, normalized(vDeg))),
+                  "pose clavier extrusion : rayon perpendiculaire au plan de souris = rien applique (pas de valeur aberrante)");
+            g_pp = Extrude();
+        }
+        g_objs.clear();
+        g_selected = -1;
+    }
+
+    /* 20 - T1.5.8 : separateur decimal independant de la disposition du clavier */
+    {
+        CHECK(isSeparatorKey(GLFW_KEY_COMMA, 0) && isSeparatorKey(GLFW_KEY_PERIOD, 0)
+              && isSeparatorKey(GLFW_KEY_KP_DECIMAL, 0) && isSeparatorKey(GLFW_KEY_SEMICOLON, 0),
+              "separateur : virgule (francais), point, decimale du pave et ';' (AZERTY Maj+;) acceptes");
+        CHECK(!isSeparatorKey(GLFW_KEY_X, 0) && !isSeparatorKey(GLFW_KEY_MINUS, 0)
+              && !isSeparatorKey(GLFW_KEY_BACKSPACE, 0)
+              && !isSeparatorKey(GLFW_KEY_ENTER, 0) && !isSeparatorKey(GLFW_KEY_ESCAPE, 0),
+              "separateur : lettre, tiret, retour arriere, Entree et Echap ne sont pas des separateurs");
     }
 
     std::printf("resume : %d echec(s)\n", g_fail);

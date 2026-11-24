@@ -20,6 +20,12 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_KEY_COMMA       44
 #define GLFW_KEY_MINUS       45
 #define GLFW_KEY_PERIOD      46
+#define GLFW_KEY_SEMICOLON   59
+#define GLFW_KEY_KP_SUBTRACT 333
+#define GLFW_KEY_KP_ENTER    335
+#define GLFW_KEY_KP_DECIMAL  330
+#define GLFW_KEY_KP_0        320
+#define GLFW_KEY_KP_9        329
 #define GLFW_KEY_0           48
 #define GLFW_KEY_9           57
 #define GLFW_KEY_F 70
@@ -27,6 +33,7 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_KEY_I 73
 #define GLFW_KEY_O 79
 #define GLFW_KEY_P 80
+#define GLFW_KEY_R 82
 #define GLFW_KEY_S 83
 #define GLFW_KEY_X 88
 #define GLFW_KEY_Y 89

@@ -4,7 +4,129 @@ Transcription du prototype web (`index.html` a la racine du depot) en programme
 natif Windows, par petits lots testables. Modele geometrique en **double
 precision** natif (la version web stockait en Float32).
 
-## Lot N5.1 (celui-ci) : menus de base
+## Outillages T1.5 (retours de test extrusion) : ancre du drag + zone de saisie
+
+**Version affichee** : la console et la barre de titre indiquent la build
+(macro `BUILD_VERSION` en tete de `src/main.cpp`, ex. `T1.5`) — incrementee a
+chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
+`git pull`.
+
+- **correctif grave "la face passe en feuille des la capture"** : le plan de
+  souris du Push/Pull (plan face a l'ecran passant par la face) est percé par
+  le rayon ailleurs qu'au point cliqué (il est ancré sur un sommet du
+  triangle, comme dans la version web) ; le `d` brut mesuré des la premiere
+  frame valait plusieurs unites sur une grande face et se retrouvait clampé
+  d'emblée a la butee : la face s'aplatissait **avant** de suivre le curseur.
+  Le deplacement est desormais **relatif au rayon de capture** (`dRef`) : d = 0
+  a la capture, la face suit ensuite le curseur (souris vers le haut = tirage) ;
+- **pave numerique accepte pendant l'extrusion** : chiffres du pave
+  numerique, separateur decimal du pave et **Entree du pave** fonctionnent
+  comme la rangee du haut (idem pendant la rotation ; le pavé marchait deja
+  pour la duplication) ;
+- **zone de saisie unique et bien marquee** : en fin de bandeau, une boite
+  blanche adaptee au texte tape (libelle `nombre :`, `dimension :` ou
+  `angle :`, curseur clignotant) affiche la valeur en cours — la meme pour les
+  trois cas qui acceptent une valeur clavier (duplication, extrusion,
+  rotation) ; le texte d'invite est rogné si la fenetre est etroite ;
+- **correctif "la valeur tapee n'a aucun effet visible"** : chiffres + Entree
+  pendant une extrusion posait bien la valeur, mais la relecture du curseur
+  (chaque frame) l'ecrasait des la frame suivante - la face retombait au
+  niveau du curseur et l'effet ne reparaissait qu'a la capture suivante
+  (impression de "sans effet", et effet devu "affecte a la selection
+  suivante"). **Nouveau contrat (retour de test)** : saisir une valeur puis
+  **Entree applique la dimension, pose la face et quitte le mode P** - une
+  action complete au clavier, sans retoucher la souris (le micro-mouvement
+  de main lors d'un clic ne peut plus revenir derriere la valeur) ; le drag
+  souris garde tout le reste du comportement (ancre dRef, la face suit le
+  curseur) ;
+- **signe de la saisie** (retour de test) : le tiret haut ou la touche du pave
+  numerique insere un **-** devant la valeur tapee ; negatif = **enfoncement**,
+  positif = tirage, la convention du drag live (0 refuse : rien ne se pose) ;
+- **butees respectees par la saisie** (demande de test) : une valeur au-dela
+  de la matiere se **cale a la butee** au lieu de traverser et ressortir de
+  l'autre cote (message `Butee atteinte : valeur calee a ...`) ; lorsqu'un
+  push consomme tout l enfoncement, la face devient feuille (le pull
+  recreera le volume) ;
+- **validation = pose, partout (retour de test)** : meme contrat pour la
+  rotation que pour l'extrusion - chiffres + **Entree appliquent l'angle,
+  posent la rotation et quittent le mode** (avant, la rotation restait
+  active et le moindre mouvement de souris reprenait), la duplication garde
+  Entree vide = 1 ;
+- **champ nombre de la duplication (retour de test T1.5.5)** : le tiret haut
+  ou la touche du pave est desormais accepte dans la boite de saisie ;
+  **valeur negative = retrait d'instances** (demande explicite de
+  l'utilisateur : corriger une sur-duplication type "55 tape au lieu de 5"
+  sans refaire le geste) - les k dernieres copies numerotees de la serie de
+  l'objet source sont supprimees, l'**original toujours epargne** ; au-dela
+  du disponible, on retire tout ; aucune copie numerotee = message, rien de
+  supprime ; hors plage -999..999 = refusee proprement (aucune action) ;
+- **saisie d'angle figee pendant la frappe (retour de test T1.5.6)** : des le
+  premier chiffre tape pendant une rotation, la piece **ne suit plus la
+  souris** (l'angle accumule ne bouge plus) ; Entree pose l'angle et quitte
+  le mode - le micro-mouvement de main lors de la frappe ne peut plus faire
+  tourner la piece ; la question de l'axe est raccourcie en console (l'invite
+  complete vit dans le bandeau de la fenetre) ;
+- **separateur du champ nombre (retours de test T1.5.6 a T1.5.8)** : touche
+  ignoree (le champ est un entier par conception) mais avec un **avis clair
+  dans le bandeau de la fenetre** (flash de 3 s, retour de test : les avis de
+  saisie ne doivent pas passer uniquement par la console) - le retrait
+  negatif sert justement a corriger une frappe ratee (2.5 malvenu devenant
+  25) ;
+- **separateur decimal independant de la disposition du clavier (retour de
+  test T1.5.7/1.5.8)** : la virgule (separateur francais), le point, la
+  decimale du pave et la touche ';' (AZERTY : le point s'obtient via
+  Maj + ';') sont acceptes dans la saisie d'angle et de dimension - la
+  virgule se perdait dans la T1.5.7 (25,4 tape devenait 254 sur l'angle) car
+  le code de touche OEM varie selon la disposition ; la detection passe
+  desormais par le NOM de la touche (function `isSeparatorKey` : codes
+  connus + `glfwGetKeyName`), la boite affichant un point pour atof ;
+- **separateur decimal** : pris en compte pour l'extrusion et la rotation
+  (point, virgule ou touche decimale du pave, affiche en point dans la boite ;
+  le champ nombre est un entier, sans separateur par conception) ;
+- la batterie est a **115 verifications** (+ separateurs : la virgule francaise, le point, la decimale du pave et ';' acceptes ; lettre, tiret, retour arriere, Entree et Echap refutes) (+ enfoncement -0.5 le long de la
+  normale ; valeur au-dela de la butee = rien ne depasse le plan ; duplication
+  refusee hors plage ; retrait d'instances : -k supprime les k derniers
+  numeros de la serie, original epargne, depassement = tout le disponible,
+  aucune copie numerotee = retour 0).
+
+## Outillages T1 : duplication + rotation
+
+- **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de
+  statut) : affiche en permanence l'invite du mode courant et la valeur en
+  cours (nombre d'instances tape, extrusion en cours, rotation en direct...)
+  — les questions/réponses ne passent plus par la console ;
+- **regle generale des transformations** : le **clic droit** revient au neutre
+  partout — annule la transformation en cours (extrusion posee en suspens,
+  rotation en cours) ET quitte le mode (le deplacement en vol ne peut pas etre
+  annule ainsi : le clic droit exige de relacher le bouton gauche, l'objet est
+  deja pose) ;
+- **menu contextuel** : il n'apparait que si un objet est deja **selectionne**
+  (clic gauche) ; clic droit dans le vide ou sans selection : rien (juste un
+  rappel en console) ;
+
+- **Duplication** : menu contextuel (clic droit sur un objet) > **Dupliquer...**
+  — nombre d'instances tape dans la fen^etre au clavier puis **Entree** (Entree
+  sans chiffre = 1, maximum 999, Echap pour annuler, meme modele de saisie que
+  Push/Pull — jamais d'attente bloquante dans la boucle de jeu) ; copies posees
+  en ligne vers +X (pas = portee + 0.25) avec la meme anti-superposition que
+  l'import : une copie qui rencontre un voisin est poussee au-dela de son bord ;
+  noms numerotes depuis le nom source ;
+- **Rotation** : touche **R** (bascule du mode, exclusif avec Push/Pull) —
+  selectionnez un objet puis **X, Y ou Z** (lettre, AZERTY inclus) pour fixer
+  l'axe ; la piece tourne **autour de son centre** en bougeant la souris
+  horizontalement (0.25 deg/pixel), ou tapez des **chiffres** (signe autorise,
+  virgule ou point) + **Entree** pour un angle exact ; **clic gauche** : pose ;
+  **clic droit ou Echap** pendant une rotation : annule la rotation continue ;
+  **appuyer une autre lettre (X/Y/Z) pendant une rotation** : pose la rotation
+  en cours et repart directement de la geometrie courante sur le nouvel axe,
+  sans deselectionner ; **clic droit hors rotation** (ou Echap, ou R) : quitte
+  le mode rotation ;
+- la rotation s'applique aux sommets locaux (double precision) : tout le reste
+  (deplacement, Push/Pull, exports, fichier projet) marche sur la piece tournee
+  sans modification du modele de donnees ;
+- la batterie monte a **95 verifications** (familles duplication et rotation).
+
+## Lot N5.1 : menus de base
 
 **Barre de menus Windows** (Fichier) et **menu contextuel du clic droit**,
 plus un **fichier de projet** natif.

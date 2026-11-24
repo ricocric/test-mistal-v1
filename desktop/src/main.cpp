@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
@@ -43,6 +44,10 @@
 #ifdef _WIN32
 #include <GLFW/glfw3native.h>
 #endif
+
+/* Version affichee dans la console et le titre de fenetre : maj a chaque
+   lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
+static const char* BUILD_VERSION = "T1.5.8";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -689,6 +694,89 @@ static void importFile() {
     frameSelected();
 }
 
+/* Duplication multi-instances (menu contextuel) : copies identiques posees
+   vers +X, meme anti-superposition que l'import (decalage juste apres le bord
+   de l'objet en collision, marge 0.25). */
+static void duplicateObject(int idx, int n) {
+    if (idx < 0 || idx >= (int)g_objs.size() || n <= 0) return;
+    const Object src = g_objs[(size_t)idx];
+    const double spanX = (src.bmax.x - src.bmin.x) * src.scl;
+    const double step = spanX + 0.25;
+    int made = 0;
+    for (int k = 1; k <= n; ++k) {
+        Object o = src;
+        o.name = src.name + " (" + std::to_string(k) + ")";
+        o.pos = Vec3(src.pos.x + step * k, src.pos.y, src.pos.z);
+        int shifts = 0;
+        for (int tries = 0; tries < 128; ++tries) {
+            bool clash = false;
+            for (const Object& other : g_objs)
+                if (overlapsWorld(o, other)) { clash = true; break; }
+            if (!clash) break;
+            o.pos.x += step;
+            ++shifts;
+        }
+        if (shifts > 0)
+            std::printf("superposition evitee : %s decale de %d pas vers +X (x = %.3f)\n", o.name.c_str(), shifts, o.pos.x);
+        g_objs.push_back(std::move(o));
+        ++made;
+    }
+    std::printf("duplication : %s x%d (copies posees vers +X, pas de %.3f)\n", src.name.c_str(), made, step);
+}
+
+/* retrait d'instances (retour de test : corriger une sur-duplication sans
+   refaire le geste) : -k au champ nombre retire les k dernieres copies
+   numerotees de la meme serie que l'objet source (nom "Src (k)"), l'original
+   n'est jamais retire ; au-dela du disponible, on retire tout.             */
+static int removeInstances(int idx, int k) {
+    if (idx < 0 || idx >= (int)g_objs.size() || k <= 0) return 0;
+    const std::string base = g_objs[(size_t)idx].name + " (";
+    std::vector<std::pair<int, int>> hits;
+    for (int i = 0; i < (int)g_objs.size(); ++i) {
+        const std::string& nm = g_objs[(size_t)i].name;
+        if (nm.size() > base.size() + 1 && nm.compare(0, base.size(), base) == 0 && nm[nm.size() - 1] == ')') {
+            const std::string digits = nm.substr(base.size(), nm.size() - base.size() - 1);
+            if (!digits.empty() && digits.find_first_not_of("0123456789") == std::string::npos)
+                hits.push_back(std::make_pair(i, std::stoi(digits)));
+        }
+    }
+    std::sort(hits.begin(), hits.end(), [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+        return a.second != b.second ? a.second > b.second : a.first > b.first;
+    });
+    const int rem = std::min(k, (int)hits.size());
+    for (int r = 0; r < rem; ++r)
+        g_objs.erase(g_objs.begin() + hits[(size_t)r].first);
+    if (g_selected >= (int)g_objs.size())
+        g_selected = (int)g_objs.size() - 1;
+    if (rem > 0)
+        std::printf("retrait : %d copie(s) supprimee(s) de la serie %s (%d instance(s) restante(s))\n",
+                    rem, g_objs[(size_t)idx].name.c_str(), (int)hits.size() - rem);
+    return rem;
+}
+
+/* saisie du nombre d'instances dans la FENETRE au clavier (modele Push/Pull :
+   chiffres puis Entree) — jamais de getline bloquant dans la boucle de jeu */
+static bool g_dupPending = false;
+static int g_dupSrc = -1;
+static std::string g_dupNumBuf;
+
+static void dupStartPrompt() {
+    g_dupPending = true;
+    g_dupSrc = g_selected;
+    g_dupNumBuf.clear();
+    std::printf("Dupliquer : tapez le nombre d'instances puis Entree (vide = 1, maximum 999 ; negatif = retire des copies ; Echap pour annuler)\n");
+}
+
+/* message ephemere affiche dans le bandeau de la FENETRE (retour de test :
+   les avis de saisie doivent se voir dans l'application, pas en console) */
+static std::string g_bandFlash;
+static double g_bandFlashUntil = 0.0;
+
+static void flashBand(const char* msg) {
+    g_bandFlash = msg;
+    g_bandFlashUntil = glfwGetTime() + 3.0;
+}
+
 /* ------------------------------------------------------------------ */
 /* Export OBJ / STL                                                    */
 /* ------------------------------------------------------------------ */
@@ -856,6 +944,7 @@ enum {
     IDM_EXPORT_STL,
     IDM_QUIT,
     IDM_INFO_OBJECT,
+    IDM_DUPLICATE,
 };
 
 static GLFWwindow* g_mainWin = nullptr;
@@ -917,29 +1006,26 @@ static void handleMenuAction(int id) {
 }
 
 static void showContextMenu(GLFWwindow* w) {
-    Vec3 org, dir;
-    if (!rayFromMouse(w, org, dir)) return;
-    int hit = -1;
-    double bestT = 1e300;
-    for (size_t i = 0; i < g_objs.size(); ++i) {
-        double t;
-        if (rayObjectTri(org, dir, g_objs[i], t, nullptr) && t < bestT) {
-            bestT = t; hit = (int)i;
-        }
+    /* le menu contextuel ne concerne qu'un objet deja selectionne (clic gauche) */
+    if (g_selected < 0 || g_selected >= (int)g_objs.size()) {
+        std::printf("menu contextuel : selectionnez d'abord un objet (clic gauche)\n");
+        return;
     }
-    if (hit < 0) return;                  /* clic droit dans le vide : rien */
-    g_selected = hit;
-    const std::string info = objectInfo(g_objs[(size_t)hit]);
+    (void)w;
+    const std::string info = objectInfo(g_objs[(size_t)g_selected]);
     std::printf("%s\n", info.c_str());
 #ifdef _WIN32
     HMENU m = CreatePopupMenu();
     AppendMenuA(m, MF_STRING, IDM_INFO_OBJECT, "&Infos objet");
+    AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(m, MF_STRING, IDM_DUPLICATE, "&Dupliquer...");
     POINT pt;
     GetCursorPos(&pt);
     SetForegroundWindow(glfwGetWin32Window(w));
     const int id = (int)TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, glfwGetWin32Window(w), nullptr);
     DestroyMenu(m);
     if (id == IDM_INFO_OBJECT) showInfoDialog("Infos objet", info);
+    else if (id == IDM_DUPLICATE) dupStartPrompt();
 #else
     (void)w;
 #endif
@@ -954,10 +1040,54 @@ static LRESULT CALLBACK menuWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 }
 #endif
 
+#ifdef _WIN32
+static unsigned g_fontBase = 0;   /* liste d'affichage : fonte bitmap GDI 32..127 */
+static HFONT g_hFont = nullptr;   /* fonte conservee : mesure de largeur du texte */
+
+static void buildFont(HWND hwnd) {
+    HDC hdc = GetDC(hwnd);
+    HFONT hf = CreateFontA(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET,
+                           OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                           FF_DONTCARE | DEFAULT_PITCH, "Segoe UI");
+    HFONT old = (HFONT)SelectObject(hdc, hf);
+    g_fontBase = glGenLists(96);
+    if (g_fontBase && g_fontBase != (unsigned)-1) wglUseFontBitmapsA(hdc, 32, 96, g_fontBase);
+    SelectObject(hdc, old);
+    g_hFont = hf;               /* pas de DeleteObject : sert a textWidthPx */
+    ReleaseDC(hwnd, hdc);
+}
+
+static int textWidthPx(const char* s) {
+    if (!g_hFont) return 0;
+    HDC hdc = wglGetCurrentDC();
+    if (!hdc) return 0;
+    HGDIOBJ old = SelectObject(hdc, g_hFont);
+    SIZE sz = {0, 0};
+    const int n = (int)std::strlen(s);
+    const int ok = n > 0 ? GetTextExtentPoint32A(hdc, s, n, &sz) : 1;
+    SelectObject(hdc, old);
+    return ok ? sz.cx : 0;
+}
+#endif
+
+static void drawText2D(float x, float y, const char* s) {
+#ifdef _WIN32
+    if (!g_fontBase) return;
+    glRasterPos2f(x, y);
+    for (const char* p = s; *p; ++p) {
+        const unsigned char c = (unsigned char)*p;
+        glCallList(g_fontBase + (c >= 32 && c < 128 ? c - 32 : 32));
+    }
+#else
+    (void)x; (void)y; (void)s;
+#endif
+}
+
 static void attachMenus(GLFWwindow* win) {
     g_mainWin = win;
 #ifdef _WIN32
     const HWND hwnd = glfwGetWin32Window(win);
+    buildFont(hwnd);
     HMENU file = CreatePopupMenu();
     AppendMenuA(file, MF_STRING, IDM_NEW_PROJECT, "&Nouveau projet");
     AppendMenuA(file, MF_STRING, IDM_OPEN_PROJECT, "&Ouvrir un projet...");
@@ -995,7 +1125,8 @@ struct Extrude {
     std::vector<char> inCompTri;     /* tris de cette composante : butee, pli et feuille ne la concernent qu'elle */
     double dLow = 0.0, dHigh = 0.0;  /* butees : epaisseur de matiere disponible */
     bool hasLow = false, hasHigh = false;
-    double d = 0.0;                  /* dernier deplacement applique */
+    double d = 0.0;                  /* dernier deplacement applique (relatif a la capture) */
+    double dRef = 0.0;               /* d brut mesure au rayon de capture : ancre du drag */
     std::string numBuf;              /* saisie de dimension exacte */
 };
 static bool g_ppMode = false;        /* touche P : mode Push/Pull */
@@ -1420,21 +1551,148 @@ static void ppCommit() {
     g_pp = Extrude();
 }
 
+/* d relatif au rayon de capture : d = 0 au curseur de la capture, positif
+   vers la normale (tirage). Pur : lit g_pp, ne touche pas au mesh.
+   NaN si le rayon perce ailleurs sans croiser le plan utile.              */
+static double ppDragDelta(const Vec3& org, const Vec3& dir) {
+    const double denom = dot(dir, g_pp.pn);
+    if (std::fabs(denom) < 1e-9) return std::numeric_limits<double>::quiet_NaN();
+    const double t = dot(g_pp.planePoint - org, g_pp.pn) / denom;
+    if (t < 0.0) return std::numeric_limits<double>::quiet_NaN();
+    return dot((org + dir * t) - g_pp.planePoint, g_pp.normal) - g_pp.dRef;
+}
+
 static void updatePP(GLFWwindow* w) {
     if (!g_ppActive || g_pp.obj < 0 || g_pp.obj >= (int)g_objs.size()) return;
     Vec3 org, dir;
     if (!rayFromMouse(w, org, dir)) return;
-    const double denom = dot(dir, g_pp.pn);
-    if (std::fabs(denom) < 1e-9) return;
-    const double t = dot(g_pp.planePoint - org, g_pp.pn) / denom;
-    if (t < 0.0) return;
-    const double d = dot((org + dir * t) - g_pp.planePoint, g_pp.normal);
+    /* ancre dRef : d = 0 au rayon de capture, la face suit ensuite le curseur.
+       Une dimension tapee + Entree pose ET termine (voir onKey) : pas besoin
+       de verrou, le curseur n'ecrase jamais une valeur posee.              */
+    const double d = ppDragDelta(org, dir);
+    if (!std::isfinite(d)) return;
     applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, d);
     g_pp.d = d;
     const double now = glfwGetTime();
     if (now - g_ppStatusTick > 0.12) {
         g_ppStatusTick = now;
         std::printf("\rExtrusion : %+.3f (clic pour poser, clic droit pour annuler)   ", d);
+        std::fflush(stdout);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Rotation (outillage T1) : autour d'un axe monde passant par le      */
+/* centre de la piece ; mouvement souris en direct ou angle au clavier */
+/* ------------------------------------------------------------------ */
+
+static bool g_rotMode = false;        /* touche R : mode Rotation */
+static bool g_rotActive = false;      /* axe choisi, angle en cours */
+static int g_rotObj = -1;
+static int g_rotAxis = -1;            /* 0 = X, 1 = Y, 2 = Z */
+static Vec3 g_rotPivot;               /* centre (monde) de la piece a la capture */
+static std::vector<Vec3> g_rotBase;   /* sommets locaux a la capture */
+static double g_rotAngle = 0.0;       /* angle courant (degres) */
+static double g_rotLastX = 0.0;       /* curseur a la capture (0.25 deg/pixel) */
+static std::string g_rotNumBuf;
+static double g_rotStatusTick = 0.0;
+
+/* rotation d'angle (degres) autour de l'axe monde 'axis' passant par pivot */
+static Vec3 rotateAroundAxis(const Vec3& pw, const Vec3& pivot, int axis, double angDeg) {
+    const double a = angDeg * 3.14159265358979323846 / 180.0;
+    const double c = std::cos(a), s = std::sin(a);
+    Vec3 p = pw - pivot;
+    Vec3 r;
+    if (axis == 0)      r = Vec3(p.x, c * p.y - s * p.z, s * p.y + c * p.z);
+    else if (axis == 1) r = Vec3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z);
+    else                r = Vec3(c * p.x - s * p.y, s * p.x + c * p.y, p.z);
+    return r + pivot;
+}
+
+/* applique l'angle : v local = (pivot + R*(pos + base*scl - pivot) - pos)/scl */
+static void applyRotationAt(Object& o, const std::vector<Vec3>& base, int axis, double angDeg) {
+    if (o.scl <= 1e-12) return;
+    const double inv = 1.0 / o.scl;
+    o.v.resize(base.size());
+    for (size_t i = 0; i < base.size(); ++i) {
+        const Vec3 w = o.pos + base[i] * o.scl;
+        o.v[i] = (rotateAroundAxis(w, g_rotPivot, axis, angDeg) - o.pos) * inv;
+    }
+    computeObjectDerived(o);
+}
+
+static char axisLetterFromScancode(int scancode) {
+    const char* name = glfwGetKeyName(-1, scancode);
+    if (!name || name[0] == '\0') return 0;
+    const char c = (name[0] >= 'A' && name[0] <= 'Z') ? char(name[0] - 'A' + 'a') : name[0];
+    return (c == 'x' || c == 'y' || c == 'z') ? c : 0;
+}
+
+/* separateur decimal, independant de la disposition (retour de test : sur
+   AZERTY les codes OEM arrivent contrairement aux attentes - le ';' est
+   arrive en GLFW_KEY_SEMICOLON mais la virgule s'est perdue ailleurs) :
+   les touches listees sont acceptees d'office, et sinon on interroge le
+   NOM de la touche (",", ".", ";" = separateur, quelle que soit la disposition). */
+static bool isSeparatorKey(int key, int scancode) {
+    if (key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA
+        || key == GLFW_KEY_KP_DECIMAL || key == GLFW_KEY_SEMICOLON) return true;
+    const char* name = glfwGetKeyName(key, scancode);
+    return name != 0 && name[1] == '\0'
+        && (name[0] == ',' || name[0] == '.' || name[0] == ';');
+}
+
+static void rotBegin(GLFWwindow* w, int axis) {
+    if (g_selected < 0 || g_selected >= (int)g_objs.size()) {
+        std::printf("rotation : selectionnez d'abord un objet (clic gauche)\n");
+        return;
+    }
+    Object& o = g_objs[(size_t)g_selected];
+    g_rotObj = g_selected;
+    g_rotAxis = axis;
+    g_rotBase = o.v;
+    g_rotPivot = o.pos + (o.bmin + o.bmax) * (0.5 * o.scl);
+    g_rotAngle = 0.0;
+    g_rotNumBuf.clear();
+    double dummy = 0.0;
+    glfwGetCursorPos(w, &g_rotLastX, &dummy);
+    g_rotActive = true;
+    std::printf("rotation %s de %s autour de son centre : souris pour tourner, ou chiffres + Entree (tapez dans la fenetre ; Entree pose et quitte)\n",
+                axisName(axis), o.name.c_str());
+}
+
+static void rotCancel() {
+    if (!g_rotActive || g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) { g_rotActive = false; return; }
+    Object& o = g_objs[(size_t)g_rotObj];
+    o.v = g_rotBase;
+    computeObjectDerived(o);
+    g_rotActive = false;
+    g_rotAxis = -1;
+    g_rotNumBuf.clear();
+    std::printf("\nrotation annulee\n");
+}
+
+static void rotCommit() {
+    if (!g_rotActive || g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) { g_rotActive = false; return; }
+    std::printf("\nrotation posee : %+.2f deg sur %s\n", g_rotAngle, g_objs[(size_t)g_rotObj].name.c_str());
+    g_rotActive = false;
+    g_rotAxis = -1;
+    g_rotNumBuf.clear();
+}
+
+static void updateRot(GLFWwindow* w) {
+    if (!g_rotActive || g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) return;
+    /* saisie au clavier en cours : la piece est figee (le moindre mouvement
+       de souris ne modifie plus l'angle accumule) ; Entree pose et quitte. */
+    if (!g_rotNumBuf.empty()) return;
+    double x, y;
+    glfwGetCursorPos(w, &x, &y);
+    g_rotAngle += (x - g_rotLastX) * 0.25;
+    g_rotLastX = x;
+    applyRotationAt(g_objs[(size_t)g_rotObj], g_rotBase, g_rotAxis, g_rotAngle);
+    const double now = glfwGetTime();
+    if (now - g_rotStatusTick > 0.12) {
+        g_rotStatusTick = now;
+        std::printf("\rRotation %s : %+.1f deg (clic pour poser, clic droit pour annuler)   ", axisName(g_rotAxis), g_rotAngle);
         std::fflush(stdout);
     }
 }
@@ -1451,13 +1709,34 @@ static void onScroll(GLFWwindow*, double, double dy) {
 
 static void onMouseButton(GLFWwindow* w, int button, int action, int) {
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-        if (action == GLFW_PRESS && g_ppActive) ppCancel();
-        else if (action == GLFW_PRESS && !g_ppMode) showContextMenu(w);
+        /* regle generale des transformations : clic droit = retour au neutre.
+           Le deplacement en vol ne peut pas etre annule ainsi (le clic droit
+           exige de relacher le bouton gauche, donc l'objet est deja pose). */
+        if (action != GLFW_PRESS) return;
+        if (g_ppActive) {
+            ppCancel();                 /* restaure la piece */
+            g_ppMode = false;
+            std::printf("\nmode selection\n");
+        } else if (g_rotActive) {
+            rotCancel();                /* restaure la geometrie */
+            g_rotMode = false;
+            std::printf("\nmode selection\n");
+        } else if (g_mode == M_Drag) {
+            g_mode = M_None;
+            g_lockAxis = -1;
+        } else if (g_ppMode || g_rotMode) {
+            g_ppMode = false;
+            g_rotMode = false;
+            std::printf("\nmode selection\n");
+        } else {
+            showContextMenu(w);
+        }
         return;
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
         if (g_ppActive) { ppCommit(); return; }   /* second clic gauche : pose la face */
+        if (g_rotActive) { rotCommit(); return; }  /* clic gauche : pose la rotation */
         if (g_ppMode) {
             Vec3 org, dir;
             if (!rayFromMouse(w, org, dir)) return;
@@ -1486,6 +1765,17 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
                 else pn = Vec3(dd.normal.z, 0, -dd.normal.x);
             }
             dd.pn = pn;      /* plan de souris : passe par la face, face a l ecran */
+            /* ancre du drag : d brut mesure au rayon de capture (le curseur
+               vient de cliquer, la face doit rester en place tant qu'il bouge
+               a peine) ; sinon le d initial, non nul, etait clampé a la butee */
+            {
+                const double den = dot(dir, dd.pn);
+                if (std::fabs(den) > 1e-9) {
+                    const double ts = dot(dd.planePoint - org, dd.pn) / den;
+                    if (ts > 0.0) dd.dRef = dot((org + dir * ts) - dd.planePoint, dd.normal);
+                }
+            }
+            dd.d = 0.0;
             g_pp = std::move(dd);
             g_ppActive = true;
             std::printf("face capturee — deplacez le long de la normale, cliquez pour poser la face (clic droit ou Echap : annuler ; chiffres + Entree : dimension exacte)\n");
@@ -1521,26 +1811,114 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
 }
 
 static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
+    if (g_dupPending) {
+        if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
+        const bool topRow = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
+        const bool padRow = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
+        if (topRow || padRow) {
+            if (g_dupNumBuf.size() < 4)
+                g_dupNumBuf += padRow ? char('0' + (key - GLFW_KEY_KP_0)) : char(key);
+        } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+            if (g_dupNumBuf.size() < 4) g_dupNumBuf.insert(g_dupNumBuf.begin(), '-');
+        } else if (isSeparatorKey(key, scancode)) {
+            flashBand("champ nombre entier : separateur ignore (nombre negatif = retire des copies si besoin)");
+        } else if (key == GLFW_KEY_BACKSPACE) {
+            if (!g_dupNumBuf.empty()) g_dupNumBuf.pop_back();
+        } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+            const bool vide = g_dupNumBuf.empty();
+            const long n = vide ? 1 : std::atol(g_dupNumBuf.c_str());
+            g_dupPending = false;
+            g_dupNumBuf.clear();
+            if (vide || (n >= 1 && n <= 999)) {
+                duplicateObject(g_dupSrc, (int)n);
+            } else if (n <= -1 && n >= -999) {
+                const int rem = removeInstances(g_dupSrc, (int)-n);
+                if (rem == 0 && g_dupSrc >= 0 && g_dupSrc < (int)g_objs.size())
+                    std::printf("\nretrait : aucune copie numerotee de %s\n", g_objs[(size_t)g_dupSrc].name.c_str());
+            } else {
+                std::printf("\nNombre invalide : entrez de -999 a 999 puis Entree (negatif = retire des copies)\n");
+            }
+            return;
+        } else if (key == GLFW_KEY_ESCAPE) {
+            g_dupPending = false;
+            g_dupNumBuf.clear();
+            std::printf("\nduplication annulee\n");
+        }
+        return;
+    }
+    if (g_rotActive) {
+        if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
+        const bool topRowR = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
+        const bool padRowR = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
+        if (topRowR || padRowR || isSeparatorKey(key, scancode)) {
+            if (g_rotNumBuf.size() < 16)
+                g_rotNumBuf += (padRowR ? char('0' + (key - GLFW_KEY_KP_0))
+                              : (topRowR ? char(key) : char('.')));
+        } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+            if (g_rotNumBuf.size() < 16) g_rotNumBuf.insert(g_rotNumBuf.begin(), '-');
+        } else if (key == GLFW_KEY_BACKSPACE) {
+            if (!g_rotNumBuf.empty()) g_rotNumBuf.pop_back();
+        } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+            const double a = std::atof(g_rotNumBuf.c_str());
+            if (!std::isfinite(a)) {
+                std::printf("\nAngle invalide — tapez un nombre (degres, signe autorise) puis Entree.\n");
+            } else {
+                g_rotAngle = a;
+                applyRotationAt(g_objs[(size_t)g_rotObj], g_rotBase, g_rotAxis, a);
+                g_rotNumBuf.clear();
+                rotCommit();           /* Entree = pose, comme le clic gauche */
+                g_rotMode = false;     /* sortie du mode (meme contrat que l'extrusion) */
+                std::printf("mode selection\n");
+            }
+        } else if (key == GLFW_KEY_ESCAPE) {
+            rotCancel();                /* premier Echap : annule la rotation, reste en mode */
+        } else if (key == GLFW_KEY_R) {
+            rotCancel();                /* R disponible a tout moment : quitte le mode */
+            g_rotMode = false;
+            std::printf("\nmode selection\n");
+        } else {
+            const char c = axisLetterFromScancode(scancode);   /* autre lettre = pivoter d'axe direct */
+            if (c) {
+                rotCommit();            /* pose la rotation en cours */
+                rotBegin(w, c - 'x');   /* repart de la geometrie courante, angle a zero */
+            }
+        }
+        return;
+    }
     if (g_ppActive) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
-        if ((key >= GLFW_KEY_0 && key <= GLFW_KEY_9) || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA) {
+        const bool topRowP = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
+        const bool padRowP = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
+        if (topRowP || padRowP || isSeparatorKey(key, scancode)) {
             if (g_pp.numBuf.size() < 16)
-                g_pp.numBuf += (key == GLFW_KEY_COMMA) ? char('.') : char(key);
-            std::printf("\rValeur saisie : %s — Entree pour appliquer (Retour arriere pour corriger)   ", g_pp.numBuf.c_str());
-            std::fflush(stdout);
+                g_pp.numBuf += (padRowP ? char('0' + (key - GLFW_KEY_KP_0))
+                              : (topRowP ? char(key) : char('.')));
+        } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+            if (g_pp.numBuf.size() < 16) g_pp.numBuf.insert(g_pp.numBuf.begin(), '-');
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (!g_pp.numBuf.empty()) g_pp.numBuf.pop_back();
-            std::printf("\rValeur saisie : %s — Entree pour appliquer   ", g_pp.numBuf.c_str());
-            std::fflush(stdout);
-        } else if (key == GLFW_KEY_ENTER) {
-            const double v = std::atof(g_pp.numBuf.c_str());
-            if (!std::isfinite(v) || v <= 0.0) {
-                std::printf("\nValeur invalide — tapez un nombre positif puis Entree.\n");
+        } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+            double v = std::atof(g_pp.numBuf.c_str());
+            if (!std::isfinite(v) || v == 0.0) {
+                std::printf("\nValeur invalide — tapez un nombre non nul puis Entree (signe : tiret devant = enfoncement).\n");
             } else {
+                /* butees (demande de test) : une valeur au-dela de la matiere
+                   se cale a la butee au lieu de traverser et ressortir ; si
+                   tout l enfoncement est consomme, la face devient feuille. */
+                if (g_pp.hasLow && v < g_pp.dLow) {
+                    std::printf("\nButee atteinte : valeur calee a %+.3f.\n", g_pp.dLow);
+                    v = g_pp.dLow;
+                }
+                if (g_pp.hasHigh && v > g_pp.dHigh) {
+                    std::printf("\nButee atteinte : valeur calee a %+.3f.\n", g_pp.dHigh);
+                    v = g_pp.dHigh;
+                }
                 applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, v);
                 g_pp.d = v;
                 g_pp.numBuf.clear();
-                std::printf("\nExtrusion posee : %.3f — cliquez pour valider, ou continuez a deplacer\n", v);
+                ppCommit();            /* Entree = pose, comme le second clic gauche */
+                g_ppMode = false;      /* sortie du mode P apres application (demande de test) */
+                std::printf("mode selection\n");
             }
         } else if (key == GLFW_KEY_ESCAPE) {
             ppCancel();                 /* premier Echap : annule la face, reste en mode */
@@ -1553,14 +1931,26 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
     }
     if (action == GLFW_PRESS) {
         if (key == GLFW_KEY_ESCAPE) {
-            if (g_ppMode) { g_ppMode = false; std::printf("mode selection\n"); return; }
+            if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("mode selection\n"); return; }
             glfwSetWindowShouldClose(w, GLFW_TRUE);
         }
-        if (key == GLFW_KEY_P) {
+        if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending) {
             g_ppMode = !g_ppMode;
+            if (g_ppMode) g_rotMode = false;
             std::printf(g_ppMode
                 ? "mode Push/Pull : cliquez une face (dessus ou cote), deplacez, puis re-cliquez pour poser\n"
                 : "mode selection\n");
+        }
+        if (key == GLFW_KEY_R && g_mode == M_None && !g_dupPending) {
+            g_rotMode = !g_rotMode;
+            if (g_rotMode) g_ppMode = false;
+            std::printf(g_rotMode
+                ? "mode Rotation : selectionnez un objet, puis X, Y ou Z (lettre) pour fixer l'axe\n"
+                : "mode selection\n");
+        }
+        if (g_rotMode && !g_rotActive) {
+            const char c = axisLetterFromScancode(scancode);
+            if (c) { rotBegin(w, c - 'x'); return; }
         }
         if (key == GLFW_KEY_F) frameSelected();
         if (key == GLFW_KEY_H) { goHome(); std::printf("vue d'origine\n"); }
@@ -1651,6 +2041,122 @@ static void render() {
         drawObject(g_objs[i], (int)i == g_selected && g_mode != M_Drag);
 }
 
+/* bandeau de statut en bas de fenetre (petite barre d'infos, façon SketchUp) :
+   affiche l'invite du mode courant et la valeur en cours — rien dans la
+   console de saisie, tout dans la fenetre */
+static std::string statusPrompt() {
+    char buf[256];
+    if (!g_bandFlash.empty()) {
+        if (glfwGetTime() < g_bandFlashUntil) return g_bandFlash;
+        g_bandFlash.clear();
+    }
+    if (g_dupPending)
+        return "Dupliquer : tapez le nombre d instances puis Entree (vide = 1, negatif = retrait, Echap pour annuler)";
+    else if (g_ppActive)
+        std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (clic gauche : poser ; chiffres puis Entree : dimension exacte, + = tirer / - = pousser ; clic droit ou Echap : annuler)", g_pp.d);
+    else if (g_rotActive)
+        std::snprintf(buf, sizeof(buf), "Rotation %s : %+.1f deg  (clic gauche : poser ; X/Y/Z : changer d axe ; chiffres puis Entree : angle exact pose et quitte le mode ; clic droit ou Echap : annuler)", axisName(g_rotAxis), g_rotAngle);
+    else if (g_ppMode) {
+        return "Push/Pull : cliquez une face d'un objet";
+    } else if (g_rotMode) {
+        return "Rotation : selectionnez un objet, puis la lettre de l'axe (X, Y ou Z)";
+    } else {
+        return "P : Push/Pull   R : Rotation   clic gauche : selection/deplacement (X/Y/Z tenus = axe)   clic droit : menu   F : cadrer   H : origine   roulette : zoom";
+    }
+    return buf;
+}
+
+/* zone de saisie du bandeau : (libelle, buffer tape) - la meme boite pour
+   chaque cas qui accepte une valeur clavier (duplication, extrusion, rotation) */
+static bool inputZoneState(const char** label, const std::string** buf) {
+    if (g_dupPending) { *label = "nombre";    *buf = &g_dupNumBuf; return true; }
+    if (g_ppActive)   { *label = "dimension"; *buf = &g_pp.numBuf; return true; }
+    if (g_rotActive)  { *label = "angle";     *buf = &g_rotNumBuf; return true; }
+    return false;
+}
+
+static void drawTextClipped(float x, float y, const char* s, float maxW) {
+#ifdef _WIN32
+    const std::string str(s);
+    if (textWidthPx(str.c_str()) <= maxW) { drawText2D(x, y, s); return; }
+    std::string txt(s);
+    while (txt.size() > 1) {
+        txt = str.substr(0, txt.size() - 1);
+        txt += "...";
+        if (textWidthPx(txt.c_str()) <= maxW) break;
+    }
+    if (txt == "...") txt.clear();
+    drawText2D(x, y, txt.c_str());
+#else
+    (void)x; (void)y; (void)s; (void)maxW;
+#endif
+}
+
+static void drawStatusBand() {
+#ifdef _WIN32
+    if (!g_fontBase) return;
+    const float h = 26.0f;
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    if (g_winH > 0) glOrtho(0, g_winW, 0, g_winH, -1, 11);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    glBegin(GL_QUADS);
+    glColor3f(0.85f, 0.85f, 0.88f);
+    glVertex2f(0.0f, 0.0f);
+    glVertex2f((float)g_winW, 0.0f);
+    glVertex2f((float)g_winW, h);
+    glVertex2f(0.0f, h);
+    glEnd();
+    glColor3f(0.08f, 0.09f, 0.12f);
+    /* boite de saisie (alignee a droite, adaptée au texte tape) ; le texte
+       d'invite du bandeau est rogné pour ne jamais la recouvrir */
+    const char* label = nullptr;
+    const std::string* buf = nullptr;
+    const bool inputOn = inputZoneState(&label, &buf);
+    const bool caret = std::fmod(glfwGetTime(), 1.0) < 0.6;
+    char inTxt[96];
+    float boxX = (float)g_winW, boxW = 0.0f;
+    std::string prompt = statusPrompt();
+    if (inputOn) {
+        std::snprintf(inTxt, sizeof(inTxt), "%s : %s%s", label, buf->c_str(), caret ? "_" : " ");
+        boxW = (float)(textWidthPx(inTxt) + 16);
+        if (boxW < 130.0f) boxW = 130.0f;
+        boxX = (float)g_winW - boxW - 6.0f;
+        if (boxX < 80.0f) boxX = 80.0f;
+    }
+    const float maxTxtW = (inputOn ? boxX - 14.0f : (float)g_winW - 16.0f) - 8.0f;
+    drawTextClipped(8.0f, 8.0f, prompt.c_str(), maxTxtW);
+    if (inputOn) {
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glBegin(GL_QUADS);
+        glVertex2f(boxX, 3.5f);
+        glVertex2f(boxX + boxW, 3.5f);
+        glVertex2f(boxX + boxW, 22.5f);
+        glVertex2f(boxX, 22.5f);
+        glEnd();
+        glColor3f(0.08f, 0.09f, 0.12f);
+        glLineWidth(1.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(boxX + 0.5f, 4.0f);
+        glVertex2f(boxX + boxW - 0.5f, 4.0f);
+        glVertex2f(boxX + boxW - 0.5f, 22.0f);
+        glVertex2f(boxX + 0.5f, 22.0f);
+        glEnd();
+        glColor3f(0.08f, 0.09f, 0.12f);
+        drawText2D(boxX + 8.0f, 8.0f, inTxt);
+    }
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+#endif
+}
+
 static void drawAxisGuide() {
     if (g_mode != M_Drag || g_selected < 0 || g_lockAxis < 0) return;
     const Vec3 p = g_objs[(size_t)g_selected].pos;
@@ -1677,9 +2183,9 @@ static void drawAxisGuide() {
 /* ------------------------------------------------------------------ */
 
 int main() {
-    std::printf("Sketch3D natif — lot N5 (barre de menus Fichier + menu contextuel clic droit + fichier projet)\n");
-    std::printf("menu Fichier : nouveau/ouvrir/fermer projet, importer, exporter OBJ/STL, quitter ; menu contextuel : infos objet\n");
-    std::printf("P : mode Push/Pull (clic sur face, deplacement, re-clic pour poser) ; I : import ; F : cadrage ; H : origine\n");
+    std::printf("Sketch3D natif — build %s (outillages T1 : duplication multi-instances, rotation autour des axes + menus du lot N5)\n", BUILD_VERSION);
+    std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer, exporter OBJ/STL, quitter ; menu contextuel (clic droit) : infos objet, duplication\n");
+    std::printf("P : mode Push/Pull ; R : mode Rotation (X/Y/Z = axe, souris ou chiffres+Entree) ; I : import ; F : cadrage ; H : origine\n");
     buildScene();
     if (!glfwInit()) { std::fprintf(stderr, "glfwInit a echoue\n"); return 1; }
 
@@ -1687,7 +2193,9 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* win = glfwCreateWindow(g_winW, g_winH, "Sketch3D — build N5", nullptr, nullptr);
+    char titre[64];
+    std::snprintf(titre, sizeof(titre), "Sketch3D — build %s", BUILD_VERSION);
+    GLFWwindow* win = glfwCreateWindow(g_winW, g_winH, titre, nullptr, nullptr);
     if (!win) { std::fprintf(stderr, "creation de fenetre impossible\n"); glfwTerminate(); return 1; }
     glfwMakeContextCurrent(win);
     glfwSwapInterval(1);
@@ -1711,9 +2219,12 @@ int main() {
             updateDrag(win);
         } else if (g_ppActive) {
             updatePP(win);
+        } else if (g_rotActive) {
+            updateRot(win);
         }
         render();
         drawAxisGuide();
+        drawStatusBand();
         glfwSwapBuffers(win);
         glfwPollEvents();
     }

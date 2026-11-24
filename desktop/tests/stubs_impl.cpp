@@ -38,3 +38,13 @@ void glPointSize(GLfloat){}
 void glLineWidth(GLfloat){}
 void glPushMatrix(void){} void glPopMatrix(void){}
 void glScaled(GLdouble,GLdouble,GLdouble){}
+
+#ifdef _WIN32
+#include <windows.h>
+HWND glfwGetWin32Window(GLFWwindow*){return nullptr;}
+#endif
+void glOrtho(double,double,double,double,double,double){}
+void glRasterPos2f(float,float){}
+void glVertex2f(float,float){}
+unsigned int glGenLists(int){return 1000;}
+void glCallList(unsigned int){}

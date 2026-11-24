@@ -62,7 +62,7 @@ add_executable(sketch3d src/main.cpp)
 target_link_libraries(sketch3d PRIVATE ${S3D_GLFW_TARGET} OpenGL::GL)
 
 if(WIN32)
-    target_link_libraries(sketch3d PRIVATE comdlg32)
+    target_link_libraries(sketch3d PRIVATE comdlg32 gdi32)   # gdi32 : mesure de texte du bandeau
 endif()
 
 if(S3D_GLFW_DLL AND EXISTS "${S3D_GLFW_DLL}")
@@ -79,5 +79,7 @@ endif()
 add_executable(sketch3d_tests tests/run_tests.cpp tests/stubs_impl.cpp)
 target_include_directories(sketch3d_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/stub)
 if(WIN32)
-    target_link_libraries(sketch3d_tests PRIVATE comdlg32)
+    # le harnais inclut src/main.cpp : ses sections _WIN32 (bandeau GDI)
+    # referencent wgl* (opengl32, declare dllimport) ; jamais appelees.
+    target_link_libraries(sketch3d_tests PRIVATE comdlg32 opengl32)
 endif()
