@@ -238,6 +238,27 @@ build\Debug\sketch3d.exe
   voie numerique 90 + Entree, portees permutees par objet, position figee,
   volumes preserves, annulation complete, regression mono).
 
+## Rotation multi T1.10 (cas 2 : pivot = barycentre du groupe)
+
+- en selection multiple, la rotation multi (R + axe) dispose d'un **pivot
+  configurable a chaud** : **B** bascule entre `centre propre` (cas 1 T1.9,
+  defaut : chaque objet tourne sur lui-meme) et **barycentre du groupe**
+  (cas 2 : le lot pivote rigidement autour du centre de la boite englobant
+  toutes les geometries capturees - GA et GB s'echangent par +180 deg) ;
+- l'**angle courant est conserve** a la bascule : l'application part toujours
+  de la base capturee, le pivot du groupe est fige a la capture (calcule sur
+  les bases donc stable pendant la rotation) ; rejouer B = retour au centre
+  propre, tout a l'identique ;
+- pose (clic gauche ou chiffres + Entree) et annulation (clic droit/Echap)
+  inchanges (annulation = retour a l'etat de la capture ; mono strictement
+  non concerne par B sans selection multi) ;
+- bandeau borne : `Rot multi Z 3 objets (barycentre du groupe) : +25.0 deg ...` ;
+- le module pivot complet (sommet/face accroche, coordonnees, point clique,
+  centre du monde...) reste planifie en phase B (B8, etude de conception) ;
+- batterie : **171 verifications, 0 echec** (+12 : pivot groupe exact, bascule
+  B a chaud avec angle conserve, echange des positions par +180, ancre pos
+  inchangee, preview exacte autour du barycentre, annulation, mono/B isole).
+
 ## Outillages T1 : duplication + rotation
 
 - **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de
