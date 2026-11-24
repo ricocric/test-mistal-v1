@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.5.8";
+static const char* BUILD_VERSION = "T1.6.6";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -754,6 +754,17 @@ static int removeInstances(int idx, int k) {
     return rem;
 }
 
+/* suppression d'un objet (menu contextuel) : l'original comme une copie ;
+   la selection suit si possible (objet suivant a la meme place).        */
+static void deleteObject(int idx) {
+    if (idx < 0 || idx >= (int)g_objs.size()) return;
+    const std::string nm = g_objs[(size_t)idx].name;
+    g_objs.erase(g_objs.begin() + idx);
+    if (g_selected > idx) --g_selected;
+    else if (g_selected >= (int)g_objs.size()) g_selected = (int)g_objs.size() - 1;
+    std::printf("suppression : %s (%zu objet(s) restant(s))\n", nm.c_str(), g_objs.size());
+}
+
 /* saisie du nombre d'instances dans la FENETRE au clavier (modele Push/Pull :
    chiffres puis Entree) — jamais de getline bloquant dans la boucle de jeu */
 static bool g_dupPending = false;
@@ -781,36 +792,46 @@ static void flashBand(const char* msg) {
 /* Export OBJ / STL                                                    */
 /* ------------------------------------------------------------------ */
 
-static void exportOBJ(const std::string& path) {
+static void exportOBJ(const std::string& path, int onlyIdx = -1) {
     std::ofstream f(path);
     if (!f) { std::printf("export OBJ impossible : %s\n", path.c_str()); return; }
-    f << "# Sketch3D natif — export scene\n";
+    const bool cible = onlyIdx >= 0 && onlyIdx < (int)g_objs.size();
+    f << "# Sketch3D natif - export " << (cible ? "objet" : "scene") << "\n";
     unsigned base = 1;
-    for (const Object& o : g_objs) {
+    for (int i = 0; i < (int)g_objs.size(); ++i) {
+        if (cible && i != onlyIdx) continue;
+        const Object& o = g_objs[(size_t)i];
         f << "o " << o.name << "\n";
         for (const Vec3& p : o.v) {
             const Vec3 w = o.pos + p * o.scl;
             f << "v " << w.x << " " << w.y << " " << w.z << "\n";
         }
-        for (size_t i = 0; i < o.tri.size(); i += 3)
-            f << "f " << base + o.tri[i] << " " << base + o.tri[i + 1] << " " << base + o.tri[i + 2] << "\n";
+        for (size_t t = 0; t < o.tri.size(); t += 3)
+            f << "f " << base + o.tri[t] << " " << base + o.tri[t + 1] << " " << base + o.tri[t + 2] << "\n";
         base += (unsigned)o.v.size();
     }
-    std::printf("export OBJ : %s (%zu objets, en coordonnees monde)\n", path.c_str(), g_objs.size());
+    if (cible)
+        std::printf("export OBJ : %s (objet : %s, en coordonnees monde)\n", path.c_str(), g_objs[(size_t)onlyIdx].name.c_str());
+    else
+        std::printf("export OBJ : %s (%zu objets, en coordonnees monde)\n", path.c_str(), g_objs.size());
 }
 
-static void exportSTL(const std::string& path) {
+static void exportSTL(const std::string& path, int onlyIdx = -1) {
     std::ofstream f(path, std::ios::binary);
     if (!f) { std::printf("export STL impossible : %s\n", path.c_str()); return; }
+    const bool cible = onlyIdx >= 0 && onlyIdx < (int)g_objs.size();
     size_t total = 0;
-    for (const Object& o : g_objs) total += o.tri.size() / 3;
+    for (int i = 0; i < (int)g_objs.size(); ++i)
+        if (!cible || i == onlyIdx) total += g_objs[(size_t)i].tri.size() / 3;
     char header[80] = {0};
     f.write(header, 80);
     const uint32_t cnt = (uint32_t)total;
     f.write((const char*)&cnt, 4);
-    for (const Object& o : g_objs) {
-        for (size_t i = 0; i < o.tri.size(); i += 3) {
-            const Vec3 n = o.n[i / 3];
+    for (int i = 0; i < (int)g_objs.size(); ++i) {
+        if (cible && i != onlyIdx) continue;
+        const Object& o = g_objs[(size_t)i];
+        for (size_t t = 0; t < o.tri.size(); t += 3) {
+            const Vec3 n = o.n[t / 3];
             float rec[12] = {
                 (float)n.x, (float)n.y, (float)n.z,
                 0, 0, 0, 0, 0, 0, 0, 0, 0
@@ -826,7 +847,10 @@ static void exportSTL(const std::string& path) {
             f.write((const char*)&attr, 2);
         }
     }
-    std::printf("export STL binaire : %s (%zu tris)\n", path.c_str(), total);
+    if (cible)
+        std::printf("export STL binaire : %s (objet : %s, %zu tris)\n", path.c_str(), g_objs[(size_t)onlyIdx].name.c_str(), total);
+    else
+        std::printf("export STL binaire : %s (%zu tris)\n", path.c_str(), total);
 }
 
 /* ------------------------------------------------------------------ */
@@ -945,6 +969,9 @@ enum {
     IDM_QUIT,
     IDM_INFO_OBJECT,
     IDM_DUPLICATE,
+    IDM_DELETE_OBJECT,
+    IDM_EXPORT_OBJ_SEL,
+    IDM_EXPORT_STL_SEL,
 };
 
 static GLFWwindow* g_mainWin = nullptr;
@@ -993,6 +1020,24 @@ static void handleMenuAction(int id) {
         if (!p.empty()) exportSTL(p);
         return;
     }
+    case IDM_EXPORT_OBJ_SEL: {
+        if (g_selected < 0 || g_selected >= (int)g_objs.size()) { flashBand("selectionnez d'abord un objet (clic gauche)"); return; }
+        const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter l'objet en OBJ");
+        if (!p.empty()) exportOBJ(p, g_selected);
+        return;
+    }
+    case IDM_EXPORT_STL_SEL: {
+        if (g_selected < 0 || g_selected >= (int)g_objs.size()) { flashBand("selectionnez d'abord un objet (clic gauche)"); return; }
+        const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter l'objet en STL");
+        if (!p.empty()) exportSTL(p, g_selected);
+        return;
+    }
+    case IDM_DUPLICATE:
+        dupStartPrompt();
+        return;
+    case IDM_DELETE_OBJECT:
+        deleteObject(g_selected);
+        return;
     case IDM_QUIT:
         if (g_mainWin) glfwSetWindowShouldClose(g_mainWin, GLFW_TRUE);
         return;
@@ -1018,14 +1063,17 @@ static void showContextMenu(GLFWwindow* w) {
     HMENU m = CreatePopupMenu();
     AppendMenuA(m, MF_STRING, IDM_INFO_OBJECT, "&Infos objet");
     AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(m, MF_STRING, IDM_DELETE_OBJECT, "Suppri&mer");
+    AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(m, MF_STRING, IDM_DUPLICATE, "&Dupliquer...");
     POINT pt;
     GetCursorPos(&pt);
     SetForegroundWindow(glfwGetWin32Window(w));
     const int id = (int)TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, glfwGetWin32Window(w), nullptr);
     DestroyMenu(m);
+    if (id == 0) return;
     if (id == IDM_INFO_OBJECT) showInfoDialog("Infos objet", info);
-    else if (id == IDM_DUPLICATE) dupStartPrompt();
+    else handleMenuAction(id);
 #else
     (void)w;
 #endif
@@ -1094,9 +1142,18 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(file, MF_STRING, IDM_SAVE_PROJECT, "&Enregistrer le projet...");
     AppendMenuA(file, MF_STRING, IDM_CLOSE_PROJECT, "&Fermer le projet");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
+    /* Paquet "objets" : import + export de la selection (sous-menu par format) */
     AppendMenuA(file, MF_STRING, IDM_IMPORT_OBJECT, "&Importer un objet...");
-    AppendMenuA(file, MF_STRING, IDM_EXPORT_OBJ, "Exporter en &OBJ...");
-    AppendMenuA(file, MF_STRING, IDM_EXPORT_STL, "Exporter en &STL...");
+    HMENU exportSel = CreatePopupMenu();
+    AppendMenuA(exportSel, MF_STRING, IDM_EXPORT_OBJ_SEL, "&OBJ...");
+    AppendMenuA(exportSel, MF_STRING, IDM_EXPORT_STL_SEL, "S&TL...");
+    AppendMenuA(file, MF_POPUP, (UINT_PTR)exportSel, "&Exporter la selection...");
+    AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
+    /* Paquet "scene" : export scene complet (sous-menu par format) */
+    HMENU exportScene = CreatePopupMenu();
+    AppendMenuA(exportScene, MF_STRING, IDM_EXPORT_OBJ, "&OBJ...");
+    AppendMenuA(exportScene, MF_STRING, IDM_EXPORT_STL, "S&TL...");
+    AppendMenuA(file, MF_POPUP, (UINT_PTR)exportScene, "Exporter la scene...");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(file, MF_STRING, IDM_QUIT, "&Quitter");
     HMENU bar = CreateMenu();
@@ -1810,7 +1867,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
     }
 }
 
-static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
+static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
     if (g_dupPending) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
         const bool topRow = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
@@ -1871,7 +1928,9 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
                 std::printf("mode selection\n");
             }
         } else if (key == GLFW_KEY_ESCAPE) {
-            rotCancel();                /* premier Echap : annule la rotation, reste en mode */
+            rotCancel();                /* Echap : annule la rotation ET quitte le mode (sortie de l'etat en cours) */
+            g_rotMode = false;
+            std::printf("\nmode selection\n");
         } else if (key == GLFW_KEY_R) {
             rotCancel();                /* R disponible a tout moment : quitte le mode */
             g_rotMode = false;
@@ -1921,7 +1980,9 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
                 std::printf("mode selection\n");
             }
         } else if (key == GLFW_KEY_ESCAPE) {
-            ppCancel();                 /* premier Echap : annule la face, reste en mode */
+            ppCancel();                 /* Echap : annule la face ET quitte le mode P (sortie de l'etat en cours) */
+            g_ppMode = false;
+            std::printf("\nmode selection\n");
         } else if (key == GLFW_KEY_P) {
             ppCancel();                 /* P disponible a tout moment : quitte le mode */
             g_ppMode = false;
@@ -1930,9 +1991,17 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
         return;
     }
     if (action == GLFW_PRESS) {
+        /* Ctrl+S = enregistrer le projet (retour utilisateur) ; position : avant les exports scene par O/S */
+        if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_S) {
+            handleMenuAction(IDM_SAVE_PROJECT);
+            return;
+        }
         if (key == GLFW_KEY_ESCAPE) {
-            if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("mode selection\n"); return; }
-            glfwSetWindowShouldClose(w, GLFW_TRUE);
+            /* Echelle Echap : d'abord sortir de l'etat en cours (mode P/R en attente,
+               puis deselection) ; Echap ne ferme JAMAIS l'application (rebonds de
+               clavier) : fermeture volontaire par Fichier > Quitter uniquement. */
+            if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); return; }
+            if (g_selected >= 0) { g_selected = -1; std::printf("\nselection annulee\n"); return; }
         }
         if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending) {
             g_ppMode = !g_ppMode;
@@ -1951,6 +2020,10 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
         if (g_rotMode && !g_rotActive) {
             const char c = axisLetterFromScancode(scancode);
             if (c) { rotBegin(w, c - 'x'); return; }
+        }
+        if (key == GLFW_KEY_DELETE && g_mode == M_None) {   /* Suppr (retour de test : selectionner a la souris, supprimer au clavier) */
+            if (g_selected >= 0) deleteObject(g_selected);
+            return;
         }
         if (key == GLFW_KEY_F) frameSelected();
         if (key == GLFW_KEY_H) { goHome(); std::printf("vue d'origine\n"); }
@@ -1992,6 +2065,10 @@ static void drawObject(const Object& o, bool selected) {
     glPushMatrix();
     glTranslated(o.pos.x, o.pos.y, o.pos.z);
     glScaled(o.scl, o.scl, o.scl);
+    /* les faces sont reculees d'un poil (polygon offset) pour que les aretes
+       posees dessus restent visibles, surtout quand la piece est claire */
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.0f, 1.0f);
     glEnable(GL_LIGHTING);
     glBegin(GL_TRIANGLES);
     for (size_t i = 0, t = 0; i < o.tri.size(); i += 3, ++t) {
@@ -2001,9 +2078,15 @@ static void drawObject(const Object& o, bool selected) {
         for (int k = 0; k < 3; ++k) glVertex3dv(&o.v[o.tri[i + k]].x);
     }
     glEnd();
+    glDisable(GL_POLYGON_OFFSET_FILL);
     glDisable(GL_LIGHTING);
     glBegin(GL_LINES);
-    if (selected) { glColor3d(1, 1, 1); glLineWidth(2.0); }
+    if (selected) {
+        /* surlignage marque (retour de test : eviter d'agir sur la piece
+           d'a cote) : jaune vif et epais, lisible sur tout fond */
+        glColor3d(1.0, 0.85, 0.0);
+        glLineWidth(2.5);
+    }
     else glColor3d(0.2, 0.2, 0.22);
     for (const auto& e : o.edges) {
         glVertex3dv(&o.v[e.first].x);
@@ -2182,6 +2265,22 @@ static void drawAxisGuide() {
 /* Programme principal                                                 */
 /* ------------------------------------------------------------------ */
 
+/* compteur de selection en temps reel dans le TITRE de la fenetre (retour de
+   test : detecter les erreurs de selection) — maj seulement au changement. */
+static void updateWindowTitle(GLFWwindow* w) {
+    static std::string last;
+    char titre[192];
+    if (g_selected >= 0 && g_selected < (int)g_objs.size())
+        std::snprintf(titre, sizeof(titre), "Sketch3D \u2014 build %s \u2014 %zu objet(s) \u2014 selection : %s (%d/%zu)",
+                      BUILD_VERSION, g_objs.size(), g_objs[(size_t)g_selected].name.c_str(),
+                      g_selected + 1, g_objs.size());
+    else
+        std::snprintf(titre, sizeof(titre), "Sketch3D \u2014 build %s \u2014 %zu objet(s) \u2014 selection : aucune",
+                      BUILD_VERSION, g_objs.size());
+    const std::string t(titre);
+    if (t != last) { last = t; glfwSetWindowTitle(w, t.c_str()); }
+}
+
 int main() {
     std::printf("Sketch3D natif — build %s (outillages T1 : duplication multi-instances, rotation autour des axes + menus du lot N5)\n", BUILD_VERSION);
     std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer, exporter OBJ/STL, quitter ; menu contextuel (clic droit) : infos objet, duplication\n");
@@ -2222,6 +2321,7 @@ int main() {
         } else if (g_rotActive) {
             updateRot(win);
         }
+        updateWindowTitle(win);
         render();
         drawAxisGuide();
         drawStatusBand();

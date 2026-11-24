@@ -709,6 +709,51 @@ int main() {
               "separateur : lettre, tiret, retour arriere, Entree et Echap ne sont pas des separateurs");
     }
 
+    /* 21 - T1b : export cible (objet selectionne) + outil Supprimer */
+    {
+        g_objs.clear();
+        g_objs.push_back(makeBoxObject("P1", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), col));
+        g_objs.push_back(makeBoxObject("P2", Vec3(2, 0.5, 0), Vec3(0.5, 0.5, 0.5), col));
+        g_selected = 1;
+        exportOBJ(tmpPath("objet_seul.obj"), g_selected);
+        g_objs.clear();
+        Object r; err.clear();
+        CHECK(loadMeshFile(tmpPath("objet_seul.obj"), r, err), err.c_str());
+        CHECK(r.v.size() == 8 && r.tri.size() == 36,
+              "export cible OBJ : l'objet seul exporte (8 sommets, 12 tris)");
+        std::ifstream in(tmpPath("objet_seul.obj"));
+        int nObj = 0; bool nomP2 = false;
+        for (std::string ln; std::getline(in, ln); )
+            if (ln.rfind("o ", 0) == 0) { ++nObj; nomP2 = (ln == "o P2"); }
+        CHECK(nObj == 1 && nomP2, "export cible OBJ : un seul objet exporte, le bon (P2)");
+
+        g_objs.clear();
+        g_objs.push_back(makeBoxObject("P1", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), col));
+        g_objs.push_back(makeBoxObject("P2", Vec3(2, 0.5, 0), Vec3(0.5, 0.5, 0.5), col));
+        g_selected = 0;
+        exportSTL(tmpPath("objet_seul.stl"), 0);
+        std::ifstream in2(tmpPath("objet_seul.stl"), std::ios::binary);
+        in2.seekg(0, std::ios::end);
+        CHECK(in2.tellg() == 84 + 50 * 12,
+              "export cible STL : un seul objet (12 tris, taille binaire exacte)");
+
+        g_objs.clear();
+        g_objs.push_back(makeBoxObject("T1", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), col));
+        g_objs.push_back(makeBoxObject("T2", Vec3(2, 0.5, 0), Vec3(0.5, 0.5, 0.5), col));
+        g_objs.push_back(makeBoxObject("T3", Vec3(4, 0.5, 0), Vec3(0.5, 0.5, 0.5), col));
+        g_selected = 2;
+        deleteObject(1);
+        CHECK(g_objs.size() == 2 && g_selected == 1 && g_objs[1].name == "T3",
+              "suppression : l'objet suivant reste selectionne a la meme place");
+        deleteObject(-1);
+        deleteObject(9);
+        CHECK(g_objs.size() == 2, "suppression : index invalides refuses (rien de supprime)");
+        deleteObject(0);
+        deleteObject(0);
+        CHECK(g_objs.empty() && g_selected == -1,
+              "suppression : liste videe, selection a -1");
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }

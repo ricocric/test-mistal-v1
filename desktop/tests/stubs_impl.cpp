@@ -9,6 +9,7 @@ void glfwMakeContextCurrent(GLFWwindow*){}
 int glfwWindowShouldClose(GLFWwindow*){return 1;}
 void glfwSetWindowShouldClose(GLFWwindow*,int){}
 void glfwSwapBuffers(GLFWwindow*){}
+void glfwSetWindowTitle(GLFWwindow*, const char*){UNUSED(0);}
 void glfwPollEvents(){}
 void glfwSwapInterval(int){}
 void glfwGetCursorPos(GLFWwindow*,double*,double*){}
@@ -48,3 +49,4 @@ void glRasterPos2f(float,float){}
 void glVertex2f(float,float){}
 unsigned int glGenLists(int){return 1000;}
 void glCallList(unsigned int){}
+void glPolygonOffset(GLfloat, GLfloat){}

@@ -14,6 +14,7 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_RELEASE  0
 #define GLFW_REPEAT   2
 #define GLFW_KEY_UNKNOWN     -1
+#define GLFW_MOD_CONTROL     0x0002
 #define GLFW_KEY_BACKSPACE   259
 #define GLFW_KEY_ENTER       257
 #define GLFW_KEY_ESCAPE      256
@@ -36,6 +37,7 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_KEY_R 82
 #define GLFW_KEY_S 83
 #define GLFW_KEY_X 88
+#define GLFW_KEY_DELETE 261
 #define GLFW_KEY_Y 89
 #define GLFW_KEY_Z 90
 #define GLFW_MOUSE_BUTTON_LEFT  0
@@ -53,6 +55,7 @@ void glfwMakeContextCurrent(GLFWwindow*);
 int glfwWindowShouldClose(GLFWwindow*);
 void glfwSetWindowShouldClose(GLFWwindow*, int);
 void glfwSwapBuffers(GLFWwindow*);
+void glfwSetWindowTitle(GLFWwindow*, const char*);
 void glfwPollEvents(void);
 void glfwSwapInterval(int);
 void glfwGetCursorPos(GLFWwindow*, double*, double*);

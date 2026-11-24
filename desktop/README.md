@@ -89,6 +89,54 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   numeros de la serie, original epargne, depassement = tout le disponible,
   aucune copie numerotee = retour 0).
 
+## Outillages T1.6 : export cible + suppression + compteur de selection
+
+- **export cible** : n'exporte que l'objet selectionne (7 verifications de
+  relecture dans le harnais) ; **T1.6.3 (retour de test)** : tout l'
+  **import/export reste au menu Fichier** (plus homogene pour l'utilisateur) ;
+  sans selection, un avis s'affiche dans le bandeau (flash 3 s) au lieu d'un
+  message console ; les entrees export du menu contextuel sont retirees. ;
+  **T1.6.4 (retour de test)** : paquets menu Fichier reorganises - paquet
+  **objets** = `Importer un objet...` + `Exporter la selection` (sous-menu),
+  paquet **scene** = `Exporter la scene` (sous-menu, OBJ/STL au choix dans
+  chaque sous-menu) - pas une ligne par format, le menu ne s'allonge plus
+  quand on ajoute des formats ; un format par defaut parametrable reste au
+  backlog ;
+- **outil Supprimer** : menu contextuel > **Supprimer** - retire l'objet
+  selectionne (original ou copie), la selection suit l'objet suivant a la
+  meme place, index invalides refuses, liste videe = selection a -1 ;
+- **compteur de selection en temps reel** : le **titre de la fenetre**
+  affiche constamment le nombre d'objets et l'objet selectionne
+  (`Sketch3D - build T1.6 - 3 objet(s) - selection : P2 (2/3) ; selection :
+  aucune` sinon) - maj seulement au changement ;
+- **surlignage marque de la selection (retour de test T1.6.1)** : les aretes
+  de l'objet selectionne passent en **jaune vif epais** (lisible sur tout
+  fond et sur piece claire) ; les faces sont reculees d'un poil
+  (`glPolygonOffset`) pour que les aretes posees dessus ne se noient plus
+  dans le volume - on voit toujours exactement quelle piece est selectionnee
+  avant une action (suppression, duplication, export) ;
+- **touche Suppr (retour de test T1.6.2)** : selectionner a la souris puis
+  supprimer au clavier (poste de travail classique des operations
+  sequentielles ; copier/coller au clavier restent au backlog) - la touche
+  agit en mode neutre uniquement (jamais pendant une extrusion/rotation ou
+  un deplacement) ;
+- **raccourci Ctrl+S (retour de test T1.6.4)** : enregistre le projet au
+  complet via le meme dialogue que le menu Fichier (`Enregistrer le
+  projet...`) ; agit uniquement en mode neutre - jamais pendant les saisies
+  dup/extrusion/rotation actives, comme tous les raccourcis du bloc neutre ;
+- **echelle Echap (retour de test T1.6.5)** : une seule Echap = **sortir de
+  l'etat en cours** - pendant une frappe extrusion/rotation, elle annule
+  l'action ET quitte le mode (meme logique que le clic droit) ; en mode P/R
+  sans action en cours, elle quitte le mode ; avec une selection, elle la
+  deselectionne (`selection annulee`) ; **T1.6.6 (retour de test)** : Echap ne
+  ferme JAMAIS l'application (un rebond de clavier ne doit pas tout fermer) -
+  quand il n'y a rien a annuler, Echap est tout simplement silencieux et la
+  fermeture reste volontaire par Fichier > Quitter ;
+- la batterie est a **122 verifications** (+ export cible OBJ/STL verifie
+  par relecture : un seul objet exporte et le bon, STL binaire taille
+  exacte 84+50x12 ; suppression : selection suivie, index invalides,
+  liste videe, selection a -1).
+
 ## Outillages T1 : duplication + rotation
 
 - **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de
