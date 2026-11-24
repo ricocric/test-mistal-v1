@@ -162,7 +162,7 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   d'export, STL 24 tris taille exacte, duplication/retrait multi, suppression
   multi avec reste intact et selection videe).
 
-### Point 4 du test T1.7 (crash Ctrl+clic) - binaire T1.7.1
+### Point 4 du test T1.7 (crash Ctrl+clic) - binaire T1.7.1 (rebuild T1.7.2 : sequence seule)
 
 - **cause racine** : sur un Ctrl+clic PUR (aucune selection prealable, donc
   selection portee par la multi, principal reste a -1), l'ancien titre lisait
@@ -175,14 +175,20 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   ignores (maillages degeneres) ;
 - la batterie passe a **137 verifications** (+4 : titre selection pure Ctrl,
   promotion avec elagage, promotion tout-perime, drag perime) ;
-- **sequence de test corrigee** : le `git pull` doit se faire APRES le
-  `git switch` (pull sur la branche testee, jamais seulement sur main), sinon
-  la branche locale reste a l'ancien commit et le binaire est perime :
+- **sequence de test corrigee** : plus de `git pull` du tout sur les branches
+  de test - le pull a echoue chez l'utilisateur (`Committer identity unknown`
+  : aucune identite git configuree, git refuse le merge ; resultat : branche
+  locale divergee, build compile encore l'ancien code, titre freeze a T1.7) ;
+  on remplace par **fetch + reset --hard** : pas de merge, pas d'identite
+  requise, la branche de test est un simple miroir du depot distant donc le
+  reset est sans risque - le titre de la fenetre fait foi quand a la version ;
+  (commit sequence seule : BUILD_VERSION passee a T1.7.2, titre attendu **T1.7.2**)
 
 ```
 cd C:\Users\rico\source\repos
 git switch <branche>
-git pull
+git fetch origin
+git reset --hard origin/<branche>
 cd desktop
 cmake --build build
 build\Debug\sketch3d.exe

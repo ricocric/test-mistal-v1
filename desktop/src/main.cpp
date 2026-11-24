@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.7.1";
+static const char* BUILD_VERSION = "T1.7.2";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
