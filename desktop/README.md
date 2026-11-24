@@ -38,6 +38,44 @@ cmake --build build --target sketch3d_tests
 build\Debug\sketch3d_tests.exe
 ```
 
+## Lot N4.1 (correctifs retour de test : push jusqu'a la feuille)
+
+- **Lot N4.1** : crash (runtime error) au push jusqu'a la butee — le rappel
+  d'application a chaque frame lisait/ecrivait hors bornes quand l'objet plie
+  etait recapture (le patch etait re-indexe sur le maillage reduit). Le pli
+  rentrant indexe desormais le masque sur la copie capturee (dd.tri), pas sur
+  le maillage courant ;
+- **orientation de la feuille** : les deux windings de la couche coïncident
+  a epaisseur nulle, le rayon en capture un au hasard (presque toujours la face
+  opposee a la vue). La normale capturee est desormais orientee du cote
+  camera : le pull redeplie la matiere du cote visible (comme SketchUp) ;
+- **push depuis la feuille bloque au plan** (retour de test : le push
+  developpait un volume inverse de l'autre cote) : quand la coque capturee est
+  deja reduite a une feuille, il n'y a plus rien a enfoncer — le push cale la
+  feuille au plan et seul le pull redeplie la matiere, comme SketchUp, qui
+  cale le push-pull a la surface opposee ;
+- **composante connexe (N4.1bis cause du retour « la feuille ne se deplie
+  toujours que du cote oppose »)** : la capture d'une feuille admet toujours
+  les sommets situes au-dela du plan (pour la butee et la detection) ; sur un
+  mesh a plusieurs coques disjointes (fichier SketchUp : cube + silhouette dans
+  le meme OBJ), la silhouette vivait dans le meme objet : elle bloquait la
+  butee, empechait la detection de feuille et violait la reconstruction. Desormais
+  la butee, le pli rentrant et la detection de feuille ne touchent que la
+  COMPOSANTE du patch — aretes reconnues par position (quantification 1e-6
+  relatif, donc les STL a coins dupliques restent rattaches a leur solide) ; un
+  sommet partage avec la coque voisine est clone au pli (le tri voisin ne se
+  deforme plus) ; la reconstruction feuille preserve verbatim les tris hors
+  composante ;
+- **sortie du mode Push/Pull (N4.2)** : pendant une extrusion active, la
+  touche **P** annule la face en cours ET quitte le mode (retour mode
+  selection) — avant, P n'etait actif qu'hors extrusion et il fallait deux
+  Echap risque de confusion ; Echap garde son role (annule la face, reste en
+  mode), P sort a tout moment ;
+- la grille souris -> d (plan de souris pn face a l'ecran, construite dans
+  onMouseButton) est verifiee sans NaN et monotone sur toute la fenetre, y
+  compris sur une feuille vue de face (fallback pn automatique) ;
+- la batterie monte a **75 verifications** (familles composite et feuille bloquee).
+
 ## Lot N3
 
 Scene d'objets (boites) maillage indexe en doubles : selection au clic,
@@ -119,7 +157,6 @@ build\Debug\sketch3d.exe
   façon Windows), barres d'outils flottantes dockables (branch docking),
   multi-viewport (deuxieme ecran), cotes, unites, menu Fichier complet
   (ouvrir/enregistrer un projet, importer, quitter)
-- ensuite : pipeline par shaders (PBR) pour le rendu photorealiste
 - ensuite : pipeline par shaders (PBR) pour le rendu photorealiste
 - a planifier : fichier de setup utilisateur (regles d import comme la
   normalisation d'echelle, unites par defaut, chemins recents...) ; edition
