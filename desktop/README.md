@@ -6,6 +6,12 @@ precision** natif (la version web stockait en Float32).
 
 ## Outillages T1 (celui-ci) : duplication + rotation
 
+- **regle generale des transformations** : le **clic droit** revient au neutre
+  partout — annule la transformation en cours (extrusion posee en suspens,
+  rotation en cours, deplacement en vol — position d'avant le deplacement
+  restoree) ET quitte le mode ; hors transformation, le clic droit rouvre le
+  menu contextuel ;
+
 - **Duplication** : menu contextuel (clic droit sur un objet) > **Dupliquer...**
   — nombre d'instances tape dans la fen^etre au clavier puis **Entree** (Entree
   sans chiffre = 1, maximum 999, Echap pour annuler, meme modele de saisie que

@@ -1598,10 +1598,28 @@ static void onScroll(GLFWwindow*, double, double dy) {
 
 static void onMouseButton(GLFWwindow* w, int button, int action, int) {
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-        if (action == GLFW_PRESS && g_ppActive) ppCancel();
-        else if (action == GLFW_PRESS && g_rotActive) rotCancel();
-        else if (action == GLFW_PRESS && g_rotMode) { g_rotMode = false; std::printf("\nmode selection\n"); }
-        else if (action == GLFW_PRESS && !g_ppMode) showContextMenu(w);
+        /* regle generale des transformations : clic droit = retour au neutre */
+        if (action != GLFW_PRESS) return;
+        if (g_ppActive) {
+            ppCancel();                 /* restaure la piece */
+            g_ppMode = false;
+            std::printf("\nmode selection\n");
+        } else if (g_rotActive) {
+            rotCancel();                /* restaure la geometrie */
+            g_rotMode = false;
+            std::printf("\nmode selection\n");
+        } else if (g_mode == M_Drag && g_selected >= 0 && g_selected < (int)g_objs.size()) {
+            g_objs[(size_t)g_selected].pos = g_startPos;
+            g_mode = M_None;
+            g_lockAxis = -1;
+            std::printf("\ndeplacement annule\n");
+        } else if (g_ppMode || g_rotMode) {
+            g_ppMode = false;
+            g_rotMode = false;
+            std::printf("\nmode selection\n");
+        } else {
+            showContextMenu(w);
+        }
         return;
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
