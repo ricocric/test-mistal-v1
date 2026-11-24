@@ -689,6 +689,46 @@ static void importFile() {
     frameSelected();
 }
 
+/* Duplication multi-instances (menu contextuel) : copies identiques posees
+   vers +X, meme anti-superposition que l'import (decalage juste apres le bord
+   de l'objet en collision, marge 0.25). */
+static void duplicateSelected(int n) {
+    if (g_selected < 0 || g_selected >= (int)g_objs.size() || n <= 0) return;
+    const Object src = g_objs[(size_t)g_selected];
+    const double spanX = (src.bmax.x - src.bmin.x) * src.scl;
+    const double step = spanX + 0.25;
+    int made = 0;
+    for (int k = 1; k <= n; ++k) {
+        Object o = src;
+        o.name = src.name + " (" + std::to_string(k) + ")";
+        o.pos = Vec3(src.pos.x + step * k, src.pos.y, src.pos.z);
+        int shifts = 0;
+        for (int tries = 0; tries < 128; ++tries) {
+            bool clash = false;
+            for (const Object& other : g_objs)
+                if (overlapsWorld(o, other)) { clash = true; break; }
+            if (!clash) break;
+            o.pos.x += step;
+            ++shifts;
+        }
+        if (shifts > 0)
+            std::printf("superposition evitee : %s decale de %d pas vers +X (x = %.3f)\n", o.name.c_str(), shifts, o.pos.x);
+        g_objs.push_back(std::move(o));
+        ++made;
+    }
+    std::printf("duplication : %s x%d (copies posees vers +X, pas de %.3f)\n", src.name.c_str(), made, step);
+}
+
+static int askInstanceCount() {
+    std::printf("Dupliquer : nombre d'instances (Entree = 1) : ");
+    std::fflush(stdout);
+    std::string line;
+    std::getline(std::cin, line);
+    const long n = std::atol(line.c_str());
+    if (n <= 0) return 1;
+    return (int)std::min<long>(n, 999);
+}
+
 /* ------------------------------------------------------------------ */
 /* Export OBJ / STL                                                    */
 /* ------------------------------------------------------------------ */
@@ -856,6 +896,7 @@ enum {
     IDM_EXPORT_STL,
     IDM_QUIT,
     IDM_INFO_OBJECT,
+    IDM_DUPLICATE,
 };
 
 static GLFWwindow* g_mainWin = nullptr;
@@ -934,12 +975,15 @@ static void showContextMenu(GLFWwindow* w) {
 #ifdef _WIN32
     HMENU m = CreatePopupMenu();
     AppendMenuA(m, MF_STRING, IDM_INFO_OBJECT, "&Infos objet");
+    AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(m, MF_STRING, IDM_DUPLICATE, "&Dupliquer...");
     POINT pt;
     GetCursorPos(&pt);
     SetForegroundWindow(glfwGetWin32Window(w));
     const int id = (int)TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, glfwGetWin32Window(w), nullptr);
     DestroyMenu(m);
     if (id == IDM_INFO_OBJECT) showInfoDialog("Infos objet", info);
+    else if (id == IDM_DUPLICATE) duplicateSelected(askInstanceCount());
 #else
     (void)w;
 #endif
@@ -1440,6 +1484,105 @@ static void updatePP(GLFWwindow* w) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Rotation (outillage T1) : autour d'un axe monde passant par le      */
+/* centre de la piece ; mouvement souris en direct ou angle au clavier */
+/* ------------------------------------------------------------------ */
+
+static bool g_rotMode = false;        /* touche R : mode Rotation */
+static bool g_rotActive = false;      /* axe choisi, angle en cours */
+static int g_rotObj = -1;
+static int g_rotAxis = -1;            /* 0 = X, 1 = Y, 2 = Z */
+static Vec3 g_rotPivot;               /* centre (monde) de la piece a la capture */
+static std::vector<Vec3> g_rotBase;   /* sommets locaux a la capture */
+static double g_rotAngle = 0.0;       /* angle courant (degres) */
+static double g_rotLastX = 0.0;       /* curseur a la capture (0.25 deg/pixel) */
+static std::string g_rotNumBuf;
+static double g_rotStatusTick = 0.0;
+
+/* rotation d'angle (degres) autour de l'axe monde 'axis' passant par pivot */
+static Vec3 rotateAroundAxis(const Vec3& pw, const Vec3& pivot, int axis, double angDeg) {
+    const double a = angDeg * 3.14159265358979323846 / 180.0;
+    const double c = std::cos(a), s = std::sin(a);
+    Vec3 p = pw - pivot;
+    Vec3 r;
+    if (axis == 0)      r = Vec3(p.x, c * p.y - s * p.z, s * p.y + c * p.z);
+    else if (axis == 1) r = Vec3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z);
+    else                r = Vec3(c * p.x - s * p.y, s * p.x + c * p.y, p.z);
+    return r + pivot;
+}
+
+/* applique l'angle : v local = (pivot + R*(pos + base*scl - pivot) - pos)/scl */
+static void applyRotationAt(Object& o, const std::vector<Vec3>& base, int axis, double angDeg) {
+    if (o.scl <= 1e-12) return;
+    const double inv = 1.0 / o.scl;
+    o.v.resize(base.size());
+    for (size_t i = 0; i < base.size(); ++i) {
+        const Vec3 w = o.pos + base[i] * o.scl;
+        o.v[i] = (rotateAroundAxis(w, g_rotPivot, axis, angDeg) - o.pos) * inv;
+    }
+    computeObjectDerived(o);
+}
+
+static char axisLetterFromScancode(int scancode) {
+    const char* name = glfwGetKeyName(-1, scancode);
+    if (!name || name[0] == '\0') return 0;
+    const char c = (name[0] >= 'A' && name[0] <= 'Z') ? char(name[0] - 'A' + 'a') : name[0];
+    return (c == 'x' || c == 'y' || c == 'z') ? c : 0;
+}
+
+static void rotBegin(GLFWwindow* w, int axis) {
+    if (g_selected < 0 || g_selected >= (int)g_objs.size()) {
+        std::printf("rotation : selectionnez d'abord un objet (clic gauche)\n");
+        return;
+    }
+    Object& o = g_objs[(size_t)g_selected];
+    g_rotObj = g_selected;
+    g_rotAxis = axis;
+    g_rotBase = o.v;
+    g_rotPivot = o.pos + (o.bmin + o.bmax) * (0.5 * o.scl);
+    g_rotAngle = 0.0;
+    double dummy = 0.0;
+    glfwGetCursorPos(w, &g_rotLastX, &dummy);
+    g_rotActive = true;
+    std::printf("rotation %s de %s autour de son centre : bougez la souris (horizontalement), chiffres + Entree pour un angle exact signe (clic pour poser, Echap ou clic droit pour annuler)\n",
+                axisName(axis), o.name.c_str());
+}
+
+static void rotCancel() {
+    if (!g_rotActive || g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) { g_rotActive = false; return; }
+    Object& o = g_objs[(size_t)g_rotObj];
+    o.v = g_rotBase;
+    computeObjectDerived(o);
+    g_rotActive = false;
+    g_rotAxis = -1;
+    g_rotNumBuf.clear();
+    std::printf("\nrotation annulee\n");
+}
+
+static void rotCommit() {
+    if (!g_rotActive || g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) { g_rotActive = false; return; }
+    std::printf("\nrotation posee : %+.2f deg sur %s\n", g_rotAngle, g_objs[(size_t)g_rotObj].name.c_str());
+    g_rotActive = false;
+    g_rotAxis = -1;
+    g_rotNumBuf.clear();
+}
+
+static void updateRot(GLFWwindow* w) {
+    if (!g_rotActive || g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) return;
+    double x, y;
+    glfwGetCursorPos(w, &x, &y);
+    g_rotAngle += (x - g_rotLastX) * 0.25;
+    g_rotLastX = x;
+    applyRotationAt(g_objs[(size_t)g_rotObj], g_rotBase, g_rotAxis, g_rotAngle);
+    const double now = glfwGetTime();
+    if (now - g_rotStatusTick > 0.12) {
+        g_rotStatusTick = now;
+        std::printf("\rRotation %s : %+.1f deg (clic pour poser, clic droit pour annuler)   ", axisName(g_rotAxis), g_rotAngle);
+        std::fflush(stdout);
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* Callbacks                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -1452,12 +1595,14 @@ static void onScroll(GLFWwindow*, double, double dy) {
 static void onMouseButton(GLFWwindow* w, int button, int action, int) {
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         if (action == GLFW_PRESS && g_ppActive) ppCancel();
-        else if (action == GLFW_PRESS && !g_ppMode) showContextMenu(w);
+        else if (action == GLFW_PRESS && g_rotActive) rotCancel();
+        else if (action == GLFW_PRESS && !g_ppMode && !g_rotMode) showContextMenu(w);
         return;
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
         if (g_ppActive) { ppCommit(); return; }   /* second clic gauche : pose la face */
+        if (g_rotActive) { rotCommit(); return; }  /* clic gauche : pose la rotation */
         if (g_ppMode) {
             Vec3 org, dir;
             if (!rayFromMouse(w, org, dir)) return;
@@ -1521,6 +1666,40 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
 }
 
 static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
+    if (g_rotActive) {
+        if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
+        if ((key >= GLFW_KEY_0 && key <= GLFW_KEY_9) || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA) {
+            if (g_rotNumBuf.size() < 16)
+                g_rotNumBuf += (key == GLFW_KEY_COMMA) ? char('.') : char(key);
+            std::printf("\rAngle saisi : %s — Entree pour appliquer (signe autorise)   ", g_rotNumBuf.c_str());
+            std::fflush(stdout);
+        } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+            if (g_rotNumBuf.size() < 16) g_rotNumBuf.insert(g_rotNumBuf.begin(), '-');
+            std::printf("\rAngle saisi : %s — Entree pour appliquer (signe autorise)   ", g_rotNumBuf.c_str());
+            std::fflush(stdout);
+        } else if (key == GLFW_KEY_BACKSPACE) {
+            if (!g_rotNumBuf.empty()) g_rotNumBuf.pop_back();
+            std::printf("\rAngle saisi : %s — Entree pour appliquer   ", g_rotNumBuf.c_str());
+            std::fflush(stdout);
+        } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+            const double a = std::atof(g_rotNumBuf.c_str());
+            if (!std::isfinite(a)) {
+                std::printf("\nAngle invalide — tapez un nombre (degres, signe autorise) puis Entree.\n");
+            } else {
+                g_rotAngle = a;
+                applyRotationAt(g_objs[(size_t)g_rotObj], g_rotBase, g_rotAxis, a);
+                g_rotNumBuf.clear();
+                std::printf("\nRotation posee au clavier : %+.2f deg — cliquez pour valider, ou continuez a tourner\n", a);
+            }
+        } else if (key == GLFW_KEY_ESCAPE) {
+            rotCancel();                /* premier Echap : annule la rotation, reste en mode */
+        } else if (key == GLFW_KEY_R) {
+            rotCancel();                /* R disponible a tout moment : quitte le mode */
+            g_rotMode = false;
+            std::printf("\nmode selection\n");
+        }
+        return;
+    }
     if (g_ppActive) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
         if ((key >= GLFW_KEY_0 && key <= GLFW_KEY_9) || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA) {
@@ -1553,14 +1732,26 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
     }
     if (action == GLFW_PRESS) {
         if (key == GLFW_KEY_ESCAPE) {
-            if (g_ppMode) { g_ppMode = false; std::printf("mode selection\n"); return; }
+            if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("mode selection\n"); return; }
             glfwSetWindowShouldClose(w, GLFW_TRUE);
         }
-        if (key == GLFW_KEY_P) {
+        if (key == GLFW_KEY_P && g_mode == M_None) {
             g_ppMode = !g_ppMode;
+            if (g_ppMode) g_rotMode = false;
             std::printf(g_ppMode
                 ? "mode Push/Pull : cliquez une face (dessus ou cote), deplacez, puis re-cliquez pour poser\n"
                 : "mode selection\n");
+        }
+        if (key == GLFW_KEY_R && g_mode == M_None) {
+            g_rotMode = !g_rotMode;
+            if (g_rotMode) g_ppMode = false;
+            std::printf(g_rotMode
+                ? "mode Rotation : selectionnez un objet, puis X, Y ou Z (lettre) pour fixer l'axe\n"
+                : "mode selection\n");
+        }
+        if (g_rotMode && !g_rotActive) {
+            const char c = axisLetterFromScancode(scancode);
+            if (c) { rotBegin(w, c - 'x'); return; }
         }
         if (key == GLFW_KEY_F) frameSelected();
         if (key == GLFW_KEY_H) { goHome(); std::printf("vue d'origine\n"); }
@@ -1677,9 +1868,9 @@ static void drawAxisGuide() {
 /* ------------------------------------------------------------------ */
 
 int main() {
-    std::printf("Sketch3D natif — lot N5 (barre de menus Fichier + menu contextuel clic droit + fichier projet)\n");
-    std::printf("menu Fichier : nouveau/ouvrir/fermer projet, importer, exporter OBJ/STL, quitter ; menu contextuel : infos objet\n");
-    std::printf("P : mode Push/Pull (clic sur face, deplacement, re-clic pour poser) ; I : import ; F : cadrage ; H : origine\n");
+    std::printf("Sketch3D natif — outillages T1 (duplication multi-instances, rotation autour des axes + menus du lot N5)\n");
+    std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer, exporter OBJ/STL, quitter ; menu contextuel (clic droit) : infos objet, duplication\n");
+    std::printf("P : mode Push/Pull ; R : mode Rotation (X/Y/Z = axe, souris ou chiffres+Entree) ; I : import ; F : cadrage ; H : origine\n");
     buildScene();
     if (!glfwInit()) { std::fprintf(stderr, "glfwInit a echoue\n"); return 1; }
 
@@ -1687,7 +1878,7 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* win = glfwCreateWindow(g_winW, g_winH, "Sketch3D — build N5", nullptr, nullptr);
+    GLFWwindow* win = glfwCreateWindow(g_winW, g_winH, "Sketch3D — build T1", nullptr, nullptr);
     if (!win) { std::fprintf(stderr, "creation de fenetre impossible\n"); glfwTerminate(); return 1; }
     glfwMakeContextCurrent(win);
     glfwSwapInterval(1);
@@ -1711,6 +1902,8 @@ int main() {
             updateDrag(win);
         } else if (g_ppActive) {
             updatePP(win);
+        } else if (g_rotActive) {
+            updateRot(win);
         }
         render();
         drawAxisGuide();

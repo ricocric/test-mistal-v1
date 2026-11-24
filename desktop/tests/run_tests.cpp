@@ -445,6 +445,68 @@ int main() {
         std::filesystem::remove(ppath, ec);
     }
 
+    /* 17 - outillage T1 : duplication multi-instances */
+    {
+        g_objs.clear();
+        const double colW[3] = {0.5, 0.5, 0.5};
+        g_objs.push_back(makeBoxObject("Solo", Vec3(0, 1, 0), Vec3(1, 1, 1), colW));
+        g_selected = 0;
+        duplicateSelected(3);
+        CHECK(g_objs.size() == 4, "duplication : 3 copies du cube seul");
+        bool nomOK = g_objs[1].name == "Solo (1)" && g_objs[2].name == "Solo (2)" && g_objs[3].name == "Solo (3)";
+        CHECK(nomOK, "duplication : noms numerotes");
+        CHECK(std::fabs(g_objs[1].pos.x - 2.25) < 1e-12 && std::fabs(g_objs[2].pos.x - 4.5) < 1e-12
+              && std::fabs(g_objs[3].pos.x - 6.75) < 1e-12,
+              "duplication : copies alignees vers +X (pas = portee + 0.25)");
+        bool sep = true;
+        for (size_t i = 0; sep && i < g_objs.size(); ++i)
+            for (size_t j = i + 1; sep && j < g_objs.size(); ++j)
+                sep = !overlapsWorld(g_objs[i], g_objs[j]);
+        CHECK(sep, "duplication : aucune superposition");
+        CHECK(g_objs[3].v.size() == g_objs[0].v.size() && g_objs[3].tri == g_objs[0].tri,
+              "duplication : copies identiques a l'original (meme mesh)");
+        buildScene();
+        g_selected = 0;                     /* voisin Pave B a droite : copies poussees au-dela */
+        duplicateSelected(1);
+        bool sepScene = true;
+        for (size_t i = 0; sepScene && i < g_objs.size(); ++i)
+            for (size_t j = i + 1; sepScene && j < g_objs.size(); ++j)
+                sepScene = !overlapsWorld(g_objs[i], g_objs[j]);
+        CHECK(sepScene && g_objs.size() == 4 && g_objs[3].pos.x > g_objs[1].bmax.x,
+              "duplication : copie poussee au-dela du voisin Pave B (anti-superpositionImport)");
+    }
+
+    /* 18 - outillage T1 : rotation autour d'un axe monde par le centre */
+    {
+        buildScene();
+        Object& o2 = g_objs[1];             /* Pave B : 3 x 1.2 x 1.6 en monde */
+        const std::vector<Vec3> base2 = o2.v;
+        const Vec3 centre = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
+        const double volAvant = signedVolume(o2);
+        g_rotPivot = centre;
+        applyRotationAt(o2, base2, 2, 90.0);   /* Z de +90 deg */
+        const double dx = o2.bmax.x - o2.bmin.x, dy = o2.bmax.y - o2.bmin.y, dz = o2.bmax.z - o2.bmin.z;
+        const Vec3 centre2 = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
+        CHECK(std::fabs(dx - 1.2) < 1e-9 && std::fabs(dy - 3.0) < 1e-9 && std::fabs(dz - 1.6) < 1e-9,
+              "rotation : +90 deg en Z permute les portees X/Y (pave debout)");
+        CHECK((centre2 - centre).norm() < 1e-9, "rotation : le centre de la piece ne bouge pas (pivot)");
+        CHECK(std::fabs(signedVolume(o2) - volAvant) < 1e-9 && countNonManifold(o2) == 0,
+              "rotation : volume preserve, aretes toujours coherentes");
+        const std::vector<Vec3> at90 = o2.v;
+        applyRotationAt(o2, at90, 2, -90.0);
+        bool vRet = o2.v.size() == base2.size();
+        for (size_t i = 0; vRet && i < base2.size(); ++i) vRet = (o2.v[i] - base2[i]).norm() < 1e-12;
+        CHECK(vRet, "rotation : +90 puis -90 -> geometrie d'origine a 1e-12 pres");
+        applyRotationAt(o2, base2, 0, 180.0);   /* X de 180 deg */
+        bool v180 = o2.v.size() == base2.size();
+        for (size_t i = 0; v180 && i < base2.size(); ++i)
+            v180 = std::fabs(o2.v[i].x - base2[i].x) < 1e-12
+                && std::fabs(o2.v[i].y + base2[i].y) < 1e-12
+                && std::fabs(o2.v[i].z + base2[i].z) < 1e-12;
+        CHECK(v180 && (o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl) - centre).norm() < 1e-9,
+              "rotation : 180 deg en X -> miroir Y/Z, pivot fixe");
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }

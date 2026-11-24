@@ -4,7 +4,26 @@ Transcription du prototype web (`index.html` a la racine du depot) en programme
 natif Windows, par petits lots testables. Modele geometrique en **double
 precision** natif (la version web stockait en Float32).
 
-## Lot N5.1 (celui-ci) : menus de base
+## Outillages T1 (celui-ci) : duplication + rotation
+
+- **Duplication** : menu contextuel (clic droit sur un objet) > **Dupliquer...**
+  — nombre d'instances demande dans la console (Entree = 1, maximum 999) ;
+  copies posees en ligne vers +X (pas = portee + 0.25) avec la meme
+  anti-superposition que l'import : une copie qui rencontre un voisin est
+  poussee au-dela de son bord ; nums numerotes depuis le nom source ;
+- **Rotation** : touche **R** (bascule du mode, exclusif avec Push/Pull) —
+  selectionnez un objet puis **X, Y ou Z** (lettre, AZERTY inclus) pour fixer
+  l'axe ; la piece tourne **autour de son centre** en bougeant la souris
+  horizontalement (0.25 deg/pixel), ou tapez des **chiffres** (signe autorise,
+  virgule ou point) + **Entree** pour un angle exact ; **clic gauche** : pose ;
+  **clic droit ou Echap** : annule ; **R** pendant une rotation : annule et
+  quitte le mode ;
+- la rotation s'applique aux sommets locaux (double precision) : tout le reste
+  (deplacement, Push/Pull, exports, fichier projet) marche sur la piece tournee
+  sans modification du modele de donnees ;
+- la batterie monte a **95 verifications** (familles duplication et rotation).
+
+## Lot N5.1 : menus de base
 
 **Barre de menus Windows** (Fichier) et **menu contextuel du clic droit**,
 plus un **fichier de projet** natif.
