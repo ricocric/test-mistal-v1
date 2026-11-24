@@ -89,6 +89,23 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   numeros de la serie, original epargne, depassement = tout le disponible,
   aucune copie numerotee = retour 0).
 
+## Outillages T1.6 : export cible + suppression + compteur de selection
+
+- **export cible** : menu contextuel > **Exporter l'objet en OBJ... / STL...** -
+  n'exporte que l'objet selectionne (les menus Fichier gardent l'export de la
+  scene entiere) ;
+- **outil Supprimer** : menu contextuel > **Supprimer** - retire l'objet
+  selectionne (original ou copie), la selection suit l'objet suivant a la
+  meme place, index invalides refuses, liste videe = selection a -1 ;
+- **compteur de selection en temps reel** : le **titre de la fenetre**
+  affiche constamment le nombre d'objets et l'objet selectionne
+  (`Sketch3D - build T1.6 - 3 objet(s) - selection : P2 (2/3) ; selection :
+  aucune` sinon) - maj seulement au changement ;
+- la batterie est a **122 verifications** (+ export cible OBJ/STL verifie
+  par relecture : un seul objet exporte et le bon, STL binaire taille
+  exacte 84+50x12 ; suppression : selection suivie, index invalides,
+  liste videe, selection a -1).
+
 ## Outillages T1 : duplication + rotation
 
 - **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de

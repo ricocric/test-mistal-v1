@@ -53,6 +53,7 @@ void glfwMakeContextCurrent(GLFWwindow*);
 int glfwWindowShouldClose(GLFWwindow*);
 void glfwSetWindowShouldClose(GLFWwindow*, int);
 void glfwSwapBuffers(GLFWwindow*);
+void glfwSetWindowTitle(GLFWwindow*, const char*);
 void glfwPollEvents(void);
 void glfwSwapInterval(int);
 void glfwGetCursorPos(GLFWwindow*, double*, double*);
