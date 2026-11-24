@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.5.4";
+static const char* BUILD_VERSION = "T1.5.5";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -724,6 +724,36 @@ static void duplicateObject(int idx, int n) {
     std::printf("duplication : %s x%d (copies posees vers +X, pas de %.3f)\n", src.name.c_str(), made, step);
 }
 
+/* retrait d'instances (retour de test : corriger une sur-duplication sans
+   refaire le geste) : -k au champ nombre retire les k dernieres copies
+   numerotees de la meme serie que l'objet source (nom "Src (k)"), l'original
+   n'est jamais retire ; au-dela du disponible, on retire tout.             */
+static int removeInstances(int idx, int k) {
+    if (idx < 0 || idx >= (int)g_objs.size() || k <= 0) return 0;
+    const std::string base = g_objs[(size_t)idx].name + " (";
+    std::vector<std::pair<int, int>> hits;
+    for (int i = 0; i < (int)g_objs.size(); ++i) {
+        const std::string& nm = g_objs[(size_t)i].name;
+        if (nm.size() > base.size() + 1 && nm.compare(0, base.size(), base) == 0 && nm[nm.size() - 1] == ')') {
+            const std::string digits = nm.substr(base.size(), nm.size() - base.size() - 1);
+            if (!digits.empty() && digits.find_first_not_of("0123456789") == std::string::npos)
+                hits.push_back(std::make_pair(i, std::stoi(digits)));
+        }
+    }
+    std::sort(hits.begin(), hits.end(), [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+        return a.second != b.second ? a.second > b.second : a.first > b.first;
+    });
+    const int rem = std::min(k, (int)hits.size());
+    for (int r = 0; r < rem; ++r)
+        g_objs.erase(g_objs.begin() + hits[(size_t)r].first);
+    if (g_selected >= (int)g_objs.size())
+        g_selected = (int)g_objs.size() - 1;
+    if (rem > 0)
+        std::printf("retrait : %d copie(s) supprimee(s) de la serie %s (%d instance(s) restante(s))\n",
+                    rem, g_objs[(size_t)idx].name.c_str(), (int)hits.size() - rem);
+    return rem;
+}
+
 /* saisie du nombre d'instances dans la FENETRE au clavier (modele Push/Pull :
    chiffres puis Entree) — jamais de getline bloquant dans la boucle de jeu */
 static bool g_dupPending = false;
@@ -734,7 +764,7 @@ static void dupStartPrompt() {
     g_dupPending = true;
     g_dupSrc = g_selected;
     g_dupNumBuf.clear();
-    std::printf("Dupliquer : tapez le nombre d'instances puis Entree (Entree sans chiffre = 1, maximum 999 ; Echap pour annuler)\n");
+    std::printf("Dupliquer : tapez le nombre d'instances puis Entree (vide = 1, maximum 999 ; negatif = retire des copies ; Echap pour annuler)\n");
 }
 
 /* ------------------------------------------------------------------ */
@@ -1762,6 +1792,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
         if (topRow || padRow) {
             if (g_dupNumBuf.size() < 4)
                 g_dupNumBuf += padRow ? char('0' + (key - GLFW_KEY_KP_0)) : char(key);
+        } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+            if (g_dupNumBuf.size() < 4) g_dupNumBuf.insert(g_dupNumBuf.begin(), '-');
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (!g_dupNumBuf.empty()) g_dupNumBuf.pop_back();
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
@@ -1769,10 +1801,15 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
             const long n = vide ? 1 : std::atol(g_dupNumBuf.c_str());
             g_dupPending = false;
             g_dupNumBuf.clear();
-            if (!vide && (n < 1 || n > 999))
-                std::printf("\nNombre invalide : entrez de 1 a 999 puis Entree (aucune copie posee ; le signe n est pas gere ici)\n");
-            else
+            if (vide || (n >= 1 && n <= 999)) {
                 duplicateObject(g_dupSrc, (int)n);
+            } else if (n <= -1 && n >= -999) {
+                const int rem = removeInstances(g_dupSrc, (int)-n);
+                if (rem == 0 && g_dupSrc >= 0 && g_dupSrc < (int)g_objs.size())
+                    std::printf("\nretrait : aucune copie numerotee de %s\n", g_objs[(size_t)g_dupSrc].name.c_str());
+            } else {
+                std::printf("\nNombre invalide : entrez de -999 a 999 puis Entree (negatif = retire des copies)\n");
+            }
             return;
         } else if (key == GLFW_KEY_ESCAPE) {
             g_dupPending = false;
@@ -1982,7 +2019,7 @@ static void render() {
 static std::string statusPrompt() {
     char buf[256];
     if (g_dupPending)
-        return "Dupliquer : tapez le nombre d instances puis Entree (vide = 1, Echap pour annuler)";
+        return "Dupliquer : tapez le nombre d instances puis Entree (vide = 1, negatif = retrait, Echap pour annuler)";
     else if (g_ppActive)
         std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (clic gauche : poser ; chiffres puis Entree : dimension exacte, + = tirer / - = pousser ; clic droit ou Echap : annuler)", g_pp.d);
     else if (g_rotActive)

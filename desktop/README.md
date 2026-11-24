@@ -52,16 +52,22 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   posent la rotation et quittent le mode** (avant, la rotation restait
   active et le moindre mouvement de souris reprenait), la duplication garde
   Entree vide = 1 ;
-- **champ nombre de la duplication (retour de test)** : valeur hors plage ou
-  signee = **refusee** (option retenue : aucune copie posee, message console;
-  le champ n'accepte d'ailleurs pas de tiret) - supprimer des objets sera un
-  outil distinct prevu au backlog ;
+- **champ nombre de la duplication (retour de test T1.5.5)** : le tiret haut
+  ou la touche du pave est desormais accepte dans la boite de saisie ;
+  **valeur negative = retrait d'instances** (demande explicite de
+  l'utilisateur : corriger une sur-duplication type "55 tape au lieu de 5"
+  sans refaire le geste) - les k dernieres copies numerotees de la serie de
+  l'objet source sont supprimees, l'**original toujours epargne** ; au-dela
+  du disponible, on retire tout ; aucune copie numerotee = message, rien de
+  supprime ; hors plage -999..999 = refusee proprement (aucune action) ;
 - **separateur decimal** : pris en compte pour l'extrusion et la rotation
   (point, virgule ou touche decimale du pave, affiche en point dans la boite ;
   le champ nombre est un entier, sans separateur par conception) ;
-- la batterie monte a **109 verifications** (+ enfoncement -0.5 le long de la
-  normale ; valeur au-dela de la butee = rien ne depasse le plan ; nombre
-  negatif/nul de duplication refuse).
+- la batterie monte a **113 verifications** (+ enfoncement -0.5 le long de la
+  normale ; valeur au-dela de la butee = rien ne depasse le plan ; duplication
+  refusee hors plage ; retrait d'instances : -k supprime les k derniers
+  numeros de la serie, original epargne, depassement = tout le disponible,
+  aucune copie numerotee = retour 0).
 
 ## Outillages T1 : duplication + rotation
 

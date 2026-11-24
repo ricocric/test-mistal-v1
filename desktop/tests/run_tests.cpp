@@ -482,6 +482,21 @@ int main() {
         duplicateObject(0, 0);
         CHECK(g_objs.size() == nAvant,
               "duplication : nombre negatif ou nul refuse (option retenue : aucune copie posee)");
+        /* T1.5.5 (retour de test) : champ nombre negatif = retrait d'instances.
+           -k retire les k dernieres copies numerotees de la serie de la source,
+           l'original est toujours epargne ; au-dela du disponible, on retire tout. */
+        g_objs.clear();
+        g_objs.push_back(makeBoxObject("Solo", Vec3(0, 1, 0), Vec3(1, 1, 1), colW));
+        g_selected = 0;
+        duplicateObject(0, 3);
+        CHECK(removeInstances(0, 2) == 2 && g_objs.size() == 2,
+              "retrait : -2 supprime les 2 dernieres copies numerotees (Solo (2) et Solo (3))");
+        CHECK(g_objs[0].name == "Solo" && g_objs[1].name == "Solo (1)",
+              "retrait : l'original epargne, la copie la plus ancienne reste");
+        CHECK(removeInstances(0, 9) == 1 && g_objs.size() == 1 && g_objs[0].name == "Solo",
+              "retrait : au-dela du disponible, on retire tout sauf l'original");
+        CHECK(removeInstances(0, 1) == 0 && g_objs.size() == 1,
+              "retrait : aucune copie numerotee = rien a retirer (retour 0)");
     }
 
     /* 18 - outillage T1 : rotation autour d'un axe monde par le centre */
