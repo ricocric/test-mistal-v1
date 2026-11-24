@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.5.2";
+static const char* BUILD_VERSION = "T1.5.3";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1822,13 +1822,26 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
             if (g_pp.numBuf.size() < 16)
                 g_pp.numBuf += (padRowP ? char('0' + (key - GLFW_KEY_KP_0))
                               : (topRowP ? char(key) : char('.')));
+        } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+            if (g_pp.numBuf.size() < 16) g_pp.numBuf.insert(g_pp.numBuf.begin(), '-');
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (!g_pp.numBuf.empty()) g_pp.numBuf.pop_back();
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
-            const double v = std::atof(g_pp.numBuf.c_str());
-            if (!std::isfinite(v) || v <= 0.0) {
-                std::printf("\nValeur invalide — tapez un nombre positif puis Entree.\n");
+            double v = std::atof(g_pp.numBuf.c_str());
+            if (!std::isfinite(v) || v == 0.0) {
+                std::printf("\nValeur invalide — tapez un nombre non nul puis Entree (signe : tiret devant = enfoncement).\n");
             } else {
+                /* butees (demande de test) : une valeur au-dela de la matiere
+                   se cale a la butee au lieu de traverser et ressortir ; si
+                   tout l enfoncement est consomme, la face devient feuille. */
+                if (g_pp.hasLow && v < g_pp.dLow) {
+                    std::printf("\nButee atteinte : valeur calee a %+.3f.\n", g_pp.dLow);
+                    v = g_pp.dLow;
+                }
+                if (g_pp.hasHigh && v > g_pp.dHigh) {
+                    std::printf("\nButee atteinte : valeur calee a %+.3f.\n", g_pp.dHigh);
+                    v = g_pp.dHigh;
+                }
                 applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, v);
                 g_pp.d = v;
                 g_pp.numBuf.clear();
@@ -1965,7 +1978,7 @@ static std::string statusPrompt() {
     if (g_dupPending)
         return "Dupliquer : tapez le nombre d instances puis Entree (vide = 1, Echap pour annuler)";
     else if (g_ppActive)
-        std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (clic gauche : poser ; chiffres puis Entree : dimension exacte ; clic droit ou Echap : annuler)", g_pp.d);
+        std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (clic gauche : poser ; chiffres puis Entree : dimension exacte, + = tirer / - = pousser ; clic droit ou Echap : annuler)", g_pp.d);
     else if (g_rotActive)
         std::snprintf(buf, sizeof(buf), "Rotation %s : %+.1f deg  (clic gauche : poser ; X/Y/Z : changer d axe ; chiffres puis Entree : angle exact ; clic droit ou Echap : annuler)", axisName(g_rotAxis), g_rotAngle);
     else if (g_ppMode) {

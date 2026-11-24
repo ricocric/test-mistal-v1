@@ -39,10 +39,17 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   de main lors d'un clic ne peut plus revenir derriere la valeur) ; le drag
   souris garde tout le reste du comportement (ancre dRef, la face suit le
   curseur) ;
-- la batterie monte a **106 verifications** (ancre-extrusion sur le cube
-  SketchUp reel : d = 0 au rayon de capture, suivi croissant du curseur,
-  dimension tapee exacte ; pose clavier : calcul central ppDragDelta, rayon
-  perpendiculaire = rien applique).
+- **signe de la saisie** (retour de test) : le tiret haut ou la touche du pave
+  numerique insere un **-** devant la valeur tapee ; negatif = **enfoncement**,
+  positif = tirage, la convention du drag live (0 refuse : rien ne se pose) ;
+- **butees respectees par la saisie** (demande de test) : une valeur au-dela
+  de la matiere se **cale a la butee** au lieu de traverser et ressortir de
+  l'autre cote (message `Butee atteinte : valeur calee a ...`) ; lorsqu'un
+  push consomme tout l enfoncement, la face devient feuille (le pull
+  recreera le volume) ;
+- la batterie monte a **108 verifications** (pose clavier : valeur negative =
+  enfoncement -0.5 le long de la normale, topologie stable ; valeur au-dela
+  de la butee = rien ne depasse le plan, motif butee eprouve).
 
 ## Outillages T1 : duplication + rotation
 

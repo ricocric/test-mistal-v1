@@ -621,6 +621,27 @@ int main() {
             const double spanA = spanAlong(imp, ddRefVue.normal);
             CHECK(std::fabs((spanA - spanB) - 1.25) < 1e-6 && countNonManifold(imp) == nmB,
                   "ancre extrusion : dimension tapee 1.25 (Entree) posee depuis la capture -> portee +1.25 le long de la normale, topologie inchangée");
+            /* signe de la saisie (retour de test T1.5.2 : tiret non branche, la
+               valeur tapee devenait un pull) : -0.5 = enfoncement, meme chemin
+               que le push a la souris (clamp sur les butees de makeExtrude). */
+            applyExtrude(imp, ddRefVue, -0.5);
+            const double spanP = spanAlong(imp, ddRefVue.normal);
+            CHECK(ddRefVue.hasLow && std::fabs((spanP - spanB) + 0.5) < 1e-6 && countNonManifold(imp) == nmB,
+                  "pose clavier extrusion : valeur negative (tiret) = enfoncement, portee -0.5 le long de la normale, topologie inchangée");
+            /* butee et saisie (demande de test) : une valeur tapee au-dela de la
+               butee ne traverse pas la matiere - le push se cale a la butee
+               (feuille) et rien ne ressort de l'autre cote du plan.          */
+            applyExtrude(imp, ddRefVue, -9999.0);
+            double hiPlane = -1e300;
+            for (const Vec3& p : imp.v) {
+                const double al = dot(imp.pos + p * imp.scl - ddRefVue.planePoint, ddRefVue.normal);
+                if (al > hiPlane) hiPlane = al;
+            }
+            /* le pli a la butee clone des sommets par construction (motif butee
+               eprouve dans les familles feuille) : on ne teste ici QUE la non
+               traversée du plan. */
+            CHECK(ddRefVue.hasLow && hiPlane < 1e-5,
+                  "pose clavier extrusion : valeur au-dela de la butee = calee (feuille), rien ne depasse le plan (pas de traversee)");
         }
 
         /* pose au clavier - retour de test T1.5 : la valeur tapee n'avait aucun
