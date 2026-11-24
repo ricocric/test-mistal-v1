@@ -14,6 +14,7 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_RELEASE  0
 #define GLFW_REPEAT   2
 #define GLFW_KEY_UNKNOWN     -1
+#define GLFW_MOD_CONTROL     0x0002
 #define GLFW_KEY_BACKSPACE   259
 #define GLFW_KEY_ENTER       257
 #define GLFW_KEY_ESCAPE      256

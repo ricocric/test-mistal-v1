@@ -93,11 +93,15 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
 
 - **export cible** : n'exporte que l'objet selectionne (7 verifications de
   relecture dans le harnais) ; **T1.6.3 (retour de test)** : tout l'
-  **import/export reste au menu Fichier** (plus homogene pour l'utilisateur)
-  - `Exporter la scene en OBJ/STL` et, sous un separateur, `Exporter la
-  selection en OBJ/STL` ; sans selection, un avis s'affiche dans le bandeau
-  (flash 3 s) au lieu d'un message console ; les entrees export du menu
-  contextuel sont retirees (dernier mot de l'utilisateur) ;
+  **import/export reste au menu Fichier** (plus homogene pour l'utilisateur) ;
+  sans selection, un avis s'affiche dans le bandeau (flash 3 s) au lieu d'un
+  message console ; les entrees export du menu contextuel sont retirees. ;
+  **T1.6.4 (retour de test)** : paquets menu Fichier reorganises - paquet
+  **objets** = `Importer un objet...` + `Exporter la selection` (sous-menu),
+  paquet **scene** = `Exporter la scene` (sous-menu, OBJ/STL au choix dans
+  chaque sous-menu) - pas une ligne par format, le menu ne s'allonge plus
+  quand on ajoute des formats ; un format par defaut parametrable reste au
+  backlog ;
 - **outil Supprimer** : menu contextuel > **Supprimer** - retire l'objet
   selectionne (original ou copie), la selection suit l'objet suivant a la
   meme place, index invalides refuses, liste videe = selection a -1 ;
@@ -116,6 +120,10 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   sequentielles ; copier/coller au clavier restent au backlog) - la touche
   agit en mode neutre uniquement (jamais pendant une extrusion/rotation ou
   un deplacement) ;
+- **raccourci Ctrl+S (retour de test T1.6.4)** : enregistre le projet au
+  complet via le meme dialogue que le menu Fichier (`Enregistrer le
+  projet...`) ; agit uniquement en mode neutre - jamais pendant les saisies
+  dup/extrusion/rotation actives, comme tous les raccourcis du bloc neutre ;
 - la batterie est a **122 verifications** (+ export cible OBJ/STL verifie
   par relecture : un seul objet exporte et le bon, STL binaire taille
   exacte 84+50x12 ; suppression : selection suivie, index invalides,

@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.6.3";
+static const char* BUILD_VERSION = "T1.6.4";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1142,12 +1142,18 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(file, MF_STRING, IDM_SAVE_PROJECT, "&Enregistrer le projet...");
     AppendMenuA(file, MF_STRING, IDM_CLOSE_PROJECT, "&Fermer le projet");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
+    /* Paquet "objets" : import + export de la selection (sous-menu par format) */
     AppendMenuA(file, MF_STRING, IDM_IMPORT_OBJECT, "&Importer un objet...");
-    AppendMenuA(file, MF_STRING, IDM_EXPORT_OBJ, "Exporter la scene en &OBJ...");
-    AppendMenuA(file, MF_STRING, IDM_EXPORT_STL, "Exporter la scene en S&TL...");
+    HMENU exportSel = CreatePopupMenu();
+    AppendMenuA(exportSel, MF_STRING, IDM_EXPORT_OBJ_SEL, "&OBJ...");
+    AppendMenuA(exportSel, MF_STRING, IDM_EXPORT_STL_SEL, "S&TL...");
+    AppendMenuA(file, MF_POPUP, (UINT_PTR)exportSel, "&Exporter la selection...");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
-    AppendMenuA(file, MF_STRING, IDM_EXPORT_OBJ_SEL, "Exporter la selection en OBJ...");
-    AppendMenuA(file, MF_STRING, IDM_EXPORT_STL_SEL, "Exporter la selection en STL...");
+    /* Paquet "scene" : export scene complet (sous-menu par format) */
+    HMENU exportScene = CreatePopupMenu();
+    AppendMenuA(exportScene, MF_STRING, IDM_EXPORT_OBJ, "&OBJ...");
+    AppendMenuA(exportScene, MF_STRING, IDM_EXPORT_STL, "S&TL...");
+    AppendMenuA(file, MF_POPUP, (UINT_PTR)exportScene, "Exporter la scene...");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(file, MF_STRING, IDM_QUIT, "&Quitter");
     HMENU bar = CreateMenu();
@@ -1861,7 +1867,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
     }
 }
 
-static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
+static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
     if (g_dupPending) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
         const bool topRow = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
@@ -1981,6 +1987,11 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
         return;
     }
     if (action == GLFW_PRESS) {
+        /* Ctrl+S = enregistrer le projet (retour utilisateur) ; position : avant les exports scene par O/S */
+        if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_S) {
+            handleMenuAction(IDM_SAVE_PROJECT);
+            return;
+        }
         if (key == GLFW_KEY_ESCAPE) {
             if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("mode selection\n"); return; }
             glfwSetWindowShouldClose(w, GLFW_TRUE);
