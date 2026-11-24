@@ -413,6 +413,38 @@ int main() {
               "composite : pull +0.5 -> solide referme de la coque 1 (0.5) + coque 2 inchangee (1.0)");
     }
 
+    /* 16 - fichier projet : sauvegarde/relecture fidele (barre de menus N5) */
+    {
+        buildScene();
+        const std::string ppath = testsDir() + "/tmp_n51.s3projet";
+        std::string err;
+        const std::string posAvant = std::to_string(g_objs[1].pos.x) + "/" + std::to_string(g_objs[1].pos.y);
+        const std::vector<unsigned> triAvant = g_objs[1].tri;
+        const std::vector<Vec3> vAvant = g_objs[1].v;
+        const double sclAvant = g_objs[1].scl;
+        CHECK(saveProject(ppath, err), "projet : enregistrement reussi");
+        buildScene();
+        buildScene();                   /* scene modifiee avant relecture */
+        CHECK(loadProject(ppath, err), "projet : relecture reussie");
+        CHECK(g_objs.size() == 3 && g_objs[1].name == "Pave B", "projet : 3 objets relus, noms fideles");
+        CHECK(g_objs[1].pos.x == stod(posAvant.substr(0, posAvant.find('/')))
+              && g_objs[1].pos.y == stod(posAvant.substr(posAvant.find('/') + 1)),
+              "projet : position intacte");
+        CHECK(g_objs[1].scl == sclAvant, "projet : echelle intacte");
+        CHECK(g_objs[1].tri == triAvant, "projet : topologie (tri) intacte");
+        bool vOK = g_objs[1].v.size() == vAvant.size();
+        for (size_t i = 0; vOK && i < vAvant.size(); ++i)
+            vOK = (g_objs[1].v[i] - vAvant[i]).norm() < 1e-12;
+        CHECK(vOK, "projet : sommets relus a 1e-12 pres");
+        CHECK(!g_objs[0].edges.empty() && std::fabs(g_objs[0].bmax.z - 1.0) < 1e-12,
+              "projet : aretes/bmin recalcules a la lecture");
+        CHECK(objectInfo(g_objs[1]).find("Pave B") != std::string::npos
+              && objectInfo(g_objs[1]).find("dimensions monde") != std::string::npos,
+              "infos objet : nom + dimensions presentes");
+        std::error_code ec;
+        std::filesystem::remove(ppath, ec);
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }

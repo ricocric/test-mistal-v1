@@ -35,6 +35,13 @@
 #define NOMINMAX
 #include <windows.h>
 #include <commdlg.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#endif
+
+#include <GLFW/glfw3.h>
+
+#ifdef _WIN32
+#include <GLFW/glfw3native.h>
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -735,6 +742,243 @@ static void exportSTL(const std::string& path) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Fichier projet (.s3projet, texte) + infos objet (menus)             */
+/* ------------------------------------------------------------------ */
+
+static std::string trimStr(const std::string& s) {
+    const size_t a = s.find_first_not_of(" \t\r\n");
+    if (a == std::string::npos) return std::string();
+    const size_t b = s.find_last_not_of(" \t\r\n");
+    return s.substr(a, b - a + 1);
+}
+
+static bool saveProject(const std::string& path, std::string& err) {
+    std::ofstream f(path);
+    if (!f) { err = "fichier non creable"; return false; }
+    f.precision(17);
+    f << "s3projet 1\n";
+    for (const Object& o : g_objs) {
+        f << "objet " << o.name << "\n";
+        f << "pos " << o.pos.x << " " << o.pos.y << " " << o.pos.z << "\n";
+        f << "scl " << o.scl << "\n";
+        f << "col " << o.col[0] << " " << o.col[1] << " " << o.col[2] << "\n";
+        f << "verts " << o.v.size() << "\n";
+        for (const Vec3& p : o.v) f << p.x << " " << p.y << " " << p.z << "\n";
+        f << "tris " << o.tri.size() / 3 << "\n";
+        for (size_t i = 0; i + 2 < o.tri.size(); i += 3)
+            f << o.tri[i] << " " << o.tri[i + 1] << " " << o.tri[i + 2] << "\n";
+    }
+    if (!f) { err = "ecriture interrompue"; return false; }
+    std::printf("projet enregistre : %s (%zu objets)\n", path.c_str(), g_objs.size());
+    return true;
+}
+
+static bool loadProject(const std::string& path, std::string& err) {
+    std::ifstream f(path);
+    if (!f) { err = "fichier illisible"; return false; }
+    std::string magic;
+    int version = 0;
+    if (!(f >> magic >> version) || magic != "s3projet" || version != 1) {
+        err = "ce fichier n'est pas un projet Sketch3D (ou version non geree)";
+        return false;
+    }
+    std::vector<Object> objs;
+    std::string tok;
+    while (f >> tok) {
+        if (tok != "objet") { err = "fichier corrompu (attendu : objet)"; return false; }
+        std::string line;
+        std::getline(f, line);
+        Object o;
+        o.name = trimStr(line);
+        if (o.name.empty()) { err = "fichier corrompu (nom d'objet manquant)"; return false; }
+        if (!(f >> tok) || tok != "pos" || !(f >> o.pos.x >> o.pos.y >> o.pos.z)
+            || !(f >> tok) || tok != "scl" || !(f >> o.scl)
+            || !(f >> tok) || tok != "col" || !(f >> o.col[0] >> o.col[1] >> o.col[2])) {
+            err = "fichier corrompu (entete d'objet)"; return false;
+        }
+        size_t nv = 0, nt = 0;
+        if (!(f >> tok) || tok != "verts" || !(f >> nv)) {
+            err = "fichier corrompu (compte des sommets)"; return false;
+        }
+        if (nv > 20000000ull) { err = "fichier corrompu (compteurs absurdes)"; return false; }
+        o.v.resize(nv);
+        for (Vec3& p : o.v)
+            if (!(f >> p.x >> p.y >> p.z)) { err = "fichier corrompu (sommets)"; return false; }
+        if (!(f >> tok) || tok != "tris" || !(f >> nt)) {
+            err = "fichier corrompu (compte des triangles)"; return false;
+        }
+        if (nt > 40000000ull) { err = "fichier corrompu (compteurs absurdes)"; return false; }
+        o.tri.resize(nt * 3);
+        for (unsigned& t : o.tri)
+            if (!(f >> t)) { err = "fichier corrompu (triangles)"; return false; }
+        for (unsigned t : o.tri)
+            if (t >= o.v.size()) { err = "fichier corrompu (index de sommet hors bornes)"; return false; }
+        computeObjectDerived(o);
+        objs.push_back(std::move(o));
+    }
+    g_objs = std::move(objs);
+    g_selected = g_objs.empty() ? -1 : 0;
+    std::printf("projet ouvert : %s (%zu objets)\n", path.c_str(), g_objs.size());
+    return true;
+}
+
+static std::string objectInfo(const Object& o) {
+    const Vec3 dim = (o.bmax - o.bmin) * o.scl;
+    std::ostringstream s;
+    s << o.name << "\n"
+      << "position : (" << o.pos.x << ", " << o.pos.y << ", " << o.pos.z << ")\n"
+      << "dimensions monde : " << dim.x << " x " << dim.y << " x " << dim.z << "\n"
+      << "echelle : " << o.scl << "\n"
+      << o.v.size() << " sommets, " << o.tri.size() / 3 << " triangles";
+    return s.str();
+}
+
+static void showInfoDialog(const std::string& title, const std::string& text) {
+#ifdef _WIN32
+    MessageBoxA(nullptr, text.c_str(), title.c_str(), MB_OK);
+#else
+    (void)title;
+    std::printf("%s\n", text.c_str());
+#endif
+}
+
+/* ------------------------------------------------------------------ */
+/* Menus natifs : barre Fichier + menu contextuel du clic droit        */
+/* ------------------------------------------------------------------ */
+
+enum {
+    IDM_NEW_PROJECT = 1,
+    IDM_OPEN_PROJECT,
+    IDM_SAVE_PROJECT,
+    IDM_CLOSE_PROJECT,
+    IDM_IMPORT_OBJECT,
+    IDM_EXPORT_OBJ,
+    IDM_EXPORT_STL,
+    IDM_QUIT,
+    IDM_INFO_OBJECT,
+};
+
+static GLFWwindow* g_mainWin = nullptr;
+
+static void handleMenuAction(int id) {
+    switch (id) {
+    case IDM_NEW_PROJECT:
+        g_objs.clear();
+        g_selected = -1;
+        std::printf("nouveau projet : scene vide\n");
+        return;
+    case IDM_OPEN_PROJECT: {
+        const std::string p = fileDialog(false,
+            "Projets (*.s3projet)\0*.s3projet\0Tous (*.*)\0*.*\0\0",
+            nullptr, "Ouvrir un projet");
+        if (p.empty()) return;
+        std::string err;
+        if (!loadProject(p, err)) { std::printf("ouverture impossible : %s\n", err.c_str()); return; }
+        frameSelected();
+        return;
+    }
+    case IDM_SAVE_PROJECT: {
+        const std::string p = fileDialog(true,
+            "Projets (*.s3projet)\0*.s3projet\0Tous (*.*)\0*.*\0\0",
+            "s3projet", "Enregistrer le projet");
+        if (p.empty()) return;
+        std::string err;
+        if (!saveProject(p, err)) std::printf("enregistrement impossible : %s\n", err.c_str());
+        return;
+    }
+    case IDM_CLOSE_PROJECT:
+        g_objs.clear();
+        g_selected = -1;
+        std::printf("projet ferme\n");
+        return;
+    case IDM_IMPORT_OBJECT:
+        importFile();
+        return;
+    case IDM_EXPORT_OBJ: {
+        const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter en OBJ");
+        if (!p.empty()) exportOBJ(p);
+        return;
+    }
+    case IDM_EXPORT_STL: {
+        const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter en STL");
+        if (!p.empty()) exportSTL(p);
+        return;
+    }
+    case IDM_QUIT:
+        if (g_mainWin) glfwSetWindowShouldClose(g_mainWin, GLFW_TRUE);
+        return;
+    case IDM_INFO_OBJECT:
+        if (g_selected >= 0 && g_selected < (int)g_objs.size())
+            std::printf("%s\n", objectInfo(g_objs[(size_t)g_selected]).c_str());
+        return;
+    default:
+        return;
+    }
+}
+
+static void showContextMenu(GLFWwindow* w) {
+    Vec3 org, dir;
+    if (!rayFromMouse(w, org, dir)) return;
+    int hit = -1;
+    double bestT = 1e300;
+    for (size_t i = 0; i < g_objs.size(); ++i) {
+        double t;
+        if (rayObjectTri(org, dir, g_objs[i], t, nullptr) && t < bestT) {
+            bestT = t; hit = (int)i;
+        }
+    }
+    if (hit < 0) return;                  /* clic droit dans le vide : rien */
+    g_selected = hit;
+    const std::string info = objectInfo(g_objs[(size_t)hit]);
+    std::printf("%s\n", info.c_str());
+#ifdef _WIN32
+    HMENU m = CreatePopupMenu();
+    AppendMenuA(m, MF_STRING, IDM_INFO_OBJECT, "&Infos objet");
+    POINT pt;
+    GetCursorPos(&pt);
+    SetForegroundWindow(glfwGetWin32Window(w));
+    const int id = (int)TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, glfwGetWin32Window(w), nullptr);
+    DestroyMenu(m);
+    if (id == IDM_INFO_OBJECT) showInfoDialog("Infos objet", info);
+#else
+    (void)w;
+#endif
+}
+
+#ifdef _WIN32
+static WNDPROC g_baseWndProc = nullptr;
+
+static LRESULT CALLBACK menuWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_COMMAND) { handleMenuAction((int)LOWORD(wp)); return 0; }
+    return CallWindowProc(g_baseWndProc, h, msg, wp, lp);
+}
+#endif
+
+static void attachMenus(GLFWwindow* win) {
+    g_mainWin = win;
+#ifdef _WIN32
+    const HWND hwnd = glfwGetWin32Window(win);
+    HMENU file = CreatePopupMenu();
+    AppendMenuA(file, MF_STRING, IDM_NEW_PROJECT, "&Nouveau projet");
+    AppendMenuA(file, MF_STRING, IDM_OPEN_PROJECT, "&Ouvrir un projet...");
+    AppendMenuA(file, MF_STRING, IDM_SAVE_PROJECT, "&Enregistrer le projet...");
+    AppendMenuA(file, MF_STRING, IDM_CLOSE_PROJECT, "&Fermer le projet");
+    AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(file, MF_STRING, IDM_IMPORT_OBJECT, "&Importer un objet...");
+    AppendMenuA(file, MF_STRING, IDM_EXPORT_OBJ, "Exporter en &OBJ...");
+    AppendMenuA(file, MF_STRING, IDM_EXPORT_STL, "Exporter en &STL...");
+    AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(file, MF_STRING, IDM_QUIT, "&Quitter");
+    HMENU bar = CreateMenu();
+    AppendMenuA(bar, MF_POPUP, (UINT_PTR)file, "&Fichier");
+    SetMenu(hwnd, bar);
+    g_baseWndProc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)menuWndProc);
+#else
+    std::printf("menus natifs : barre Fichier indisponible hors Windows\n");
+#endif
+}
+
+/* ------------------------------------------------------------------ */
 /* Push/Pull (transcription des lots web 3.x, etat final 3.10.3)       */
 /* ------------------------------------------------------------------ */
 
@@ -1208,7 +1452,8 @@ static void onScroll(GLFWwindow*, double, double dy) {
 static void onMouseButton(GLFWwindow* w, int button, int action, int) {
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         if (action == GLFW_PRESS && g_ppActive) ppCancel();
-        return;                     /* menu contextuel : arrive avec l IHM (N5) */
+        else if (action == GLFW_PRESS && !g_ppMode) showContextMenu(w);
+        return;
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
@@ -1432,8 +1677,9 @@ static void drawAxisGuide() {
 /* ------------------------------------------------------------------ */
 
 int main() {
-    std::printf("Sketch3D natif — lot N4 (push/pull + soudure des sommets a l'import)\n");
-    std::printf("P : mode Push/Pull (clic sur face, deplacement, re-clic pour poser) ; I/O/S : import/exports ; F : cadrage ; H : origine\n");
+    std::printf("Sketch3D natif — lot N5 (barre de menus Fichier + menu contextuel clic droit + fichier projet)\n");
+    std::printf("menu Fichier : nouveau/ouvrir/fermer projet, importer, exporter OBJ/STL, quitter ; menu contextuel : infos objet\n");
+    std::printf("P : mode Push/Pull (clic sur face, deplacement, re-clic pour poser) ; I : import ; F : cadrage ; H : origine\n");
     buildScene();
     if (!glfwInit()) { std::fprintf(stderr, "glfwInit a echoue\n"); return 1; }
 
@@ -1441,7 +1687,7 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* win = glfwCreateWindow(g_winW, g_winH, "Sketch3D — build N4", nullptr, nullptr);
+    GLFWwindow* win = glfwCreateWindow(g_winW, g_winH, "Sketch3D — build N5", nullptr, nullptr);
     if (!win) { std::fprintf(stderr, "creation de fenetre impossible\n"); glfwTerminate(); return 1; }
     glfwMakeContextCurrent(win);
     glfwSwapInterval(1);
@@ -1450,6 +1696,7 @@ int main() {
     glfwSetMouseButtonCallback(win, onMouseButton);
     glfwSetKeyCallback(win, onKey);
     glfwSetFramebufferSizeCallback(win, [](GLFWwindow*, int w, int h) { g_winW = w; g_winH = h; });
+    attachMenus(win);
 
     while (!glfwWindowShouldClose(win)) {
         if (g_mode == M_Orbit) {
