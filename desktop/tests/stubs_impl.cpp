@@ -49,3 +49,4 @@ void glRasterPos2f(float,float){}
 void glVertex2f(float,float){}
 unsigned int glGenLists(int){return 1000;}
 void glCallList(unsigned int){}
+void glPolygonOffset(GLfloat, GLfloat){}

@@ -10,6 +10,7 @@ typedef double GLdouble;
 #define GL_QUADS 0x0007
 #define GL_LINES 0x0001
 #define GL_LINE_LOOP 0x0003
+#define GL_POLYGON_OFFSET_FILL 0x8037
 #define GL_POINTS 0x0000
 #define GL_COLOR_BUFFER_BIT 0x00004000
 #define GL_DEPTH_BUFFER_BIT 0x00000100
@@ -41,6 +42,7 @@ void glTranslated(GLdouble, GLdouble, GLdouble);
 void glLightfv(GLenum, GLenum, const GLfloat*);
 void glPointSize(GLfloat);
 void glLineWidth(GLfloat);
+void glPolygonOffset(GLfloat, GLfloat);
 void glPushMatrix(void);
 void glPopMatrix(void);
 void glScaled(GLdouble, GLdouble, GLdouble);

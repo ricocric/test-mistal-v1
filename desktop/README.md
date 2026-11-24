@@ -101,6 +101,12 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   affiche constamment le nombre d'objets et l'objet selectionne
   (`Sketch3D - build T1.6 - 3 objet(s) - selection : P2 (2/3) ; selection :
   aucune` sinon) - maj seulement au changement ;
+- **surlignage marque de la selection (retour de test T1.6.1)** : les aretes
+  de l'objet selectionne passent en **jaune vif epais** (lisible sur tout
+  fond et sur piece claire) ; les faces sont reculees d'un poil
+  (`glPolygonOffset`) pour que les aretes posees dessus ne se noient plus
+  dans le volume - on voit toujours exactement quelle piece est selectionnee
+  avant une action (suppression, duplication, export) ;
 - la batterie est a **122 verifications** (+ export cible OBJ/STL verifie
   par relecture : un seul objet exporte et le bon, STL binaire taille
   exacte 84+50x12 ; suppression : selection suivie, index invalides,

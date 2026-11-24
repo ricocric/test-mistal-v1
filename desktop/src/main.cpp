@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.6";
+static const char* BUILD_VERSION = "T1.6.1";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -2043,6 +2043,10 @@ static void drawObject(const Object& o, bool selected) {
     glPushMatrix();
     glTranslated(o.pos.x, o.pos.y, o.pos.z);
     glScaled(o.scl, o.scl, o.scl);
+    /* les faces sont reculees d'un poil (polygon offset) pour que les aretes
+       posees dessus restent visibles, surtout quand la piece est claire */
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.0f, 1.0f);
     glEnable(GL_LIGHTING);
     glBegin(GL_TRIANGLES);
     for (size_t i = 0, t = 0; i < o.tri.size(); i += 3, ++t) {
@@ -2052,9 +2056,15 @@ static void drawObject(const Object& o, bool selected) {
         for (int k = 0; k < 3; ++k) glVertex3dv(&o.v[o.tri[i + k]].x);
     }
     glEnd();
+    glDisable(GL_POLYGON_OFFSET_FILL);
     glDisable(GL_LIGHTING);
     glBegin(GL_LINES);
-    if (selected) { glColor3d(1, 1, 1); glLineWidth(2.0); }
+    if (selected) {
+        /* surlignage marque (retour de test : eviter d'agir sur la piece
+           d'a cote) : jaune vif et epais, lisible sur tout fond */
+        glColor3d(1.0, 0.85, 0.0);
+        glLineWidth(2.5);
+    }
     else glColor3d(0.2, 0.2, 0.22);
     for (const auto& e : o.edges) {
         glVertex3dv(&o.v[e.first].x);
