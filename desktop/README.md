@@ -137,6 +137,63 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   exacte 84+50x12 ; suppression : selection suivie, index invalides,
   liste videe, selection a -1).
 
+## Multi-selection T1.7 : Ctrl+clic (actions multi)
+
+- **Ctrl+clic = ajoute/retire** un objet de la selection (n'importe quel objet,
+  n'importe quel ordre) ; **Ctrl+clic sur le dernier selectionne = deselection
+  totale** (facon SketchUp) ; **clic gauche simple = selection seule** (remplace
+  la multi) ; Ctrl+clic dans le vide : rien (la selection est protegee) ;
+- une seule selection surlignee (aretes jaune vif) pour TOUS les objets :
+  on voit exactement ce que l'action concernera avant de la lancer ;
+- **Echap vide la selection complete** (puis quitte un mode en attente s'il
+  y en a un - meme echelle que T1.6.6) ;
+- **le titre affiche le total** : `selection : 3/12 objets` en multi,
+  `selection : Nom (k/N)` a un seul objet, `aucune` sinon ;
+- **Suppr = supprime toute la selection** (1 objet comme plusieurs, menu
+  contextuel egalement) : message console avec le detail, selection videe ;
+- **Dupliquer... s'applique a chaque objet de la selection** : le nombre tape
+  produit k copies par objet (noms numerotes `Src (k)`), et une valeur
+  negative retire k copies de CHAQUE serie de la selection (les indices
+  sources sont re-resolus par nom a chaque coup, jamais stale) ;
+- **Export de la selection (menu Fichier, sous-menus OBJ/STL) = multi** :
+  tous les objets selectionnes partent dans le meme fichier (ordre des
+  indices, `o Nom` par objet), des 2 objets comme des 12 ;
+- la batterie passe a **133 verifications** (+11 : toggle multi, ordre
+  d'export, STL 24 tris taille exacte, duplication/retrait multi, suppression
+  multi avec reste intact et selection videe).
+
+### Point 4 du test T1.7 (crash Ctrl+clic) - binaire T1.7.1 (rebuild T1.7.2 : sequence seule)
+
+- **cause racine** : sur un Ctrl+clic PUR (aucune selection prealable, donc
+  selection portee par la multi, principal reste a -1), l'ancien titre lisait
+  `g_objs[(size_t)g_selected]` brut = acces a `g_objs[-1]` = assertion MSVC
+  "vector subscript out of range" (reproduite et prouvee hors Windows) ;
+- la build T1.7.1 lit le titre par la liste elagee et durcit aussi : le drag
+  (selection principale perimee = retour neutre), la promotion multi (indice
+  perime elague, premier valide promu ou deselection propre), et les tris
+  dont les indices depassent les donnees (rendu, rayons, capture) sont
+  ignores (maillages degeneres) ;
+- la batterie passe a **137 verifications** (+4 : titre selection pure Ctrl,
+  promotion avec elagage, promotion tout-perime, drag perime) ;
+- **sequence de test corrigee** : plus de `git pull` du tout sur les branches
+  de test - le pull a echoue chez l'utilisateur (`Committer identity unknown`
+  : aucune identite git configuree, git refuse le merge ; resultat : branche
+  locale divergee, build compile encore l'ancien code, titre freeze a T1.7) ;
+  on remplace par **fetch + reset --hard** : pas de merge, pas d'identite
+  requise, la branche de test est un simple miroir du depot distant donc le
+  reset est sans risque - le titre de la fenetre fait foi quand a la version ;
+  (commit sequence seule : BUILD_VERSION passee a T1.7.2, titre attendu **T1.7.2**)
+
+```
+cd C:\Users\rico\source\repos
+git switch <branche>
+git fetch origin
+git reset --hard origin/<branche>
+cd desktop
+cmake --build build
+build\Debug\sketch3d.exe
+```
+
 ## Outillages T1 : duplication + rotation
 
 - **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de
