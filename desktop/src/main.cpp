@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.7.2";
+static const char* BUILD_VERSION = "T1.8";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -267,7 +267,7 @@ static void buildScene() {
 /* Etat interaction                                                    */
 /* ------------------------------------------------------------------ */
 
-enum Mode { M_None, M_Orbit, M_Drag };
+enum Mode { M_None, M_Orbit, M_Drag, M_Pan };
 static Mode g_mode = M_None;
 static Camera g_cam;
 static Camera g_camHome;
@@ -284,6 +284,12 @@ static Vec3 axisVec(int a) { return a == 0 ? Vec3(1, 0, 0) : a == 1 ? Vec3(0, 1,
 static void goHome() {
     g_cam = g_camHome;
     clearSelection();
+}
+
+static void cameraPan(Camera& c, double dxPx, double dyPx, double winH) {
+    if (winH < 1.0) return;
+    const double scale = 2.0 * c.dist * std::tan(kFovDeg * 3.14159265358979 / 360.0) / winH;
+    c.target = c.target - c.right() * (dxPx * scale) + c.up() * (dyPx * scale);
 }
 
 static void frameScene() {
@@ -397,6 +403,20 @@ static bool rayObjectTri(const Vec3& org, const Vec3& dir, const Object& o, doub
 
 static bool rayObject(const Vec3& org, const Vec3& dir, const Object& o, double& tHit) {
     return rayObjectTri(org, dir, o, tHit, nullptr);
+}
+
+static bool pickPointFromRay(const Vec3& org, const Vec3& dir, Vec3& p) {
+    double best = 1e300;
+    for (size_t i = 0; i < g_objs.size(); ++i) {
+        double t;
+        if (rayObject(org, dir, g_objs[i], t) && t < best) best = t;
+    }
+    if (best < 1e300) { p = org + dir * best; return true; }
+    if (std::fabs(dir.y) > 1e-12) {
+        const double t = -org.y / dir.y;
+        if (t > 1e-9) { p = org + dir * t; return true; }
+    }
+    return false;
 }
 
 static int pickAt(GLFWwindow* w) {
@@ -1893,6 +1913,19 @@ static void onScroll(GLFWwindow*, double, double dy) {
 }
 
 static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
+    if (button == GLFW_MOUSE_BUTTON_MIDDLE) {   /* clic molette + glisser = deplacer la vue (pan) */
+        if (!g_ppActive && !g_rotActive) {
+            if (action == GLFW_PRESS) {
+                if (g_mode == M_None || g_mode == M_Pan) {
+                    g_mode = M_Pan;
+                    glfwGetCursorPos(w, &g_prevX, &g_prevY);
+                }
+            } else if (g_mode == M_Pan) {
+                g_mode = M_None;
+            }
+        }
+        return;
+    }
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         /* regle generale des transformations : clic droit = retour au neutre.
            Le deplacement en vol ne peut pas etre annule ainsi (le clic droit
@@ -2000,6 +2033,8 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
                 selectOnly(hit);
                 frameSelected();
             }
+        } else if (mods & GLFW_MOD_SHIFT) {
+            g_mode = M_Pan;              /* Shift+glisser = deplacer la vue */
         } else {
             g_mode = M_Orbit;
         }
@@ -2162,6 +2197,15 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         }
         if (key == GLFW_KEY_F) frameSelected();
         if (key == GLFW_KEY_H) { goHome(); std::printf("vue d'origine\n"); }
+        if (key == GLFW_KEY_C && !(mods & GLFW_MOD_CONTROL)) {  /* centrer sur le point vise */
+            Vec3 org, dir, p;
+            if (rayFromMouse(w, org, dir) && pickPointFromRay(org, dir, p)) {
+                g_cam.target = p;
+                std::printf("vue centree sur le point vise\n");
+            } else {
+                std::printf("C : aucun point vise (pointez un objet ou le sol)\n");
+            }
+        }
         if (key == GLFW_KEY_I) { importFile(); }   /* importer OBJ/STL */
         if (key == GLFW_KEY_O) { const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter en OBJ"); if (!p.empty()) exportOBJ(p); }
         if (key == GLFW_KEY_S) { const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter en STL"); if (!p.empty()) exportSTL(p); }
@@ -2283,7 +2327,7 @@ static std::string statusPrompt() {
     } else if (g_rotMode) {
         return "Rotation : selectionnez un objet, puis la lettre de l'axe (X, Y ou Z)";
     } else {
-        return "P : Push/Pull   R : Rotation   clic gauche : selection/deplacement (X/Y/Z tenus = axe)   clic droit : menu   F : cadrer   H : origine   roulette : zoom";
+        return "P : Push/Pull   R : Rotation   clic gauche : selection/deplacement (X/Y/Z tenus = axe)   molette-clic/Shift+glisser : deplacer la vue   C : centrer sur le point vise   clic droit : menu   F : cadrer   H : origine   roulette : zoom";
     }
     return buf;
 }
@@ -2428,7 +2472,7 @@ static void updateWindowTitle(GLFWwindow* w) {
 int main() {
     std::printf("Sketch3D natif — build %s (outillages T1 : duplication multi-instances, rotation autour des axes + menus du lot N5)\n", BUILD_VERSION);
     std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer, exporter OBJ/STL, quitter ; menu contextuel (clic droit) : infos objet, duplication\n");
-    std::printf("P : mode Push/Pull ; R : mode Rotation (X/Y/Z = axe, souris ou chiffres+Entree) ; I : import ; F : cadrage ; H : origine\n");
+    std::printf("P : mode Push/Pull ; R : mode Rotation (X/Y/Z = axe, souris ou chiffres+Entree) ; I : import ; F : cadrage ; H : origine ; molette-clic ou Shift+glisser : deplacer la vue ; C : centrer sur le point vise\n");
     buildScene();
     if (!glfwInit()) { std::fprintf(stderr, "glfwInit a echoue\n"); return 1; }
 
@@ -2457,6 +2501,11 @@ int main() {
             g_cam.phi += (y - g_prevY) * 0.01;
             if (g_cam.phi < 0.02) g_cam.phi = 0.02;
             if (g_cam.phi > 3.12) g_cam.phi = 3.12;
+            g_prevX = x; g_prevY = y;
+        } else if (g_mode == M_Pan) {
+            double x, y;
+            glfwGetCursorPos(win, &x, &y);
+            cameraPan(g_cam, x - g_prevX, y - g_prevY, (double)g_winH);
             g_prevX = x; g_prevY = y;
         } else if (g_mode == M_Drag) {
             updateDrag(win);

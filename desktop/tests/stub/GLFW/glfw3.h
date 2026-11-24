@@ -15,6 +15,7 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_REPEAT   2
 #define GLFW_KEY_UNKNOWN     -1
 #define GLFW_MOD_CONTROL     0x0002
+#define GLFW_MOD_SHIFT       0x0001
 #define GLFW_KEY_BACKSPACE   259
 #define GLFW_KEY_ENTER       257
 #define GLFW_KEY_ESCAPE      256
@@ -30,6 +31,7 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_KEY_0           48
 #define GLFW_KEY_9           57
 #define GLFW_KEY_F 70
+#define GLFW_KEY_C 67
 #define GLFW_KEY_H 72
 #define GLFW_KEY_I 73
 #define GLFW_KEY_O 79
@@ -42,6 +44,7 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_KEY_Z 90
 #define GLFW_MOUSE_BUTTON_LEFT  0
 #define GLFW_MOUSE_BUTTON_RIGHT 1
+#define GLFW_MOUSE_BUTTON_MIDDLE 2
 #define GLFW_CLIENT_API            0x00022001
 #define GLFW_OPENGL_API            0x00030001
 #define GLFW_CONTEXT_VERSION_MAJOR 0x00022002
