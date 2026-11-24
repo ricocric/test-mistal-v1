@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+#include <limits>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -566,9 +567,9 @@ int main() {
                 auto dBrut = [&](double mx, double my) -> double {
                     const Vec3 d2 = rayFor(mx, my);
                     const double den = dot(d2, dd.pn);
-                    if (std::fabs(den) < 1e-9) return 0.0 / 0.0;
+                    if (std::fabs(den) < 1e-9) return std::numeric_limits<double>::quiet_NaN();
                     const double tv = dot(dd.planePoint - org, dd.pn) / den;
-                    if (tv < 0.0) return 0.0 / 0.0;
+                    if (tv < 0.0) return std::numeric_limits<double>::quiet_NaN();
                     return dot((org + d2 * tv) - dd.planePoint, dd.normal);
                 };
                 /* ancre posee comme au clic : d = 0 au rayon de capture */
@@ -594,9 +595,9 @@ int main() {
                 const double ny = 1.0 - 2.0 * my / double(g_winH);
                 const Vec3 d2 = normalized(g_cam.right() * (nx * ttR * aspectR) + g_cam.up() * (ny * ttR) + g_cam.forward());
                 const double den = dot(d2, ddRefVue.pn);
-                if (std::fabs(den) < 1e-9) return 0.0 / 0.0;
+                if (std::fabs(den) < 1e-9) return std::numeric_limits<double>::quiet_NaN();
                 const double tv = dot(ddRefVue.planePoint - org, ddRefVue.pn) / den;
-                if (tv < 0.0) return 0.0 / 0.0;
+                if (tv < 0.0) return std::numeric_limits<double>::quiet_NaN();
                 return dot((org + d2 * tv) - ddRefVue.planePoint, ddRefVue.normal);
             };
             const double d40 = dBrutRef(g_winW * 0.5, g_winH * 0.5 - 40.0) - ddRefVue.dRef;
