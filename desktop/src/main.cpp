@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.10";
+static const char* BUILD_VERSION = "T1.11";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -277,6 +277,10 @@ static int g_winW = 1280, g_winH = 800;
 static int g_lockAxis = -1;
 static Vec3 g_grabPoint;
 static Vec3 g_startPos;
+/* T1.11 : capture par membre pour le deplacement de groupe (vide =
+   deplacement mono, chemin historique strictement inchange) */
+struct DragMember { int idx; Vec3 startPos; };
+static std::vector<DragMember> g_dragMulti;
 
 static const char* axisName(int a) { return a == 0 ? "X" : a == 1 ? "Y" : "Z"; }
 static Vec3 axisVec(int a) { return a == 0 ? Vec3(1, 0, 0) : a == 1 ? Vec3(0, 1, 0) : Vec3(0, 0, 1); }
@@ -442,6 +446,19 @@ static void beginDrag(GLFWwindow* w, int idx) {
     if (!rayObject(org, dir, g_objs[(size_t)idx], t)) { g_mode = M_None; return; }
     g_grabPoint = org + dir * t;
     g_startPos = g_objs[(size_t)idx].pos;
+    g_dragMulti.clear();
+    /* T1.11 : clic gauche sur un objet DEJA membre d'une selection de plus
+       d'un objet = tout le groupe suit le meme delta (verrou d'axe commun) ;
+       sinon chemin mono historique. */
+    if (idx >= 0 && isSelectedRaw(idx) && selectedCount() > 1) {
+        for (int j : selectedIndices()) {
+            DragMember m;
+            m.idx = j;
+            m.startPos = g_objs[(size_t)j].pos;
+            g_dragMulti.push_back(m);
+        }
+        std::printf("deplacement multi : %zu objets\n", g_dragMulti.size());
+    }
     g_lockAxis = -1;
     g_mode = M_Drag;
 }
@@ -484,6 +501,13 @@ static void updateDrag(GLFWwindow* w) {
     if (g_lockAxis >= 0) {
         const Vec3 a = axisVec(g_lockAxis);
         delta = a * dot(delta, a);
+    }
+    if (!g_dragMulti.empty()) {
+        for (const DragMember& m : g_dragMulti) {
+            if (m.idx < 0 || m.idx >= (int)g_objs.size()) continue;
+            g_objs[(size_t)m.idx].pos = m.startPos + delta;
+        }
+        return;
     }
     g_objs[(size_t)g_selected].pos = g_startPos + delta;
 }
@@ -2125,20 +2149,25 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
             glfwGetCursorPos(w, &g_prevX, &g_prevY);
             return;                                 /* Ctrl+clic purement selection : pas de drag */
         }
-        const int prev = g_selected;
-        const bool hadMulti = !g_selMulti.empty();
-        selectOnly(hit);
-        if (hit != prev || hadMulti) {
-            if (hit >= 0) {
-                const Object& o = g_objs[(size_t)hit];
-                std::printf("selection : %s (%zu tris)\n", o.name.c_str(), o.tri.size() / 3);
-            } else {
-                std::printf("deselection\n");
+        /* T1.11 : clic sur un objet DEJA membre d'une multi de plus d'un objet
+           = garder la selection (pas de selectOnly) : le drag deplace le groupe */
+        const bool inMulti = hit >= 0 && isSelectedRaw(hit) && selectedCount() > 1;
+        if (!inMulti) {
+            const int prev = g_selected;
+            const bool hadMulti = !g_selMulti.empty();
+            selectOnly(hit);
+            if (hit != prev || hadMulti) {
+                if (hit >= 0) {
+                    const Object& o = g_objs[(size_t)hit];
+                    std::printf("selection : %s (%zu tris)\n", o.name.c_str(), o.tri.size() / 3);
+                } else {
+                    std::printf("deselection\n");
+                }
             }
         }
         if (hit >= 0) {
             beginDrag(w, hit);
-            if (dbl) {
+            if (dbl && !inMulti) {
                 selectOnly(hit);
                 frameSelected();
             }
@@ -2149,7 +2178,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         }
         glfwGetCursorPos(w, &g_prevX, &g_prevY);
     } else {
-        if (g_mode == M_Drag) g_lockAxis = -1;
+        if (g_mode == M_Drag) { g_lockAxis = -1; g_dragMulti.clear(); }
         g_mode = M_None;
     }
 }
