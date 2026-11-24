@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.9";
+static const char* BUILD_VERSION = "T1.9.1";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -2393,7 +2393,7 @@ static std::string statusPrompt() {
     else if (g_ppActive)
         std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (clic gauche : poser ; chiffres puis Entree : dimension exacte, + = tirer / - = pousser ; clic droit ou Echap : annuler)", g_pp.d);
     else if (g_rotActive && !g_rotMulti.empty())
-        std::snprintf(buf, sizeof(buf), "Rotation multi %s : %+.1f deg sur %zu objets (chacun sur son propre centre)  (clic gauche : poser ; X/Y/Z : changer d axe ; chiffres puis Entree : angle exact pose et quitte le mode ; clic droit ou Echap : annuler)", axisName(g_rotAxis), g_rotAngle, g_rotMulti.size());
+        std::snprintf(buf, sizeof(buf), "Rotation multi %s de %zu objets : %+.1f deg  (clic gauche : poser ; chiffres + Entree : angle exact ; clic droit : annuler)", axisName(g_rotAxis), g_rotMulti.size(), g_rotAngle);
     else if (g_rotActive)
         std::snprintf(buf, sizeof(buf), "Rotation %s : %+.1f deg  (clic gauche : poser ; X/Y/Z : changer d axe ; chiffres puis Entree : angle exact pose et quitte le mode ; clic droit ou Echap : annuler)", axisName(g_rotAxis), g_rotAngle);
     else if (g_ppMode) {
@@ -2419,13 +2419,20 @@ static void drawTextClipped(float x, float y, const char* s, float maxW) {
 #ifdef _WIN32
     const std::string str(s);
     if (textWidthPx(str.c_str()) <= maxW) { drawText2D(x, y, s); return; }
+    /* reduction REELLE du texte : la longueur de reference diminue d'un pas a
+       chaque tour. L'ancien code repartait de la taille GONFLEE par les "..."
+       rajoutes (substr sur txt.size() - 1, puis + "...") : aucun tour ne
+       pouvait passer sous la largeur une fois le message trop long, la boucle
+       tournait a l'infini = fenetre grisee "ne repond pas" (retour de test
+       T1.9 : bandeau rotation multi a chaque essai). */
     std::string txt(s);
-    while (txt.size() > 1) {
-        txt = str.substr(0, txt.size() - 1);
-        txt += "...";
+    size_t n = txt.size();
+    while (n > 1) {
+        txt = str.substr(0, n - 1) + "...";
         if (textWidthPx(txt.c_str()) <= maxW) break;
+        --n;
     }
-    if (txt == "...") txt.clear();
+    if (textWidthPx(txt.c_str()) > maxW) txt.clear();   /* rien ne rentre : plus rien */
     drawText2D(x, y, txt.c_str());
 #else
     (void)x; (void)y; (void)s; (void)maxW;

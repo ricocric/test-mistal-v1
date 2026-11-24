@@ -926,6 +926,15 @@ int main() {
               && (g_rotMulti[2].pivot - g_objs[2].pos).norm() < 1e-12,
               "rotation multi : pivot propre = centre de chaque piece");
 
+        {   /* bandeau multi : message borne (l'ancien message long, combiné au
+               defaut d'abreviation de drawTextClipped, geleait la fenetre)
+               - retour de test T1.9 : fenetre grisee a chaque essai */
+            const std::string sp = statusPrompt();
+            CHECK(!sp.empty() && sp.size() < 200
+                  && sp.find(std::to_string(selectedCount())) != std::string::npos,
+                  "rotation multi : message du bandeau present, born (< 200 car), nombre d'objets annonce");
+        }
+
         g_stubCursorX = 25.0 + 40.0;
         updateRot(W);
         CHECK(std::fabs(g_rotAngle - 10.0) < 1e-12,
