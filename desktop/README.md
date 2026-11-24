@@ -107,6 +107,11 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   (`glPolygonOffset`) pour que les aretes posees dessus ne se noient plus
   dans le volume - on voit toujours exactement quelle piece est selectionnee
   avant une action (suppression, duplication, export) ;
+- **touche Suppr (retour de test T1.6.2)** : selectionner a la souris puis
+  supprimer au clavier (poste de travail classique des operations
+  sequentielles ; copier/coller au clavier restent au backlog) - la touche
+  agit en mode neutre uniquement (jamais pendant une extrusion/rotation ou
+  un deplacement) ;
 - la batterie est a **122 verifications** (+ export cible OBJ/STL verifie
   par relecture : un seul objet exporte et le bon, STL binaire taille
   exacte 84+50x12 ; suppression : selection suivie, index invalides,

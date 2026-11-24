@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.6.1";
+static const char* BUILD_VERSION = "T1.6.2";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -2002,6 +2002,10 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
         if (g_rotMode && !g_rotActive) {
             const char c = axisLetterFromScancode(scancode);
             if (c) { rotBegin(w, c - 'x'); return; }
+        }
+        if (key == GLFW_KEY_DELETE && g_mode == M_None) {   /* Suppr (retour de test : selectionner a la souris, supprimer au clavier) */
+            if (g_selected >= 0) deleteObject(g_selected);
+            return;
         }
         if (key == GLFW_KEY_F) frameSelected();
         if (key == GLFW_KEY_H) { goHome(); std::printf("vue d'origine\n"); }
