@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.6.4";
+static const char* BUILD_VERSION = "T1.6.5";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1928,7 +1928,9 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
                 std::printf("mode selection\n");
             }
         } else if (key == GLFW_KEY_ESCAPE) {
-            rotCancel();                /* premier Echap : annule la rotation, reste en mode */
+            rotCancel();                /* Echap : annule la rotation ET quitte le mode (sortie de l'etat en cours) */
+            g_rotMode = false;
+            std::printf("\nmode selection\n");
         } else if (key == GLFW_KEY_R) {
             rotCancel();                /* R disponible a tout moment : quitte le mode */
             g_rotMode = false;
@@ -1978,7 +1980,9 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
                 std::printf("mode selection\n");
             }
         } else if (key == GLFW_KEY_ESCAPE) {
-            ppCancel();                 /* premier Echap : annule la face, reste en mode */
+            ppCancel();                 /* Echap : annule la face ET quitte le mode P (sortie de l'etat en cours) */
+            g_ppMode = false;
+            std::printf("\nmode selection\n");
         } else if (key == GLFW_KEY_P) {
             ppCancel();                 /* P disponible a tout moment : quitte le mode */
             g_ppMode = false;
@@ -1993,7 +1997,11 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             return;
         }
         if (key == GLFW_KEY_ESCAPE) {
-            if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("mode selection\n"); return; }
+            /* Echelle Echap : d'abord sortir de l'etat en cours (mode P/R en attente,
+               puis deselection) ; fermer seulement quand plus rien n'est actif. */
+            if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); return; }
+            if (g_selected >= 0) { g_selected = -1; std::printf("\nselection annulee\n"); return; }
+            std::printf("\nfermeture (aucun etat en cours)\n");
             glfwSetWindowShouldClose(w, GLFW_TRUE);
         }
         if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending) {

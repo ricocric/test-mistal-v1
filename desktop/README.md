@@ -124,6 +124,13 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   complet via le meme dialogue que le menu Fichier (`Enregistrer le
   projet...`) ; agit uniquement en mode neutre - jamais pendant les saisies
   dup/extrusion/rotation actives, comme tous les raccourcis du bloc neutre ;
+- **echelle Echap (retour de test T1.6.5)** : une seule Echap = **sortir de
+  l'etat en cours** - pendant une frappe extrusion/rotation, elle annule
+  l'action ET quitte le mode (meme logique que le clic droit) ; en mode P/R
+  sans action en cours, elle quitte le mode ; avec une selection, elle la
+  deselectionne (`selection annulee`) ; la fenetre ne se ferme que quand plus
+  aucun etat n'est actif, avec message console explicite
+  (`fermeture (aucun etat en cours)`) ;
 - la batterie est a **122 verifications** (+ export cible OBJ/STL verifie
   par relecture : un seul objet exporte et le bon, STL binaire taille
   exacte 84+50x12 ; suppression : selection suivie, index invalides,
