@@ -2002,7 +2002,6 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
                clavier) : fermeture volontaire par Fichier > Quitter uniquement. */
             if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); return; }
             if (g_selected >= 0) { g_selected = -1; std::printf("\nselection annulee\n"); return; }
-            std::printf("\nEchap : rien a annuler (fermeture par Fichier > Quitter seule)\n");
         }
         if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending) {
             g_ppMode = !g_ppMode;
