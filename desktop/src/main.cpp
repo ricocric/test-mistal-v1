@@ -692,9 +692,9 @@ static void importFile() {
 /* Duplication multi-instances (menu contextuel) : copies identiques posees
    vers +X, meme anti-superposition que l'import (decalage juste apres le bord
    de l'objet en collision, marge 0.25). */
-static void duplicateSelected(int n) {
-    if (g_selected < 0 || g_selected >= (int)g_objs.size() || n <= 0) return;
-    const Object src = g_objs[(size_t)g_selected];
+static void duplicateObject(int idx, int n) {
+    if (idx < 0 || idx >= (int)g_objs.size() || n <= 0) return;
+    const Object src = g_objs[(size_t)idx];
     const double spanX = (src.bmax.x - src.bmin.x) * src.scl;
     const double step = spanX + 0.25;
     int made = 0;
@@ -719,14 +719,17 @@ static void duplicateSelected(int n) {
     std::printf("duplication : %s x%d (copies posees vers +X, pas de %.3f)\n", src.name.c_str(), made, step);
 }
 
-static int askInstanceCount() {
-    std::printf("Dupliquer : nombre d'instances (Entree = 1) : ");
-    std::fflush(stdout);
-    std::string line;
-    std::getline(std::cin, line);
-    const long n = std::atol(line.c_str());
-    if (n <= 0) return 1;
-    return (int)std::min<long>(n, 999);
+/* saisie du nombre d'instances dans la FENETRE au clavier (modele Push/Pull :
+   chiffres puis Entree) — jamais de getline bloquant dans la boucle de jeu */
+static bool g_dupPending = false;
+static int g_dupSrc = -1;
+static std::string g_dupNumBuf;
+
+static void dupStartPrompt() {
+    g_dupPending = true;
+    g_dupSrc = g_selected;
+    g_dupNumBuf.clear();
+    std::printf("Dupliquer : tapez le nombre d'instances puis Entree (Entree sans chiffre = 1, maximum 999 ; Echap pour annuler)\n");
 }
 
 /* ------------------------------------------------------------------ */
@@ -983,7 +986,7 @@ static void showContextMenu(GLFWwindow* w) {
     const int id = (int)TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, glfwGetWin32Window(w), nullptr);
     DestroyMenu(m);
     if (id == IDM_INFO_OBJECT) showInfoDialog("Infos objet", info);
-    else if (id == IDM_DUPLICATE) duplicateSelected(askInstanceCount());
+    else if (id == IDM_DUPLICATE) dupStartPrompt();
 #else
     (void)w;
 #endif
@@ -1666,6 +1669,32 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
 }
 
 static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
+    if (g_dupPending) {
+        if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
+        const bool topRow = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
+        const bool padRow = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
+        if (topRow || padRow) {
+            if (g_dupNumBuf.size() < 4)
+                g_dupNumBuf += padRow ? char('0' + (key - GLFW_KEY_KP_0)) : char(key);
+            std::printf("\rNombre d'instances : %s — Entree pour dupliquer (vide = 1)   ", g_dupNumBuf.c_str());
+            std::fflush(stdout);
+        } else if (key == GLFW_KEY_BACKSPACE) {
+            if (!g_dupNumBuf.empty()) g_dupNumBuf.pop_back();
+            std::printf("\rNombre d'instances : %s — Entree pour dupliquer (vide = 1)   ", g_dupNumBuf.c_str());
+            std::fflush(stdout);
+        } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+            const long n = g_dupNumBuf.empty() ? 1 : std::atol(g_dupNumBuf.c_str());
+            g_dupPending = false;
+            g_dupNumBuf.clear();
+            duplicateObject(g_dupSrc, (int)std::min<long>(std::max<long>(n, 1), 999));
+            return;
+        } else if (key == GLFW_KEY_ESCAPE) {
+            g_dupPending = false;
+            g_dupNumBuf.clear();
+            std::printf("\nduplication annulee\n");
+        }
+        return;
+    }
     if (g_rotActive) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
         if ((key >= GLFW_KEY_0 && key <= GLFW_KEY_9) || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA) {
@@ -1735,14 +1764,14 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
             if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("mode selection\n"); return; }
             glfwSetWindowShouldClose(w, GLFW_TRUE);
         }
-        if (key == GLFW_KEY_P && g_mode == M_None) {
+        if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending) {
             g_ppMode = !g_ppMode;
             if (g_ppMode) g_rotMode = false;
             std::printf(g_ppMode
                 ? "mode Push/Pull : cliquez une face (dessus ou cote), deplacez, puis re-cliquez pour poser\n"
                 : "mode selection\n");
         }
-        if (key == GLFW_KEY_R && g_mode == M_None) {
+        if (key == GLFW_KEY_R && g_mode == M_None && !g_dupPending) {
             g_rotMode = !g_rotMode;
             if (g_rotMode) g_ppMode = false;
             std::printf(g_rotMode

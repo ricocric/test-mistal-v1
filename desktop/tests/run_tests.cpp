@@ -451,7 +451,7 @@ int main() {
         const double colW[3] = {0.5, 0.5, 0.5};
         g_objs.push_back(makeBoxObject("Solo", Vec3(0, 1, 0), Vec3(1, 1, 1), colW));
         g_selected = 0;
-        duplicateSelected(3);
+        duplicateObject(0, 3);
         CHECK(g_objs.size() == 4, "duplication : 3 copies du cube seul");
         bool nomOK = g_objs[1].name == "Solo (1)" && g_objs[2].name == "Solo (2)" && g_objs[3].name == "Solo (3)";
         CHECK(nomOK, "duplication : noms numerotes");
@@ -467,7 +467,7 @@ int main() {
               "duplication : copies identiques a l'original (meme mesh)");
         buildScene();
         g_selected = 0;                     /* voisin Pave B a droite : copies poussees au-dela */
-        duplicateSelected(1);
+        duplicateObject(0, 1);
         bool sepScene = true;
         for (size_t i = 0; sepScene && i < g_objs.size(); ++i)
             for (size_t j = i + 1; sepScene && j < g_objs.size(); ++j)

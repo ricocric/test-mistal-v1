@@ -7,10 +7,12 @@ precision** natif (la version web stockait en Float32).
 ## Outillages T1 (celui-ci) : duplication + rotation
 
 - **Duplication** : menu contextuel (clic droit sur un objet) > **Dupliquer...**
-  — nombre d'instances demande dans la console (Entree = 1, maximum 999) ;
-  copies posees en ligne vers +X (pas = portee + 0.25) avec la meme
-  anti-superposition que l'import : une copie qui rencontre un voisin est
-  poussee au-dela de son bord ; nums numerotes depuis le nom source ;
+  — nombre d'instances tape dans la fen^etre au clavier puis **Entree** (Entree
+  sans chiffre = 1, maximum 999, Echap pour annuler, meme modele de saisie que
+  Push/Pull — jamais d'attente bloquante dans la boucle de jeu) ; copies posees
+  en ligne vers +X (pas = portee + 0.25) avec la meme anti-superposition que
+  l'import : une copie qui rencontre un voisin est poussee au-dela de son bord ;
+  noms numerotes depuis le nom source ;
 - **Rotation** : touche **R** (bascule du mode, exclusif avec Push/Pull) —
   selectionnez un objet puis **X, Y ou Z** (lettre, AZERTY inclus) pour fixer
   l'axe ; la piece tourne **autour de son centre** en bougeant la souris
