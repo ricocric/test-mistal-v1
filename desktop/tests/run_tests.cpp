@@ -819,6 +819,45 @@ int main() {
               "suppression multi : selection vide = rien de supprime");
     }
 
+    /* 22b - T1.7.1 : durcissement des etats de selection (crash Ctrl+clic, point 4 du test T1.7) */
+    {
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        const double colM[3] = {0.6, 0.6, 0.6};
+        g_objs.push_back(makeBoxObject("C1", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("C2", Vec3(3, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+
+        /* scene du crash (binaire d'avant durcissement) : Ctrl+clic pur puis titre ;
+           l'ancien code lisait g_objs[(size_t)g_selected] avec g_selected=-1 */
+        g_selMulti.push_back(0);
+        updateWindowTitle(W);
+        CHECK(selectedIndices().size() == 1 && selectedIndices()[0] == 0,
+              "titre : selection pure Ctrl (principal -1) affichee par la liste elagee, sans acces perime");
+
+        /* promotion d'un multi perime : elague, premier valide devient principal */
+        g_selected = 0; g_selMulti.clear();
+        g_selMulti.push_back(99); g_selMulti.push_back(1);
+        toggleSelect(0);
+        CHECK(g_selected == 1 && g_selMulti.empty(),
+              "promotion : un multi perime est elague, le premier valide devient principal");
+
+        /* promotion vers un multi entierement perime : deselection propre */
+        g_selected = 0; g_selMulti.clear();
+        g_selMulti.push_back(99);
+        toggleSelect(0);
+        CHECK(g_selected == -1 && g_selMulti.empty(),
+              "promotion : tous les multi perimes = deselection propre");
+
+        /* deplacement avec selection principale perimee : sortie neutre, jamais d'acces */
+        g_selected = (int)g_objs.size();
+        g_mode = M_Drag;
+        updateDrag(W);
+        CHECK(g_mode == M_None,
+              "drag : selection principale perimee = retour neutre sans acces");
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }

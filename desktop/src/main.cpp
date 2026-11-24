@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.7";
+static const char* BUILD_VERSION = "T1.7.1";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -173,6 +173,14 @@ static void toggleSelect(int i) {
         g_selected = g_selMulti.front();                        /* un autre devient principal */
         g_selMulti.erase(g_selMulti.begin());
         std::sort(g_selMulti.begin(), g_selMulti.end());
+        /* (T1.7.1) defense : l' indice promu doit appartenir a la scene ;
+           un multi perime est elague, le premier valide devient principal */
+        if (g_selected < 0 || g_selected >= (int)g_objs.size()) {
+            g_selMulti.erase(std::remove_if(g_selMulti.begin(), g_selMulti.end(),
+                    [](int j) { return j < 0 || j >= (int)g_objs.size(); }), g_selMulti.end());
+            g_selected = g_selMulti.empty() ? -1 : g_selMulti.front();
+            if (!g_selMulti.empty()) g_selMulti.erase(g_selMulti.begin());
+        }
         return;
     }
     auto it = std::find(g_selMulti.begin(), g_selMulti.end(), i);
@@ -375,6 +383,8 @@ static bool rayObjectTri(const Vec3& org, const Vec3& dir, const Object& o, doub
     double best = 1e300;
     for (size_t i = 0; i < o.tri.size(); i += 3) {
         double t;
+        /* (T1.7.1) defense : un tri dont les indices depassent les sommets est ignore */
+        if (o.tri[i] >= o.v.size() || o.tri[i + 1] >= o.v.size() || o.tri[i + 2] >= o.v.size()) continue;
         if (rayTri(orgL, dirL, o.v[o.tri[i]], o.v[o.tri[i + 1]], o.v[o.tri[i + 2]], t) && t < best) {
             best = t;
             if (triIdx) *triIdx = i / 3;
@@ -433,7 +443,10 @@ static void recordAxisKey(int scancode, int action) {
 }
 
 static void updateDrag(GLFWwindow* w) {
-    if (g_selected < 0) { g_mode = M_None; return; }
+    if (g_selected < 0 || g_selected >= (int)g_objs.size()) {
+        g_mode = M_None;              /* duree : selection perimee = retour neutre, jamais d'acces */
+        return;
+    }
     const int axis = (g_axisHeld[0]) ? 0 : (g_axisHeld[1]) ? 1 : (g_axisHeld[2]) ? 2 : -1;
     if (axis != g_lockAxis) {
         g_lockAxis = axis;
@@ -1308,7 +1321,7 @@ static double g_ppStatusTick = 0.0;
 
 static bool makeExtrude(const Object& o, size_t clickedTri, Extrude& dd) {
     const size_t triCount = o.tri.size() / 3;
-    if (o.tri.size() < 9 || clickedTri >= triCount) return false;
+    if (o.tri.size() < 9 || clickedTri >= triCount || clickedTri >= o.n.size()) return false;
     const Vec3 n0raw = o.n[clickedTri];
     if (!(dot(n0raw, n0raw) > 0.5)) return false;
     const Vec3 n0 = n0raw;
@@ -2194,6 +2207,9 @@ static void drawObject(const Object& o, bool selected) {
     glEnable(GL_LIGHTING);
     glBegin(GL_TRIANGLES);
     for (size_t i = 0, t = 0; i < o.tri.size(); i += 3, ++t) {
+        /* (T1.7.1) defense : un tri dont les indices depassent les donnees est ignore */
+        if (t >= o.n.size() || o.tri[i] >= o.v.size() || o.tri[i + 1] >= o.v.size() || o.tri[i + 2] >= o.v.size())
+            continue;
         glNormal3dv(&o.n[t].x);
         if (selected) glColor3d(0.45, 0.7, 0.9);
         else glColor3dv(o.col);
@@ -2211,6 +2227,7 @@ static void drawObject(const Object& o, bool selected) {
     }
     else glColor3d(0.2, 0.2, 0.22);
     for (const auto& e : o.edges) {
+        if (e.first < 0 || e.first >= (int)o.v.size() || e.second < 0 || e.second >= (int)o.v.size()) continue;
         glVertex3dv(&o.v[e.first].x);
         glVertex3dv(&o.v[e.second].x);
     }

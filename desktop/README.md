@@ -162,6 +162,32 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   d'export, STL 24 tris taille exacte, duplication/retrait multi, suppression
   multi avec reste intact et selection videe).
 
+### Point 4 du test T1.7 (crash Ctrl+clic) - binaire T1.7.1
+
+- **cause racine** : sur un Ctrl+clic PUR (aucune selection prealable, donc
+  selection portee par la multi, principal reste a -1), l'ancien titre lisait
+  `g_objs[(size_t)g_selected]` brut = acces a `g_objs[-1]` = assertion MSVC
+  "vector subscript out of range" (reproduite et prouvee hors Windows) ;
+- la build T1.7.1 lit le titre par la liste elagee et durcit aussi : le drag
+  (selection principale perimee = retour neutre), la promotion multi (indice
+  perime elague, premier valide promu ou deselection propre), et les tris
+  dont les indices depassent les donnees (rendu, rayons, capture) sont
+  ignores (maillages degeneres) ;
+- la batterie passe a **137 verifications** (+4 : titre selection pure Ctrl,
+  promotion avec elagage, promotion tout-perime, drag perime) ;
+- **sequence de test corrigee** : le `git pull` doit se faire APRES le
+  `git switch` (pull sur la branche testee, jamais seulement sur main), sinon
+  la branche locale reste a l'ancien commit et le binaire est perime :
+
+```
+cd C:\Users\rico\source\repos
+git switch <branche>
+git pull
+cd desktop
+cmake --build build
+build\Debug\sketch3d.exe
+```
+
 ## Outillages T1 : duplication + rotation
 
 - **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de

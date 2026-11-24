@@ -12,12 +12,17 @@ void glfwSwapBuffers(GLFWwindow*){}
 void glfwSetWindowTitle(GLFWwindow*, const char*){UNUSED(0);}
 void glfwPollEvents(){}
 void glfwSwapInterval(int){}
-void glfwGetCursorPos(GLFWwindow*,double*,double*){}
+/* curseur scriptable : position vue par l'application (le harnais et le
+   simulateur d'evenements la pilotent ; 0 par defaut, jamais non initialise) */
+double g_stubCursorX = 0.0, g_stubCursorY = 0.0;
+void glfwGetCursorPos(GLFWwindow*,double* x,double* y){*x=g_stubCursorX;*y=g_stubCursorY;}
 void glfwSetScrollCallback(GLFWwindow*,GLFWscrollfun){}
 void glfwSetMouseButtonCallback(GLFWwindow*,GLFWmousebuttonfun){}
 void glfwSetKeyCallback(GLFWwindow*,GLFWkeyfun){}
 void glfwSetFramebufferSizeCallback(GLFWwindow*,GLFWframebuffersizefun){}
-double glfwGetTime(void){return 0.0;}
+/* horloge scriptable : avancee par le simulateur (double-clic 0.3 s exerce) */
+double g_stubTime = 0.0;
+double glfwGetTime(void){return g_stubTime;}
 const char* glfwGetKeyName(int,int){return nullptr;}
 void glBegin(GLenum){} void glEnd(void){}
 void glVertex3d(GLdouble,GLdouble,GLdouble){}
