@@ -18,8 +18,11 @@ precision** natif (la version web stockait en Float32).
   l'axe ; la piece tourne **autour de son centre** en bougeant la souris
   horizontalement (0.25 deg/pixel), ou tapez des **chiffres** (signe autorise,
   virgule ou point) + **Entree** pour un angle exact ; **clic gauche** : pose ;
-  **clic droit ou Echap** : annule ; **R** pendant une rotation : annule et
-  quitte le mode ;
+  **clic droit ou Echap** pendant une rotation : annule la rotation continue ;
+  **appuyer une autre lettre (X/Y/Z) pendant une rotation** : pose la rotation
+  en cours et repart directement de la geometrie courante sur le nouvel axe,
+  sans deselectionner ; **clic droit hors rotation** (ou Echap, ou R) : quitte
+  le mode rotation ;
 - la rotation s'applique aux sommets locaux (double precision) : tout le reste
   (deplacement, Push/Pull, exports, fichier projet) marche sur la piece tournee
   sans modification du modele de donnees ;

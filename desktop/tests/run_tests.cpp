@@ -505,6 +505,16 @@ int main() {
                 && std::fabs(o2.v[i].z + base2[i].z) < 1e-12;
         CHECK(v180 && (o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl) - centre).norm() < 1e-9,
               "rotation : 180 deg en X -> miroir Y/Z, pivot fixe");
+        /* changement d'axe en chaine (lettre pendant une rotation) : +90 Z pose,
+           puis +90 X sur la geometrie courante avec pivot recadre */
+        applyRotationAt(o2, base2, 2, 90.0);
+        const std::vector<Vec3> z90 = o2.v;
+        g_rotPivot = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
+        applyRotationAt(o2, z90, 0, 90.0);
+        const Vec3 centre3 = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
+        CHECK(std::fabs(signedVolume(o2) - volAvant) < 1e-9 && countNonManifold(o2) == 0
+              && (centre3 - centre).norm() < 1e-9,
+              "rotation : chaine +90 Z puis +90 X -> volume, aretes et pivot stables");
     }
 
     std::printf("resume : %d echec(s)\n", g_fail);

@@ -1544,6 +1544,7 @@ static void rotBegin(GLFWwindow* w, int axis) {
     g_rotBase = o.v;
     g_rotPivot = o.pos + (o.bmin + o.bmax) * (0.5 * o.scl);
     g_rotAngle = 0.0;
+    g_rotNumBuf.clear();
     double dummy = 0.0;
     glfwGetCursorPos(w, &g_rotLastX, &dummy);
     g_rotActive = true;
@@ -1599,7 +1600,8 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         if (action == GLFW_PRESS && g_ppActive) ppCancel();
         else if (action == GLFW_PRESS && g_rotActive) rotCancel();
-        else if (action == GLFW_PRESS && !g_ppMode && !g_rotMode) showContextMenu(w);
+        else if (action == GLFW_PRESS && g_rotMode) { g_rotMode = false; std::printf("\nmode selection\n"); }
+        else if (action == GLFW_PRESS && !g_ppMode) showContextMenu(w);
         return;
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
@@ -1726,6 +1728,12 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
             rotCancel();                /* R disponible a tout moment : quitte le mode */
             g_rotMode = false;
             std::printf("\nmode selection\n");
+        } else {
+            const char c = axisLetterFromScancode(scancode);   /* autre lettre = pivoter d'axe direct */
+            if (c) {
+                rotCommit();            /* pose la rotation en cours */
+                rotBegin(w, c - 'x');   /* repart de la geometrie courante, angle a zero */
+            }
         }
         return;
     }
