@@ -298,7 +298,7 @@ static void frameScene() {
 }
 
 static void frameSelected() {
-    if (g_selected < 0) { frameScene(); return; }
+    if (g_selected < 0 || g_selected >= (int)g_objs.size()) { frameScene(); return; }
     const Object& o = g_objs[(size_t)g_selected];
     const Vec3 d = (o.bmax - o.bmin) * (0.5 * o.scl);
     /* cible en coordonnees MONDE : pos est deja monde, bmin/bmax sont locaux
@@ -2397,9 +2397,10 @@ static void updateWindowTitle(GLFWwindow* w) {
         std::snprintf(titre, sizeof(titre), "Sketch3D - build %s - %zu objet(s) - selection : %d/%zu objets",
                       BUILD_VERSION, g_objs.size(), (int)sel.size(), g_objs.size());
     else if (sel.size() == 1)
+        /* sel[0] : la liste a deja ete elaguee des indices invalides (jamais d'acces perime) */
         std::snprintf(titre, sizeof(titre), "Sketch3D - build %s - %zu objet(s) - selection : %s (%d/%zu)",
-                      BUILD_VERSION, g_objs.size(), g_objs[(size_t)g_selected].name.c_str(),
-                      g_selected + 1, g_objs.size());
+                      BUILD_VERSION, g_objs.size(), g_objs[(size_t)sel[0]].name.c_str(),
+                      sel[0] + 1, g_objs.size());
     else
         std::snprintf(titre, sizeof(titre), "Sketch3D - build %s - %zu objet(s) - selection : aucune",
                       BUILD_VERSION, g_objs.size());
