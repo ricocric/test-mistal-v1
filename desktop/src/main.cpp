@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.5.3";
+static const char* BUILD_VERSION = "T1.5.4";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1603,7 +1603,7 @@ static void rotBegin(GLFWwindow* w, int axis) {
     double dummy = 0.0;
     glfwGetCursorPos(w, &g_rotLastX, &dummy);
     g_rotActive = true;
-    std::printf("rotation %s de %s autour de son centre : bougez la souris (horizontalement), chiffres + Entree pour un angle exact signe (clic pour poser, Echap ou clic droit pour annuler)\n",
+    std::printf("rotation %s de %s autour de son centre : bougez la souris (horizontalement), chiffres + Entree pour un angle exact signe pose et quitte le mode (clic pour poser, Echap ou clic droit pour annuler)\n",
                 axisName(axis), o.name.c_str());
 }
 
@@ -1765,10 +1765,14 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (!g_dupNumBuf.empty()) g_dupNumBuf.pop_back();
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
-            const long n = g_dupNumBuf.empty() ? 1 : std::atol(g_dupNumBuf.c_str());
+            const bool vide = g_dupNumBuf.empty();
+            const long n = vide ? 1 : std::atol(g_dupNumBuf.c_str());
             g_dupPending = false;
             g_dupNumBuf.clear();
-            duplicateObject(g_dupSrc, (int)std::min<long>(std::max<long>(n, 1), 999));
+            if (!vide && (n < 1 || n > 999))
+                std::printf("\nNombre invalide : entrez de 1 a 999 puis Entree (aucune copie posee ; le signe n est pas gere ici)\n");
+            else
+                duplicateObject(g_dupSrc, (int)n);
             return;
         } else if (key == GLFW_KEY_ESCAPE) {
             g_dupPending = false;
@@ -1797,7 +1801,9 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
                 g_rotAngle = a;
                 applyRotationAt(g_objs[(size_t)g_rotObj], g_rotBase, g_rotAxis, a);
                 g_rotNumBuf.clear();
-                std::printf("\nRotation posee au clavier : %+.2f deg — cliquez pour valider, ou continuez a tourner\n", a);
+                rotCommit();           /* Entree = pose, comme le clic gauche */
+                g_rotMode = false;     /* sortie du mode (meme contrat que l'extrusion) */
+                std::printf("mode selection\n");
             }
         } else if (key == GLFW_KEY_ESCAPE) {
             rotCancel();                /* premier Echap : annule la rotation, reste en mode */
@@ -1980,7 +1986,7 @@ static std::string statusPrompt() {
     else if (g_ppActive)
         std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (clic gauche : poser ; chiffres puis Entree : dimension exacte, + = tirer / - = pousser ; clic droit ou Echap : annuler)", g_pp.d);
     else if (g_rotActive)
-        std::snprintf(buf, sizeof(buf), "Rotation %s : %+.1f deg  (clic gauche : poser ; X/Y/Z : changer d axe ; chiffres puis Entree : angle exact ; clic droit ou Echap : annuler)", axisName(g_rotAxis), g_rotAngle);
+        std::snprintf(buf, sizeof(buf), "Rotation %s : %+.1f deg  (clic gauche : poser ; X/Y/Z : changer d axe ; chiffres puis Entree : angle exact pose et quitte le mode ; clic droit ou Echap : annuler)", axisName(g_rotAxis), g_rotAngle);
     else if (g_ppMode) {
         return "Push/Pull : cliquez une face d'un objet";
     } else if (g_rotMode) {

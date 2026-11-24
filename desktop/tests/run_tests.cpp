@@ -475,6 +475,13 @@ int main() {
                 sepScene = !overlapsWorld(g_objs[i], g_objs[j]);
         CHECK(sepScene && g_objs.size() == 4 && g_objs[3].pos.x > g_objs[1].bmax.x,
               "duplication : copie poussee au-dela du voisin Pave B (anti-superpositionImport)");
+        /* champ nombre (retour de test T1.5.4 : signe non gere dans la duplication,
+           options proposees) : refuse proprement - aucune copie, aucun crash. */
+        const size_t nAvant = g_objs.size();
+        duplicateObject(0, -3);
+        duplicateObject(0, 0);
+        CHECK(g_objs.size() == nAvant,
+              "duplication : nombre negatif ou nul refuse (option retenue : aucune copie posee)");
     }
 
     /* 18 - outillage T1 : rotation autour d'un axe monde par le centre */

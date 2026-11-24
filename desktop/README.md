@@ -47,9 +47,21 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   l'autre cote (message `Butee atteinte : valeur calee a ...`) ; lorsqu'un
   push consomme tout l enfoncement, la face devient feuille (le pull
   recreera le volume) ;
-- la batterie monte a **108 verifications** (pose clavier : valeur negative =
-  enfoncement -0.5 le long de la normale, topologie stable ; valeur au-dela
-  de la butee = rien ne depasse le plan, motif butee eprouve).
+- **validation = pose, partout (retour de test)** : meme contrat pour la
+  rotation que pour l'extrusion - chiffres + **Entree appliquent l'angle,
+  posent la rotation et quittent le mode** (avant, la rotation restait
+  active et le moindre mouvement de souris reprenait), la duplication garde
+  Entree vide = 1 ;
+- **champ nombre de la duplication (retour de test)** : valeur hors plage ou
+  signee = **refusee** (option retenue : aucune copie posee, message console;
+  le champ n'accepte d'ailleurs pas de tiret) - supprimer des objets sera un
+  outil distinct prevu au backlog ;
+- **separateur decimal** : pris en compte pour l'extrusion et la rotation
+  (point, virgule ou touche decimale du pave, affiche en point dans la boite ;
+  le champ nombre est un entier, sans separateur par conception) ;
+- la batterie monte a **109 verifications** (+ enfoncement -0.5 le long de la
+  normale ; valeur au-dela de la butee = rien ne depasse le plan ; nombre
+  negatif/nul de duplication refuse).
 
 ## Outillages T1 : duplication + rotation
 
