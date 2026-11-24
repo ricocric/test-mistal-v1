@@ -506,8 +506,7 @@ int main() {
         const std::vector<Vec3> base2 = o2.v;
         const Vec3 centre = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
         const double volAvant = signedVolume(o2);
-        g_rotPivot = centre;
-        applyRotationAt(o2, base2, 2, 90.0);   /* Z de +90 deg */
+        applyRotationAt(o2, base2, centre, 2, 90.0);   /* Z de +90 deg */
         const double dx = o2.bmax.x - o2.bmin.x, dy = o2.bmax.y - o2.bmin.y, dz = o2.bmax.z - o2.bmin.z;
         const Vec3 centre2 = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
         CHECK(std::fabs(dx - 1.2) < 1e-9 && std::fabs(dy - 3.0) < 1e-9 && std::fabs(dz - 1.6) < 1e-9,
@@ -516,11 +515,11 @@ int main() {
         CHECK(std::fabs(signedVolume(o2) - volAvant) < 1e-9 && countNonManifold(o2) == 0,
               "rotation : volume preserve, aretes toujours coherentes");
         const std::vector<Vec3> at90 = o2.v;
-        applyRotationAt(o2, at90, 2, -90.0);
+        applyRotationAt(o2, at90, centre, 2, -90.0);
         bool vRet = o2.v.size() == base2.size();
         for (size_t i = 0; vRet && i < base2.size(); ++i) vRet = (o2.v[i] - base2[i]).norm() < 1e-12;
         CHECK(vRet, "rotation : +90 puis -90 -> geometrie d'origine a 1e-12 pres");
-        applyRotationAt(o2, base2, 0, 180.0);   /* X de 180 deg */
+        applyRotationAt(o2, base2, centre, 0, 180.0);   /* X de 180 deg */
         bool v180 = o2.v.size() == base2.size();
         for (size_t i = 0; v180 && i < base2.size(); ++i)
             v180 = std::fabs(o2.v[i].x - base2[i].x) < 1e-12
@@ -530,10 +529,9 @@ int main() {
               "rotation : 180 deg en X -> miroir Y/Z, pivot fixe");
         /* changement d'axe en chaine (lettre pendant une rotation) : +90 Z pose,
            puis +90 X sur la geometrie courante avec pivot recadre */
-        applyRotationAt(o2, base2, 2, 90.0);
+        applyRotationAt(o2, base2, centre, 2, 90.0);
         const std::vector<Vec3> z90 = o2.v;
-        g_rotPivot = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
-        applyRotationAt(o2, z90, 0, 90.0);
+        applyRotationAt(o2, z90, centre, 0, 90.0);
         const Vec3 centre3 = o2.pos + (o2.bmin + o2.bmax) * (0.5 * o2.scl);
         CHECK(std::fabs(signedVolume(o2) - volAvant) < 1e-9 && countNonManifold(o2) == 0
               && (centre3 - centre).norm() < 1e-9,
@@ -899,6 +897,97 @@ int main() {
               "C : rayon vers le ciel, aucun point vise -> false");
 
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    /* 24 - T1.9 : rotation multi (cas 1) - chaque objet tourne autour de son
+       PROPRE centre, angle et axe communs ; mono et voie numerique inchanges */
+    {
+        extern double g_stubCursorX, g_stubCursorY;
+        const double colM[3] = {0.6, 0.6, 0.6};
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_rotActive = false; g_rotMode = false; g_rotMulti.clear(); g_rotNumBuf.clear();
+        g_objs.push_back(makeBoxObject("RA", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("RB", Vec3(2, 0.5, 0), Vec3(1.0, 0.25, 0.5), colM));
+        g_objs.push_back(makeBoxObject("RC", Vec3(5, 0.5, 0), Vec3(0.25, 0.5, 0.25), colM));
+
+        selectOnly(0);
+        toggleSelect(1);
+        toggleSelect(2);
+        CHECK(selectedCount() == 3, "rotation multi : 3 objets selectionnes (RA + RB + RC)");
+
+        g_stubCursorX = 25.0; g_stubCursorY = 0.0;
+        rotBegin(W, 2);
+        CHECK(g_rotActive && g_rotMulti.size() == 3
+              && g_rotMulti[0].idx == 0 && g_rotMulti[1].idx == 1 && g_rotMulti[2].idx == 2,
+              "rotation multi : capture d'une base par objet selectionne");
+        CHECK((g_rotMulti[0].pivot - g_objs[0].pos).norm() < 1e-12
+              && (g_rotMulti[1].pivot - g_objs[1].pos).norm() < 1e-12
+              && (g_rotMulti[2].pivot - g_objs[2].pos).norm() < 1e-12,
+              "rotation multi : pivot propre = centre de chaque piece");
+
+        g_stubCursorX = 25.0 + 40.0;
+        updateRot(W);
+        CHECK(std::fabs(g_rotAngle - 10.0) < 1e-12,
+              "rotation multi : souris -> angle commun accumule (0.25 deg/pixel)");
+        {   /* vertex 0 de RB : position monde attendue = rotation de la base par 10 deg */
+            const RotCapture& rc = g_rotMulti[1];
+            const Object& rb = g_objs[(size_t)rc.idx];
+            const Vec3 wxVu = rb.pos + rb.v[0] * rb.scl;
+            const Vec3 wxExact = rotateAroundAxis(rb.pos + rc.base[0] * rb.scl, rc.pivot, 2, 10.0);
+            CHECK((wxVu - wxExact).norm() < 1e-12,
+                  "rotation multi : preview exacte (vertex 0 de RB = rotation 10 deg de sa base)");
+        }
+
+        /* voie numerique : 90 dans le champ puis Entree = pose */
+        const Vec3 cA = g_objs[0].pos, cB = g_objs[1].pos, cC = g_objs[2].pos;
+        const double vAvA = signedVolume(g_objs[0]), vAvB = signedVolume(g_objs[1]), vAvC = signedVolume(g_objs[2]);
+        g_rotMode = true;
+        g_rotNumBuf = "90";
+        onKey(W, GLFW_KEY_ENTER, 0, GLFW_PRESS, 0);
+        CHECK(!g_rotActive && g_rotNumBuf.empty(), "rotation multi : 90 au champ puis Entree pose et quitte");
+        CHECK(g_rotMulti.empty(), "rotation multi : captures liberees apres la pose");
+        const double dxA = g_objs[0].bmax.x - g_objs[0].bmin.x, dyA = g_objs[0].bmax.y - g_objs[0].bmin.y;
+        const double dxB = g_objs[1].bmax.x - g_objs[1].bmin.x, dyB = g_objs[1].bmax.y - g_objs[1].bmin.y, dzB = g_objs[1].bmax.z - g_objs[1].bmin.z;
+        const double dxC = g_objs[2].bmax.x - g_objs[2].bmin.x, dyC = g_objs[2].bmax.y - g_objs[2].bmin.y;
+        CHECK(std::fabs(dxA - 1.0) < 1e-9 && std::fabs(dyA - 1.0) < 1e-9
+              && std::fabs(dxB - 0.5) < 1e-9 && std::fabs(dyB - 2.0) < 1e-9 && std::fabs(dzB - 1.0) < 1e-9
+              && std::fabs(dxC - 1.0) < 1e-9 && std::fabs(dyC - 0.5) < 1e-9,
+              "rotation multi +90 Z : RA cube inchange, RB et RC permutent (0.5 x 2 x 1 et 1 x 0.5 x 0.5)");
+        CHECK((g_objs[0].pos - cA).norm() < 1e-12 && (g_objs[1].pos - cB).norm() < 1e-12
+              && (g_objs[2].pos - cC).norm() < 1e-12,
+              "rotation multi : chaque objet reste sur place (pivot propre, pas de translation de groupe)");
+        CHECK(std::fabs(signedVolume(g_objs[0]) - vAvA) < 1e-9
+              && std::fabs(signedVolume(g_objs[1]) - vAvB) < 1e-9
+              && std::fabs(signedVolume(g_objs[2]) - vAvC) < 1e-9
+              && countNonManifold(g_objs[1]) == 0,
+              "rotation multi : volumes preserves, aretes coherentes apres pose");
+
+        /* annulation : restaure chaque base capturee */
+        g_stubCursorX = 10.0;
+        rotBegin(W, 1);
+        g_stubCursorX = 10.0 + 60.0;
+        updateRot(W);                   /* +15 deg de preview */
+        CHECK(std::fabs(g_rotAngle - 15.0) < 1e-12 && g_rotMulti.size() == 3,
+              "rotation multi : re-capture apres pose, preview active");
+        rotCancel();
+        CHECK(!g_rotActive && g_rotMulti.empty()
+              && std::fabs((g_objs[1].bmax.x - g_objs[1].bmin.x) - 0.5) < 1e-9,
+              "rotation multi : clic droit restaure chaque objet (annulation complete)");
+
+        /* regression mono : selection simple = chemin historique */
+        selectOnly(1);
+        rotBegin(W, 1);
+        CHECK(g_rotActive && g_rotMulti.empty() && g_rotObj == 1 && g_rotBase.size() == g_objs[1].v.size(),
+              "rotation mono : chemin historique intact (pas de capture multi)");
+        rotApplyCurrent(1, 30.0);
+        CHECK(std::fabs(signedVolume(g_objs[1]) - vAvB) < 1e-9
+              && (objectRotationPivot(g_objs[1]) - Vec3(2, 0.5, 0)).norm() < 1e-12,
+              "rotation mono : +30 Y autour du centre propre (pivot = centre)");
+        rotCancel();
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_rotMulti.clear(); g_rotActive = false; g_rotMode = false;
     }
 
     std::printf("resume : %d echec(s)\n", g_fail);

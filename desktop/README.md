@@ -210,6 +210,26 @@ build\Debug\sketch3d.exe
   et echelle exactes), hauteur de fenetre nulle ignoree, impact objet,
   impact sol, rayon vers le ciel = aucun point ; sur la base durcie T1.7.1).
 
+## Rotation multi T1.9 (cas 1 : chaque objet sur son propre centre, angle commun)
+
+- **en selection multiple (Ctrl+clic), R + lettre d'axe (X/Y/Z)** tourne les
+  objets selectionnes **individuellement** : chacun autour de son PROPRE
+  centre (comme le mono), avec le **meme angle et le meme axe** pour tous ;
+- les objets restent a leur place (pas de translation de groupe) - futur cas
+  2 (pivot = barycentre du groupe) et cas 3 (pivot choisi par clic) utilisent
+  le meme moteur : la capture stocke deja une base + un pivot PAR objet ;
+- mêmes revues que la rotation mono : souris en direct (0.25 deg/pixel),
+  chiffres + Entree = angle exact pose et quitte le mode, clic gauche pose,
+  clic droit ou Echap annule TOUT (chaque objet retrouve sa base capturee) ;
+- bandeau : `Rotation multi Z : +12.0 deg sur 3 objets (chacun sur son propre centre)` ;
+- en mono (un seul objet selectionne) : chemin historique strictement inchange ;
+- `applyRotationAt` gere desormais le pivot en parametre explicite (les 3 cas
+  de pivot multi n'ont plus qu'a fournir un pivot different) ;
+- batterie : **158 verifications, 0 echec** (+12 : capture d'une base par
+  objet, pivot propre, angle commun a la souris, preview exacte au vertex,
+  voie numerique 90 + Entree, portees permutees par objet, position figee,
+  volumes preserves, annulation complete, regression mono).
+
 ## Outillages T1 : duplication + rotation
 
 - **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de
