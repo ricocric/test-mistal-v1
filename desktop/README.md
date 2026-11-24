@@ -4,7 +4,27 @@ Transcription du prototype web (`index.html` a la racine du depot) en programme
 natif Windows, par petits lots testables. Modele geometrique en **double
 precision** natif (la version web stockait en Float32).
 
-## Lot N4 (celui-ci)
+## Lot N5.1 (celui-ci) : menus de base
+
+**Barre de menus Windows** (Fichier) et **menu contextuel du clic droit**,
+plus un **fichier de projet** natif.
+
+- **Fichier** : Nouveau projet (scene vide) / Ouvrir un projet (*.s3projet) /
+  Fermer le projet / --- / Importer un objet (OBJ, STL) / Exporter en OBJ /
+  Exporter en STL / --- / Quitter ;
+- **fichier projet `.s3projet`** (texte) : un bloc par objet (nom, position,
+  echelle, couleur, sommets locaux, triangles) — la relecture restaure la scene
+  telle que sauvegardee (pas de normalisation d'echelle ni de pose au sol) ;
+- **menu contextuel (clic droit sur un objet)** : selectionne l'objet, affiche
+  ses infos en console et propose **Infos objet** (position, dimensions monde,
+  echelle, sommets/tris) ; clic droit dans le vide : rien ; pendant le
+  Push/Pull, le clic droit garde son role d'annulation ;
+- raccourcis clavier inchanges : **I** import ; O/S : exports OBJ/STL ;
+- la batterie monte a **84 verifications** (nouvelle famille projet :
+  aller-retour enregistrement/relecture fidele — noms, positions, echelle,
+  topologie, sommets a 1e-12 pres — et infos objet).
+
+## Lot N4
 
 **Push/Pull** (extrusion de face), **soudure des sommets a l'import** et
 **batterie de tests native** (`desktop/tests/`).
