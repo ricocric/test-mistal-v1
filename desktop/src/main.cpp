@@ -849,6 +849,7 @@ static void showInfoDialog(const std::string& title, const std::string& text) {
 enum {
     IDM_NEW_PROJECT = 1,
     IDM_OPEN_PROJECT,
+    IDM_SAVE_PROJECT,
     IDM_CLOSE_PROJECT,
     IDM_IMPORT_OBJECT,
     IDM_EXPORT_OBJ,
@@ -874,6 +875,15 @@ static void handleMenuAction(int id) {
         std::string err;
         if (!loadProject(p, err)) { std::printf("ouverture impossible : %s\n", err.c_str()); return; }
         frameSelected();
+        return;
+    }
+    case IDM_SAVE_PROJECT: {
+        const std::string p = fileDialog(true,
+            "Projets (*.s3projet)\0*.s3projet\0Tous (*.*)\0*.*\0\0",
+            "s3projet", "Enregistrer le projet");
+        if (p.empty()) return;
+        std::string err;
+        if (!saveProject(p, err)) std::printf("enregistrement impossible : %s\n", err.c_str());
         return;
     }
     case IDM_CLOSE_PROJECT:
@@ -951,6 +961,7 @@ static void attachMenus(GLFWwindow* win) {
     HMENU file = CreatePopupMenu();
     AppendMenuA(file, MF_STRING, IDM_NEW_PROJECT, "&Nouveau projet");
     AppendMenuA(file, MF_STRING, IDM_OPEN_PROJECT, "&Ouvrir un projet...");
+    AppendMenuA(file, MF_STRING, IDM_SAVE_PROJECT, "&Enregistrer le projet...");
     AppendMenuA(file, MF_STRING, IDM_CLOSE_PROJECT, "&Fermer le projet");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(file, MF_STRING, IDM_IMPORT_OBJECT, "&Importer un objet...");

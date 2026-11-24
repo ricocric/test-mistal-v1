@@ -10,8 +10,8 @@ precision** natif (la version web stockait en Float32).
 plus un **fichier de projet** natif.
 
 - **Fichier** : Nouveau projet (scene vide) / Ouvrir un projet (*.s3projet) /
-  Fermer le projet / --- / Importer un objet (OBJ, STL) / Exporter en OBJ /
-  Exporter en STL / --- / Quitter ;
+  Enregistrer le projet (*.s3projet) / Fermer le projet / --- / Importer un
+  objet (OBJ, STL) / Exporter en OBJ / Exporter en STL / --- / Quitter ;
 - **fichier projet `.s3projet`** (texte) : un bloc par objet (nom, position,
   echelle, couleur, sommets locaux, triangles) — la relecture restaure la scene
   telle que sauvegardee (pas de normalisation d'echelle ni de pose au sol) ;
