@@ -137,6 +137,31 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   exacte 84+50x12 ; suppression : selection suivie, index invalides,
   liste videe, selection a -1).
 
+## Multi-selection T1.7 : Ctrl+clic (actions multi)
+
+- **Ctrl+clic = ajoute/retire** un objet de la selection (n'importe quel objet,
+  n'importe quel ordre) ; **Ctrl+clic sur le dernier selectionne = deselection
+  totale** (facon SketchUp) ; **clic gauche simple = selection seule** (remplace
+  la multi) ; Ctrl+clic dans le vide : rien (la selection est protegee) ;
+- une seule selection surlignee (aretes jaune vif) pour TOUS les objets :
+  on voit exactement ce que l'action concernera avant de la lancer ;
+- **Echap vide la selection complete** (puis quitte un mode en attente s'il
+  y en a un - meme echelle que T1.6.6) ;
+- **le titre affiche le total** : `selection : 3/12 objets` en multi,
+  `selection : Nom (k/N)` a un seul objet, `aucune` sinon ;
+- **Suppr = supprime toute la selection** (1 objet comme plusieurs, menu
+  contextuel egalement) : message console avec le detail, selection videe ;
+- **Dupliquer... s'applique a chaque objet de la selection** : le nombre tape
+  produit k copies par objet (noms numerotes `Src (k)`), et une valeur
+  negative retire k copies de CHAQUE serie de la selection (les indices
+  sources sont re-resolus par nom a chaque coup, jamais stale) ;
+- **Export de la selection (menu Fichier, sous-menus OBJ/STL) = multi** :
+  tous les objets selectionnes partent dans le meme fichier (ordre des
+  indices, `o Nom` par objet), des 2 objets comme des 12 ;
+- la batterie passe a **133 verifications** (+11 : toggle multi, ordre
+  d'export, STL 24 tris taille exacte, duplication/retrait multi, suppression
+  multi avec reste intact et selection videe).
+
 ## Outillages T1 : duplication + rotation
 
 - **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de

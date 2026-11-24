@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.6.6";
+static const char* BUILD_VERSION = "T1.7";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -140,6 +140,58 @@ struct Object {
 static std::vector<Object> g_objs;
 static int g_selected = -1;
 
+/* multi-selection (T1.7) : g_selected = selection principale (clic gauche),
+   g_selMulti = objets supplementaires (Ctrl+clic : ajoute/retire) ;
+   les actions (export, suppression, duplication) portent sur l'ensemble. */
+static std::vector<int> g_selMulti;
+
+static bool isSelectedRaw(int i) {
+    if (i == g_selected) return true;
+    return std::find(g_selMulti.begin(), g_selMulti.end(), i) != g_selMulti.end();
+}
+static void selectOnly(int i) { g_selected = i; g_selMulti.clear(); }
+static void clearSelection() { g_selected = -1; g_selMulti.clear(); }
+static size_t selectedCount() {
+    if (g_selected < 0) return g_selMulti.size();
+    if (std::find(g_selMulti.begin(), g_selMulti.end(), g_selected) != g_selMulti.end())
+        return g_selMulti.size();
+    return g_selMulti.size() + 1;
+}
+static std::vector<int> selectedIndices() {
+    std::vector<int> r = g_selMulti;
+    if (g_selected >= 0) r.push_back(g_selected);
+    std::sort(r.begin(), r.end());
+    r.erase(std::unique(r.begin(), r.end()), r.end());
+    r.erase(std::remove_if(r.begin(), r.end(),
+                [](int i) { return i < 0 || i >= (int)g_objs.size(); }), r.end());
+    return r;
+}
+static void toggleSelect(int i) {
+    if (i < 0 || i >= (int)g_objs.size()) return;
+    if (i == g_selected) {
+        if (g_selMulti.empty()) { clearSelection(); return; }  /* dernier : deselection totale */
+        g_selected = g_selMulti.front();                        /* un autre devient principal */
+        g_selMulti.erase(g_selMulti.begin());
+        std::sort(g_selMulti.begin(), g_selMulti.end());
+        return;
+    }
+    auto it = std::find(g_selMulti.begin(), g_selMulti.end(), i);
+    if (it != g_selMulti.end()) g_selMulti.erase(it);
+    else g_selMulti.push_back(i);
+}
+static void renumberSelectionAfterDelete(int erasedIdx) {
+    if (g_selected > erasedIdx) --g_selected;
+    else if (g_selected >= (int)g_objs.size()) g_selected = (int)g_objs.size() - 1;
+    std::vector<int> nm;
+    nm.reserve(g_selMulti.size());
+    for (int j : g_selMulti) {
+        if (j == erasedIdx) continue;
+        nm.push_back(j > erasedIdx ? j - 1 : j);
+    }
+    g_selMulti = nm;
+    g_selMulti.erase(std::remove(g_selMulti.begin(), g_selMulti.end(), g_selected), g_selMulti.end());
+}
+
 static void computeObjectDerived(Object& o) {
     o.bmin = Vec3(1e300, 1e300, 1e300);
     o.bmax = Vec3(-1e300, -1e300, -1e300);
@@ -223,7 +275,7 @@ static Vec3 axisVec(int a) { return a == 0 ? Vec3(1, 0, 0) : a == 1 ? Vec3(0, 1,
 
 static void goHome() {
     g_cam = g_camHome;
-    g_selected = -1;
+    clearSelection();
 }
 
 static void frameScene() {
@@ -690,7 +742,7 @@ static void importFile() {
         std::printf("superposition evitee : objet decale de %d pas vers +X, pose a x = %.3f (comme le lot web 2.x)\n",
                     shifts, o.pos.x);
     g_objs.push_back(std::move(o));
-    g_selected = (int)g_objs.size() - 1;
+    selectOnly((int)g_objs.size() - 1);
     frameSelected();
 }
 
@@ -744,10 +796,10 @@ static int removeInstances(int idx, int k) {
         return a.second != b.second ? a.second > b.second : a.first > b.first;
     });
     const int rem = std::min(k, (int)hits.size());
-    for (int r = 0; r < rem; ++r)
+    for (int r = 0; r < rem; ++r) {
         g_objs.erase(g_objs.begin() + hits[(size_t)r].first);
-    if (g_selected >= (int)g_objs.size())
-        g_selected = (int)g_objs.size() - 1;
+        renumberSelectionAfterDelete(hits[(size_t)r].first);
+    }
     if (rem > 0)
         std::printf("retrait : %d copie(s) supprimee(s) de la serie %s (%d instance(s) restante(s))\n",
                     rem, g_objs[(size_t)idx].name.c_str(), (int)hits.size() - rem);
@@ -760,22 +812,69 @@ static void deleteObject(int idx) {
     if (idx < 0 || idx >= (int)g_objs.size()) return;
     const std::string nm = g_objs[(size_t)idx].name;
     g_objs.erase(g_objs.begin() + idx);
-    if (g_selected > idx) --g_selected;
-    else if (g_selected >= (int)g_objs.size()) g_selected = (int)g_objs.size() - 1;
+    renumberSelectionAfterDelete(idx);
     std::printf("suppression : %s (%zu objet(s) restant(s))\n", nm.c_str(), g_objs.size());
+}
+
+/* suppression de TOUTE la selection (T1.7 : 1 objet comme plusieurs) ;
+   reconstruction en une passe, selection videe apres coup.              */
+static size_t deleteSelectedSet() {
+    const std::vector<int> idxs = selectedIndices();
+    if (idxs.empty()) return 0;
+    if (idxs.size() == 1) { deleteObject(idxs[0]); return 1; }
+    std::set<int> kill(idxs.begin(), idxs.end());
+    std::vector<Object> keep;
+    keep.reserve(g_objs.size() - kill.size());
+    for (size_t i = 0; i < g_objs.size(); ++i) {
+        if (kill.count((int)i)) continue;
+        keep.push_back(std::move(g_objs[i]));
+    }
+    g_objs = std::move(keep);
+    clearSelection();
+    std::printf("suppression : %d objet(s) supprimes (%zu restant(s))\n", (int)idxs.size(), g_objs.size());
+    return idxs.size();
 }
 
 /* saisie du nombre d'instances dans la FENETRE au clavier (modele Push/Pull :
    chiffres puis Entree) — jamais de getline bloquant dans la boucle de jeu */
 static bool g_dupPending = false;
 static int g_dupSrc = -1;
+static std::vector<std::string> g_dupSrcNames;
 static std::string g_dupNumBuf;
 
 static void dupStartPrompt() {
     g_dupPending = true;
     g_dupSrc = g_selected;
+    g_dupSrcNames.clear();
+    for (int i : selectedIndices()) g_dupSrcNames.push_back(g_objs[(size_t)i].name);
     g_dupNumBuf.clear();
     std::printf("Dupliquer : tapez le nombre d'instances puis Entree (vide = 1, maximum 999 ; negatif = retire des copies ; Echap pour annuler)\n");
+}
+
+static int findObjectByName(const std::string& nm) {
+    for (size_t i = 0; i < g_objs.size(); ++i)
+        if (g_objs[i].name == nm) return (int)i;
+    return -1;
+}
+
+/* execution de la duplication / du retrait (T1.7) : le nombre tape s'applique
+   a chaque objet de la selection capturee au demarrage de la demande ;
+   on re-resout les noms de sources a chaque coup (les indices glissent). */
+static void dupExecute(long n) {
+    if (n >= 1 && n <= 999) {
+        for (const std::string& snm : g_dupSrcNames)
+            duplicateObject(findObjectByName(snm), (int)n);
+        return;
+    }
+    if (n <= -1 && n >= -999) {
+        int rem = 0;
+        for (const std::string& snm : g_dupSrcNames)
+            rem += removeInstances(findObjectByName(snm), (int)-n);
+        if (rem == 0)
+            std::printf("\nretrait : aucune copie numerotee dans la selection\n");
+        return;
+    }
+    std::printf("\nNombre invalide : entrez de -999 a 999 puis Entree (negatif = retire des copies)\n");
 }
 
 /* message ephemere affiche dans le bandeau de la FENETRE (retour de test :
@@ -792,14 +891,19 @@ static void flashBand(const char* msg) {
 /* Export OBJ / STL                                                    */
 /* ------------------------------------------------------------------ */
 
-static void exportOBJ(const std::string& path, int onlyIdx = -1) {
+static void exportOBJ(const std::string& path, const std::vector<int>& only = {}) {
     std::ofstream f(path);
     if (!f) { std::printf("export OBJ impossible : %s\n", path.c_str()); return; }
-    const bool cible = onlyIdx >= 0 && onlyIdx < (int)g_objs.size();
-    f << "# Sketch3D natif - export " << (cible ? "objet" : "scene") << "\n";
+    std::vector<int> cible(only);
+    std::sort(cible.begin(), cible.end());
+    cible.erase(std::unique(cible.begin(), cible.end()), cible.end());
+    cible.erase(std::remove_if(cible.begin(), cible.end(),
+                [](int i) { return i < 0 || i >= (int)g_objs.size(); }), cible.end());
+    f << "# Sketch3D natif - export "
+      << (cible.empty() ? "scene" : (cible.size() == 1 ? "objet" : "selection")) << "\n";
     unsigned base = 1;
     for (int i = 0; i < (int)g_objs.size(); ++i) {
-        if (cible && i != onlyIdx) continue;
+        if (!cible.empty() && std::find(cible.begin(), cible.end(), i) == cible.end()) continue;
         const Object& o = g_objs[(size_t)i];
         f << "o " << o.name << "\n";
         for (const Vec3& p : o.v) {
@@ -810,25 +914,34 @@ static void exportOBJ(const std::string& path, int onlyIdx = -1) {
             f << "f " << base + o.tri[t] << " " << base + o.tri[t + 1] << " " << base + o.tri[t + 2] << "\n";
         base += (unsigned)o.v.size();
     }
-    if (cible)
-        std::printf("export OBJ : %s (objet : %s, en coordonnees monde)\n", path.c_str(), g_objs[(size_t)onlyIdx].name.c_str());
+    if (cible.size() == 1)
+        std::printf("export OBJ : %s (objet : %s, en coordonnees monde)\n", path.c_str(), g_objs[(size_t)cible[0]].name.c_str());
+    else if (cible.size() > 1)
+        std::printf("export OBJ : %s (selection : %d objet(s), en coordonnees monde)\n", path.c_str(), (int)cible.size());
     else
         std::printf("export OBJ : %s (%zu objets, en coordonnees monde)\n", path.c_str(), g_objs.size());
 }
 
-static void exportSTL(const std::string& path, int onlyIdx = -1) {
+static void exportOBJ(const std::string& path, int onlyIdx) { exportOBJ(path, std::vector<int>{onlyIdx}); }
+
+static void exportSTL(const std::string& path, const std::vector<int>& only = {}) {
     std::ofstream f(path, std::ios::binary);
     if (!f) { std::printf("export STL impossible : %s\n", path.c_str()); return; }
-    const bool cible = onlyIdx >= 0 && onlyIdx < (int)g_objs.size();
+    std::vector<int> cible(only);
+    std::sort(cible.begin(), cible.end());
+    cible.erase(std::unique(cible.begin(), cible.end()), cible.end());
+    cible.erase(std::remove_if(cible.begin(), cible.end(),
+                [](int i) { return i < 0 || i >= (int)g_objs.size(); }), cible.end());
     size_t total = 0;
+    auto want = [&](int i) { return cible.empty() || std::find(cible.begin(), cible.end(), i) != cible.end(); };
     for (int i = 0; i < (int)g_objs.size(); ++i)
-        if (!cible || i == onlyIdx) total += g_objs[(size_t)i].tri.size() / 3;
+        if (want(i)) total += g_objs[(size_t)i].tri.size() / 3;
     char header[80] = {0};
     f.write(header, 80);
     const uint32_t cnt = (uint32_t)total;
     f.write((const char*)&cnt, 4);
     for (int i = 0; i < (int)g_objs.size(); ++i) {
-        if (cible && i != onlyIdx) continue;
+        if (!want(i)) continue;
         const Object& o = g_objs[(size_t)i];
         for (size_t t = 0; t < o.tri.size(); t += 3) {
             const Vec3 n = o.n[t / 3];
@@ -837,7 +950,7 @@ static void exportSTL(const std::string& path, int onlyIdx = -1) {
                 0, 0, 0, 0, 0, 0, 0, 0, 0
             };
             for (int k = 0; k < 3; ++k) {
-                const Vec3 w = o.pos + o.v[o.tri[i + k]] * o.scl;
+                const Vec3 w = o.pos + o.v[o.tri[t + k]] * o.scl;
                 rec[3 + k * 3] = (float)w.x;
                 rec[4 + k * 3] = (float)w.y;
                 rec[5 + k * 3] = (float)w.z;
@@ -847,11 +960,15 @@ static void exportSTL(const std::string& path, int onlyIdx = -1) {
             f.write((const char*)&attr, 2);
         }
     }
-    if (cible)
-        std::printf("export STL binaire : %s (objet : %s, %zu tris)\n", path.c_str(), g_objs[(size_t)onlyIdx].name.c_str(), total);
+    if (cible.size() == 1)
+        std::printf("export STL binaire : %s (objet : %s, %zu tris)\n", path.c_str(), g_objs[(size_t)cible[0]].name.c_str(), total);
+    else if (cible.size() > 1)
+        std::printf("export STL binaire : %s (selection : %d objet(s), %zu tris)\n", path.c_str(), (int)cible.size(), total);
     else
         std::printf("export STL binaire : %s (%zu tris)\n", path.c_str(), total);
 }
+
+static void exportSTL(const std::string& path, int onlyIdx) { exportSTL(path, std::vector<int>{onlyIdx}); }
 
 /* ------------------------------------------------------------------ */
 /* Fichier projet (.s3projet, texte) + infos objet (menus)             */
@@ -929,7 +1046,7 @@ static bool loadProject(const std::string& path, std::string& err) {
         objs.push_back(std::move(o));
     }
     g_objs = std::move(objs);
-    g_selected = g_objs.empty() ? -1 : 0;
+    selectOnly(g_objs.empty() ? -1 : 0);
     std::printf("projet ouvert : %s (%zu objets)\n", path.c_str(), g_objs.size());
     return true;
 }
@@ -980,7 +1097,7 @@ static void handleMenuAction(int id) {
     switch (id) {
     case IDM_NEW_PROJECT:
         g_objs.clear();
-        g_selected = -1;
+        clearSelection();
         std::printf("nouveau projet : scene vide\n");
         return;
     case IDM_OPEN_PROJECT: {
@@ -1004,7 +1121,7 @@ static void handleMenuAction(int id) {
     }
     case IDM_CLOSE_PROJECT:
         g_objs.clear();
-        g_selected = -1;
+        clearSelection();
         std::printf("projet ferme\n");
         return;
     case IDM_IMPORT_OBJECT:
@@ -1021,22 +1138,24 @@ static void handleMenuAction(int id) {
         return;
     }
     case IDM_EXPORT_OBJ_SEL: {
-        if (g_selected < 0 || g_selected >= (int)g_objs.size()) { flashBand("selectionnez d'abord un objet (clic gauche)"); return; }
-        const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter l'objet en OBJ");
-        if (!p.empty()) exportOBJ(p, g_selected);
+        const std::vector<int> sel = selectedIndices();
+        if (sel.empty()) { flashBand("selectionnez d'abord un objet (clic gauche ou Ctrl+clic)"); return; }
+        const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter la selection en OBJ");
+        if (!p.empty()) exportOBJ(p, sel);
         return;
     }
     case IDM_EXPORT_STL_SEL: {
-        if (g_selected < 0 || g_selected >= (int)g_objs.size()) { flashBand("selectionnez d'abord un objet (clic gauche)"); return; }
-        const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter l'objet en STL");
-        if (!p.empty()) exportSTL(p, g_selected);
+        const std::vector<int> sel = selectedIndices();
+        if (sel.empty()) { flashBand("selectionnez d'abord un objet (clic gauche ou Ctrl+clic)"); return; }
+        const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter la selection en STL");
+        if (!p.empty()) exportSTL(p, sel);
         return;
     }
     case IDM_DUPLICATE:
         dupStartPrompt();
         return;
     case IDM_DELETE_OBJECT:
-        deleteObject(g_selected);
+        deleteSelectedSet();
         return;
     case IDM_QUIT:
         if (g_mainWin) glfwSetWindowShouldClose(g_mainWin, GLFW_TRUE);
@@ -1764,7 +1883,7 @@ static void onScroll(GLFWwindow*, double, double dy) {
     if (g_cam.dist > 2000.0) g_cam.dist = 2000.0;
 }
 
-static void onMouseButton(GLFWwindow* w, int button, int action, int) {
+static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         /* regle generale des transformations : clic droit = retour au neutre.
            Le deplacement en vol ne peut pas etre annule ainsi (le clic droit
@@ -1808,7 +1927,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
                 }
             }
             if (hit < 0) return;
-            g_selected = hit;
+            selectOnly(hit);
             Extrude dd;
             if (!makeExtrude(g_objs[(size_t)hit], bestTri, dd)) {
                 std::printf("Face non plane — Push/Pull indisponible sur cette surface.\n");
@@ -1842,8 +1961,23 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
         const bool dbl = (now - g_lastClickTime) < 0.3;
         g_lastClickTime = now;
         const int hit = pickAt(w);
-        if (hit != g_selected) {
-            g_selected = hit;
+        if (mods & GLFW_MOD_CONTROL) {              /* Ctrl+clic : multi-selection */
+            if (hit >= 0) {
+                const bool was = isSelectedRaw(hit);
+                toggleSelect(hit);
+                const size_t tot = selectedCount();
+                if (was)
+                    std::printf("selection : %s retire (%zu objet(s) selectionnes)\n", g_objs[(size_t)hit].name.c_str(), tot);
+                else
+                    std::printf("selection : %s ajoute (%zu objet(s) selectionnes)\n", g_objs[(size_t)hit].name.c_str(), tot);
+            }
+            glfwGetCursorPos(w, &g_prevX, &g_prevY);
+            return;                                 /* Ctrl+clic purement selection : pas de drag */
+        }
+        const int prev = g_selected;
+        const bool hadMulti = !g_selMulti.empty();
+        selectOnly(hit);
+        if (hit != prev || hadMulti) {
             if (hit >= 0) {
                 const Object& o = g_objs[(size_t)hit];
                 std::printf("selection : %s (%zu tris)\n", o.name.c_str(), o.tri.size() / 3);
@@ -1854,7 +1988,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
         if (hit >= 0) {
             beginDrag(w, hit);
             if (dbl) {
-                g_selected = hit;
+                selectOnly(hit);
                 frameSelected();
             }
         } else {
@@ -1886,15 +2020,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             const long n = vide ? 1 : std::atol(g_dupNumBuf.c_str());
             g_dupPending = false;
             g_dupNumBuf.clear();
-            if (vide || (n >= 1 && n <= 999)) {
-                duplicateObject(g_dupSrc, (int)n);
-            } else if (n <= -1 && n >= -999) {
-                const int rem = removeInstances(g_dupSrc, (int)-n);
-                if (rem == 0 && g_dupSrc >= 0 && g_dupSrc < (int)g_objs.size())
-                    std::printf("\nretrait : aucune copie numerotee de %s\n", g_objs[(size_t)g_dupSrc].name.c_str());
-            } else {
-                std::printf("\nNombre invalide : entrez de -999 a 999 puis Entree (negatif = retire des copies)\n");
-            }
+            dupExecute(vide ? 1 : n);
             return;
         } else if (key == GLFW_KEY_ESCAPE) {
             g_dupPending = false;
@@ -2001,7 +2127,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
                puis deselection) ; Echap ne ferme JAMAIS l'application (rebonds de
                clavier) : fermeture volontaire par Fichier > Quitter uniquement. */
             if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); return; }
-            if (g_selected >= 0) { g_selected = -1; std::printf("\nselection annulee\n"); return; }
+            if (selectedCount() > 0) { clearSelection(); std::printf("\nselection annulee\n"); return; }
         }
         if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending) {
             g_ppMode = !g_ppMode;
@@ -2021,8 +2147,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             const char c = axisLetterFromScancode(scancode);
             if (c) { rotBegin(w, c - 'x'); return; }
         }
-        if (key == GLFW_KEY_DELETE && g_mode == M_None) {   /* Suppr (retour de test : selectionner a la souris, supprimer au clavier) */
-            if (g_selected >= 0) deleteObject(g_selected);
+        if (key == GLFW_KEY_DELETE && g_mode == M_None) {   /* Suppr : supprime toute la selection (1 objet comme plusieurs) */
+            deleteSelectedSet();
             return;
         }
         if (key == GLFW_KEY_F) frameSelected();
@@ -2121,7 +2247,7 @@ static void render() {
 
     drawGrid(50, 1.0);
     for (size_t i = 0; i < g_objs.size(); ++i)
-        drawObject(g_objs[i], (int)i == g_selected && g_mode != M_Drag);
+        drawObject(g_objs[i], isSelectedRaw((int)i) && g_mode != M_Drag);
 }
 
 /* bandeau de statut en bas de fenetre (petite barre d'infos, façon SketchUp) :
@@ -2270,12 +2396,16 @@ static void drawAxisGuide() {
 static void updateWindowTitle(GLFWwindow* w) {
     static std::string last;
     char titre[192];
-    if (g_selected >= 0 && g_selected < (int)g_objs.size())
-        std::snprintf(titre, sizeof(titre), "Sketch3D \u2014 build %s \u2014 %zu objet(s) \u2014 selection : %s (%d/%zu)",
+    const std::vector<int> sel = selectedIndices();
+    if (sel.size() > 1)
+        std::snprintf(titre, sizeof(titre), "Sketch3D - build %s - %zu objet(s) - selection : %d/%zu objets",
+                      BUILD_VERSION, g_objs.size(), (int)sel.size(), g_objs.size());
+    else if (sel.size() == 1)
+        std::snprintf(titre, sizeof(titre), "Sketch3D - build %s - %zu objet(s) - selection : %s (%d/%zu)",
                       BUILD_VERSION, g_objs.size(), g_objs[(size_t)g_selected].name.c_str(),
                       g_selected + 1, g_objs.size());
     else
-        std::snprintf(titre, sizeof(titre), "Sketch3D \u2014 build %s \u2014 %zu objet(s) \u2014 selection : aucune",
+        std::snprintf(titre, sizeof(titre), "Sketch3D - build %s - %zu objet(s) - selection : aucune",
                       BUILD_VERSION, g_objs.size());
     const std::string t(titre);
     if (t != last) { last = t; glfwSetWindowTitle(w, t.c_str()); }

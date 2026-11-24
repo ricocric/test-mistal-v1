@@ -754,6 +754,71 @@ int main() {
               "suppression : liste videe, selection a -1");
     }
 
+    /* 22 - T1.7 : multi-selection (Ctrl+clic) + export/suppression/duplication multi */
+    {
+        const double colM[3] = {0.6, 0.6, 0.6};
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_objs.push_back(makeBoxObject("M1", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("M2", Vec3(2, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("M3", Vec3(4, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("M4", Vec3(6, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+
+        g_selected = 0;
+        toggleSelect(2);
+        CHECK(g_selected == 0 && selectedIndices().size() == 2 && selectedIndices()[1] == 2,
+              "multi : Ctrl+clic ajoute M3 (selection M1 + M3)");
+        toggleSelect(3);
+        CHECK(selectedCount() == 3 && isSelectedRaw(0) && isSelectedRaw(2) && isSelectedRaw(3) && !isSelectedRaw(1),
+              "multi : 3 selectionnes, M2 reste hors selection");
+        toggleSelect(0);
+        CHECK(g_selected == 2 && selectedIndices().size() == 2 && isSelectedRaw(2) && isSelectedRaw(3) && !isSelectedRaw(0),
+              "multi : Ctrl+clic sur la principale la retire, M3 promue principale");
+
+        exportOBJ(tmpPath("multi.obj"), selectedIndices());
+        std::ifstream in(tmpPath("multi.obj"));
+        std::vector<std::string> onames;
+        for (std::string ln; std::getline(in, ln); )
+            if (ln.rfind("o ", 0) == 0) onames.push_back(ln);
+        CHECK(onames.size() == 2 && onames[0] == "o M3" && onames[1] == "o M4",
+              "export multi OBJ : deux objets exportes, ordre d'index");
+
+        exportSTL(tmpPath("multi.stl"), selectedIndices());
+        std::ifstream in2(tmpPath("multi.stl"), std::ios::binary);
+        in2.seekg(0, std::ios::end);
+        CHECK(in2.tellg() == 84 + 50 * 24,
+              "export multi STL : 24 tris, taille binaire exacte");
+
+        g_dupSrcNames.clear();
+        g_dupSrcNames.push_back("M3");
+        g_dupSrcNames.push_back("M4");
+        dupExecute(2);
+        CHECK(g_objs.size() == 8 && g_objs[4].name == "M3 (1)" && g_objs[5].name == "M3 (2)"
+              && g_objs[6].name == "M4 (1)" && g_objs[7].name == "M4 (2)",
+              "duplication multi : k copies numerotees pour chaque objet de la selection");
+        dupExecute(-2);
+        CHECK(g_objs.size() == 4 && g_objs[2].name == "M3" && g_objs[3].name == "M4",
+              "retrait multi : -2 retire les 2 dernieres copies de chaque serie");
+        dupExecute(-2);
+        CHECK(g_objs.size() == 4,
+              "retrait multi : sans copie numerotee, rien n'est retire");
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_objs.push_back(makeBoxObject("M1", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("M2", Vec3(2, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("M3", Vec3(4, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("M4", Vec3(6, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_selected = 0;
+        toggleSelect(2);
+        const size_t nd = deleteSelectedSet();
+        CHECK(nd == 2 && g_objs.size() == 2 && g_objs[0].name == "M2" && g_objs[1].name == "M4",
+              "suppression multi : la selection entiere supprimee, le reste intact");
+        CHECK(g_selected == -1 && g_selMulti.empty(),
+              "suppression multi : selection videe apres coup");
+        deleteSelectedSet();
+        CHECK(g_objs.size() == 2,
+              "suppression multi : selection vide = rien de supprime");
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }
