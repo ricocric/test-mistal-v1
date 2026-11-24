@@ -8,9 +8,12 @@ precision** natif (la version web stockait en Float32).
 
 - **regle generale des transformations** : le **clic droit** revient au neutre
   partout — annule la transformation en cours (extrusion posee en suspens,
-  rotation en cours, deplacement en vol — position d'avant le deplacement
-  restoree) ET quitte le mode ; hors transformation, le clic droit rouvre le
-  menu contextuel ;
+  rotation en cours) ET quitte le mode (le deplacement en vol ne peut pas etre
+  annule ainsi : le clic droit exige de relacher le bouton gauche, l'objet est
+  deja pose) ;
+- **menu contextuel** : il n'apparait que si un objet est deja **selectionne**
+  (clic gauche) ; clic droit dans le vide ou sans selection : rien (juste un
+  rappel en console) ;
 
 - **Duplication** : menu contextuel (clic droit sur un objet) > **Dupliquer...**
   — nombre d'instances tape dans la fen^etre au clavier puis **Entree** (Entree

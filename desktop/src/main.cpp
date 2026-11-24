@@ -961,19 +961,13 @@ static void handleMenuAction(int id) {
 }
 
 static void showContextMenu(GLFWwindow* w) {
-    Vec3 org, dir;
-    if (!rayFromMouse(w, org, dir)) return;
-    int hit = -1;
-    double bestT = 1e300;
-    for (size_t i = 0; i < g_objs.size(); ++i) {
-        double t;
-        if (rayObjectTri(org, dir, g_objs[i], t, nullptr) && t < bestT) {
-            bestT = t; hit = (int)i;
-        }
+    /* le menu contextuel ne concerne qu'un objet deja selectionne (clic gauche) */
+    if (g_selected < 0 || g_selected >= (int)g_objs.size()) {
+        std::printf("menu contextuel : selectionnez d'abord un objet (clic gauche)\n");
+        return;
     }
-    if (hit < 0) return;                  /* clic droit dans le vide : rien */
-    g_selected = hit;
-    const std::string info = objectInfo(g_objs[(size_t)hit]);
+    (void)w;
+    const std::string info = objectInfo(g_objs[(size_t)g_selected]);
     std::printf("%s\n", info.c_str());
 #ifdef _WIN32
     HMENU m = CreatePopupMenu();
@@ -1598,7 +1592,9 @@ static void onScroll(GLFWwindow*, double, double dy) {
 
 static void onMouseButton(GLFWwindow* w, int button, int action, int) {
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-        /* regle generale des transformations : clic droit = retour au neutre */
+        /* regle generale des transformations : clic droit = retour au neutre.
+           Le deplacement en vol ne peut pas etre annule ainsi (le clic droit
+           exige de relacher le bouton gauche, donc l'objet est deja pose). */
         if (action != GLFW_PRESS) return;
         if (g_ppActive) {
             ppCancel();                 /* restaure la piece */
@@ -1608,11 +1604,9 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
             rotCancel();                /* restaure la geometrie */
             g_rotMode = false;
             std::printf("\nmode selection\n");
-        } else if (g_mode == M_Drag && g_selected >= 0 && g_selected < (int)g_objs.size()) {
-            g_objs[(size_t)g_selected].pos = g_startPos;
+        } else if (g_mode == M_Drag) {
             g_mode = M_None;
             g_lockAxis = -1;
-            std::printf("\ndeplacement annule\n");
         } else if (g_ppMode || g_rotMode) {
             g_ppMode = false;
             g_rotMode = false;
