@@ -66,10 +66,14 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   le mode - le micro-mouvement de main lors de la frappe ne peut plus faire
   tourner la piece ; la question de l'axe est raccourcie en console (l'invite
   complete vit dans le bandeau de la fenetre) ;
-- **separateur du champ nombre (retour de test T1.5.6)** : touche ignoree
-  (le champ est un entier par conception) mais avec un message clair en
-  console au lieu d'un silence - le retrait negatif sert justement a
-  corriger une frappe ratee (2.5 malvenu devenant 25) ;
+- **separateur du champ nombre (retour de test T1.5.6/1.5.7)** : touche
+  ignoree (le champ est un entier par conception) mais avec un message clair
+  en console au lieu d'un silence - le retrait negatif sert justement a
+  corriger une frappe ratee (2.5 malvenu devenant 25) ; **T1.5.7** : la
+  touche ';' est reconnue comme separateur (AZERTY : le point s'obtient via
+  Maj + ';' et GLFW la signale SEMICOLON - elle etait silencieusement
+  perdue, 2.5 devenait 25 sans aucun avertissement) ; la meme touche est
+  branchee comme separateur decimal pour l'extrusion et la rotation ;
 - **separateur decimal** : pris en compte pour l'extrusion et la rotation
   (point, virgule ou touche decimale du pave, affiche en point dans la boite ;
   le champ nombre est un entier, sans separateur par conception) ;

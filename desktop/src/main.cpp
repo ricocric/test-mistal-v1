@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.5.6";
+static const char* BUILD_VERSION = "T1.5.7";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1797,7 +1797,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
                 g_dupNumBuf += padRow ? char('0' + (key - GLFW_KEY_KP_0)) : char(key);
         } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
             if (g_dupNumBuf.size() < 4) g_dupNumBuf.insert(g_dupNumBuf.begin(), '-');
-        } else if (key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL) {
+        } else if (key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL || key == GLFW_KEY_SEMICOLON) {
+            /* AZERTY : le point s'obtient via Maj + ';' (GLFW la signale SEMICOLON) */
             std::printf("\nchamp nombre entier : separateur ignore (nombre negatif = retire des copies si besoin)\n");
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (!g_dupNumBuf.empty()) g_dupNumBuf.pop_back();
@@ -1827,7 +1828,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
         const bool topRowR = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
         const bool padRowR = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
-        if (topRowR || padRowR || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL) {
+        if (topRowR || padRowR || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL || key == GLFW_KEY_SEMICOLON) {
             if (g_rotNumBuf.size() < 16)
                 g_rotNumBuf += (padRowR ? char('0' + (key - GLFW_KEY_KP_0))
                               : (topRowR ? char(key) : char('.')));
@@ -1866,7 +1867,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
         const bool topRowP = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
         const bool padRowP = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
-        if (topRowP || padRowP || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL) {
+        if (topRowP || padRowP || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL || key == GLFW_KEY_SEMICOLON) {
             if (g_pp.numBuf.size() < 16)
                 g_pp.numBuf += (padRowP ? char('0' + (key - GLFW_KEY_KP_0))
                               : (topRowP ? char(key) : char('.')));
