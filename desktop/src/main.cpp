@@ -922,8 +922,6 @@ static void exportOBJ(const std::string& path, const std::vector<int>& only = {}
         std::printf("export OBJ : %s (%zu objets, en coordonnees monde)\n", path.c_str(), g_objs.size());
 }
 
-static void exportOBJ(const std::string& path, int onlyIdx) { exportOBJ(path, std::vector<int>{onlyIdx}); }
-
 static void exportSTL(const std::string& path, const std::vector<int>& only = {}) {
     std::ofstream f(path, std::ios::binary);
     if (!f) { std::printf("export STL impossible : %s\n", path.c_str()); return; }
@@ -967,8 +965,6 @@ static void exportSTL(const std::string& path, const std::vector<int>& only = {}
     else
         std::printf("export STL binaire : %s (%zu tris)\n", path.c_str(), total);
 }
-
-static void exportSTL(const std::string& path, int onlyIdx) { exportSTL(path, std::vector<int>{onlyIdx}); }
 
 /* ------------------------------------------------------------------ */
 /* Fichier projet (.s3projet, texte) + infos objet (menus)             */

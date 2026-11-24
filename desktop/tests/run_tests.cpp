@@ -715,7 +715,7 @@ int main() {
         g_objs.push_back(makeBoxObject("P1", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), col));
         g_objs.push_back(makeBoxObject("P2", Vec3(2, 0.5, 0), Vec3(0.5, 0.5, 0.5), col));
         g_selected = 1;
-        exportOBJ(tmpPath("objet_seul.obj"), g_selected);
+        exportOBJ(tmpPath("objet_seul.obj"), std::vector<int>{g_selected});
         g_objs.clear();
         Object r; err.clear();
         CHECK(loadMeshFile(tmpPath("objet_seul.obj"), r, err), err.c_str());
@@ -731,7 +731,7 @@ int main() {
         g_objs.push_back(makeBoxObject("P1", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), col));
         g_objs.push_back(makeBoxObject("P2", Vec3(2, 0.5, 0), Vec3(0.5, 0.5, 0.5), col));
         g_selected = 0;
-        exportSTL(tmpPath("objet_seul.stl"), 0);
+        exportSTL(tmpPath("objet_seul.stl"), std::vector<int>{0});
         std::ifstream in2(tmpPath("objet_seul.stl"), std::ios::binary);
         in2.seekg(0, std::ios::end);
         CHECK(in2.tellg() == 84 + 50 * 12,
