@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.6.5";
+static const char* BUILD_VERSION = "T1.6.6";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1998,11 +1998,11 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         }
         if (key == GLFW_KEY_ESCAPE) {
             /* Echelle Echap : d'abord sortir de l'etat en cours (mode P/R en attente,
-               puis deselection) ; fermer seulement quand plus rien n'est actif. */
+               puis deselection) ; Echap ne ferme JAMAIS l'application (rebonds de
+               clavier) : fermeture volontaire par Fichier > Quitter uniquement. */
             if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); return; }
             if (g_selected >= 0) { g_selected = -1; std::printf("\nselection annulee\n"); return; }
-            std::printf("\nfermeture (aucun etat en cours)\n");
-            glfwSetWindowShouldClose(w, GLFW_TRUE);
+            std::printf("\nEchap : rien a annuler (fermeture par Fichier > Quitter seule)\n");
         }
         if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending) {
             g_ppMode = !g_ppMode;

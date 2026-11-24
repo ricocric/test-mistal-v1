@@ -128,9 +128,11 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   l'etat en cours** - pendant une frappe extrusion/rotation, elle annule
   l'action ET quitte le mode (meme logique que le clic droit) ; en mode P/R
   sans action en cours, elle quitte le mode ; avec une selection, elle la
-  deselectionne (`selection annulee`) ; la fenetre ne se ferme que quand plus
-  aucun etat n'est actif, avec message console explicite
-  (`fermeture (aucun etat en cours)`) ;
+  deselectionne (`selection annulee`) ; **T1.6.6 (retour de test)** : Echap ne
+  ferme JAMAIS l'application (un rebond de clavier ne doit pas tout fermer) -
+  quand il n'y a rien a annuler, message console
+  (`Echap : rien a annuler`) et la fermeture reste volontaire par
+  Fichier > Quitter ;
 - la batterie est a **122 verifications** (+ export cible OBJ/STL verifie
   par relecture : un seul objet exporte et le bon, STL binaire taille
   exacte 84+50x12 ; suppression : selection suivie, index invalides,
