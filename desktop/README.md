@@ -60,10 +60,20 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   l'objet source sont supprimees, l'**original toujours epargne** ; au-dela
   du disponible, on retire tout ; aucune copie numerotee = message, rien de
   supprime ; hors plage -999..999 = refusee proprement (aucune action) ;
+- **saisie d'angle figee pendant la frappe (retour de test T1.5.6)** : des le
+  premier chiffre tape pendant une rotation, la piece **ne suit plus la
+  souris** (l'angle accumule ne bouge plus) ; Entree pose l'angle et quitte
+  le mode - le micro-mouvement de main lors de la frappe ne peut plus faire
+  tourner la piece ; la question de l'axe est raccourcie en console (l'invite
+  complete vit dans le bandeau de la fenetre) ;
+- **separateur du champ nombre (retour de test T1.5.6)** : touche ignoree
+  (le champ est un entier par conception) mais avec un message clair en
+  console au lieu d'un silence - le retrait negatif sert justement a
+  corriger une frappe ratee (2.5 malvenu devenant 25) ;
 - **separateur decimal** : pris en compte pour l'extrusion et la rotation
   (point, virgule ou touche decimale du pave, affiche en point dans la boite ;
   le champ nombre est un entier, sans separateur par conception) ;
-- la batterie monte a **113 verifications** (+ enfoncement -0.5 le long de la
+- la batterie est a **113 verifications** (+ enfoncement -0.5 le long de la
   normale ; valeur au-dela de la butee = rien ne depasse le plan ; duplication
   refusee hors plage ; retrait d'instances : -k supprime les k derniers
   numeros de la serie, original epargne, depassement = tout le disponible,

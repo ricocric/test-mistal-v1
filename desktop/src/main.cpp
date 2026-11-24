@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.5.5";
+static const char* BUILD_VERSION = "T1.5.6";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1633,7 +1633,7 @@ static void rotBegin(GLFWwindow* w, int axis) {
     double dummy = 0.0;
     glfwGetCursorPos(w, &g_rotLastX, &dummy);
     g_rotActive = true;
-    std::printf("rotation %s de %s autour de son centre : bougez la souris (horizontalement), chiffres + Entree pour un angle exact signe pose et quitte le mode (clic pour poser, Echap ou clic droit pour annuler)\n",
+    std::printf("rotation %s de %s autour de son centre : souris pour tourner, ou chiffres + Entree (tapez dans la fenetre ; Entree pose et quitte)\n",
                 axisName(axis), o.name.c_str());
 }
 
@@ -1658,6 +1658,9 @@ static void rotCommit() {
 
 static void updateRot(GLFWwindow* w) {
     if (!g_rotActive || g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) return;
+    /* saisie au clavier en cours : la piece est figee (le moindre mouvement
+       de souris ne modifie plus l'angle accumule) ; Entree pose et quitte. */
+    if (!g_rotNumBuf.empty()) return;
     double x, y;
     glfwGetCursorPos(w, &x, &y);
     g_rotAngle += (x - g_rotLastX) * 0.25;
@@ -1794,6 +1797,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
                 g_dupNumBuf += padRow ? char('0' + (key - GLFW_KEY_KP_0)) : char(key);
         } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
             if (g_dupNumBuf.size() < 4) g_dupNumBuf.insert(g_dupNumBuf.begin(), '-');
+        } else if (key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL) {
+            std::printf("\nchamp nombre entier : separateur ignore (nombre negatif = retire des copies si besoin)\n");
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (!g_dupNumBuf.empty()) g_dupNumBuf.pop_back();
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
