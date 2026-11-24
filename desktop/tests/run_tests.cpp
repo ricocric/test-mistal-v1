@@ -698,6 +698,17 @@ int main() {
         g_selected = -1;
     }
 
+    /* 20 - T1.5.8 : separateur decimal independant de la disposition du clavier */
+    {
+        CHECK(isSeparatorKey(GLFW_KEY_COMMA, 0) && isSeparatorKey(GLFW_KEY_PERIOD, 0)
+              && isSeparatorKey(GLFW_KEY_KP_DECIMAL, 0) && isSeparatorKey(GLFW_KEY_SEMICOLON, 0),
+              "separateur : virgule (francais), point, decimale du pave et ';' (AZERTY Maj+;) acceptes");
+        CHECK(!isSeparatorKey(GLFW_KEY_X, 0) && !isSeparatorKey(GLFW_KEY_MINUS, 0)
+              && !isSeparatorKey(GLFW_KEY_BACKSPACE, 0)
+              && !isSeparatorKey(GLFW_KEY_ENTER, 0) && !isSeparatorKey(GLFW_KEY_ESCAPE, 0),
+              "separateur : lettre, tiret, retour arriere, Entree et Echap ne sont pas des separateurs");
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }

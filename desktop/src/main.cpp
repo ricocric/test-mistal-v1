@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.5.7";
+static const char* BUILD_VERSION = "T1.5.8";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -765,6 +765,16 @@ static void dupStartPrompt() {
     g_dupSrc = g_selected;
     g_dupNumBuf.clear();
     std::printf("Dupliquer : tapez le nombre d'instances puis Entree (vide = 1, maximum 999 ; negatif = retire des copies ; Echap pour annuler)\n");
+}
+
+/* message ephemere affiche dans le bandeau de la FENETRE (retour de test :
+   les avis de saisie doivent se voir dans l'application, pas en console) */
+static std::string g_bandFlash;
+static double g_bandFlashUntil = 0.0;
+
+static void flashBand(const char* msg) {
+    g_bandFlash = msg;
+    g_bandFlashUntil = glfwGetTime() + 3.0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1618,6 +1628,19 @@ static char axisLetterFromScancode(int scancode) {
     return (c == 'x' || c == 'y' || c == 'z') ? c : 0;
 }
 
+/* separateur decimal, independant de la disposition (retour de test : sur
+   AZERTY les codes OEM arrivent contrairement aux attentes - le ';' est
+   arrive en GLFW_KEY_SEMICOLON mais la virgule s'est perdue ailleurs) :
+   les touches listees sont acceptees d'office, et sinon on interroge le
+   NOM de la touche (",", ".", ";" = separateur, quelle que soit la disposition). */
+static bool isSeparatorKey(int key, int scancode) {
+    if (key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA
+        || key == GLFW_KEY_KP_DECIMAL || key == GLFW_KEY_SEMICOLON) return true;
+    const char* name = glfwGetKeyName(key, scancode);
+    return name != 0 && name[1] == '\0'
+        && (name[0] == ',' || name[0] == '.' || name[0] == ';');
+}
+
 static void rotBegin(GLFWwindow* w, int axis) {
     if (g_selected < 0 || g_selected >= (int)g_objs.size()) {
         std::printf("rotation : selectionnez d'abord un objet (clic gauche)\n");
@@ -1797,9 +1820,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
                 g_dupNumBuf += padRow ? char('0' + (key - GLFW_KEY_KP_0)) : char(key);
         } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
             if (g_dupNumBuf.size() < 4) g_dupNumBuf.insert(g_dupNumBuf.begin(), '-');
-        } else if (key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL || key == GLFW_KEY_SEMICOLON) {
-            /* AZERTY : le point s'obtient via Maj + ';' (GLFW la signale SEMICOLON) */
-            std::printf("\nchamp nombre entier : separateur ignore (nombre negatif = retire des copies si besoin)\n");
+        } else if (isSeparatorKey(key, scancode)) {
+            flashBand("champ nombre entier : separateur ignore (nombre negatif = retire des copies si besoin)");
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (!g_dupNumBuf.empty()) g_dupNumBuf.pop_back();
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
@@ -1828,7 +1850,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
         const bool topRowR = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
         const bool padRowR = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
-        if (topRowR || padRowR || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL || key == GLFW_KEY_SEMICOLON) {
+        if (topRowR || padRowR || isSeparatorKey(key, scancode)) {
             if (g_rotNumBuf.size() < 16)
                 g_rotNumBuf += (padRowR ? char('0' + (key - GLFW_KEY_KP_0))
                               : (topRowR ? char(key) : char('.')));
@@ -1867,7 +1889,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
         const bool topRowP = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
         const bool padRowP = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
-        if (topRowP || padRowP || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL || key == GLFW_KEY_SEMICOLON) {
+        if (topRowP || padRowP || isSeparatorKey(key, scancode)) {
             if (g_pp.numBuf.size() < 16)
                 g_pp.numBuf += (padRowP ? char('0' + (key - GLFW_KEY_KP_0))
                               : (topRowP ? char(key) : char('.')));
@@ -2024,6 +2046,10 @@ static void render() {
    console de saisie, tout dans la fenetre */
 static std::string statusPrompt() {
     char buf[256];
+    if (!g_bandFlash.empty()) {
+        if (glfwGetTime() < g_bandFlashUntil) return g_bandFlash;
+        g_bandFlash.clear();
+    }
     if (g_dupPending)
         return "Dupliquer : tapez le nombre d instances puis Entree (vide = 1, negatif = retrait, Echap pour annuler)";
     else if (g_ppActive)

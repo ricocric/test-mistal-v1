@@ -66,18 +66,24 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   le mode - le micro-mouvement de main lors de la frappe ne peut plus faire
   tourner la piece ; la question de l'axe est raccourcie en console (l'invite
   complete vit dans le bandeau de la fenetre) ;
-- **separateur du champ nombre (retour de test T1.5.6/1.5.7)** : touche
-  ignoree (le champ est un entier par conception) mais avec un message clair
-  en console au lieu d'un silence - le retrait negatif sert justement a
-  corriger une frappe ratee (2.5 malvenu devenant 25) ; **T1.5.7** : la
-  touche ';' est reconnue comme separateur (AZERTY : le point s'obtient via
-  Maj + ';' et GLFW la signale SEMICOLON - elle etait silencieusement
-  perdue, 2.5 devenait 25 sans aucun avertissement) ; la meme touche est
-  branchee comme separateur decimal pour l'extrusion et la rotation ;
+- **separateur du champ nombre (retours de test T1.5.6 a T1.5.8)** : touche
+  ignoree (le champ est un entier par conception) mais avec un **avis clair
+  dans le bandeau de la fenetre** (flash de 3 s, retour de test : les avis de
+  saisie ne doivent pas passer uniquement par la console) - le retrait
+  negatif sert justement a corriger une frappe ratee (2.5 malvenu devenant
+  25) ;
+- **separateur decimal independant de la disposition du clavier (retour de
+  test T1.5.7/1.5.8)** : la virgule (separateur francais), le point, la
+  decimale du pave et la touche ';' (AZERTY : le point s'obtient via
+  Maj + ';') sont acceptes dans la saisie d'angle et de dimension - la
+  virgule se perdait dans la T1.5.7 (25,4 tape devenait 254 sur l'angle) car
+  le code de touche OEM varie selon la disposition ; la detection passe
+  desormais par le NOM de la touche (function `isSeparatorKey` : codes
+  connus + `glfwGetKeyName`), la boite affichant un point pour atof ;
 - **separateur decimal** : pris en compte pour l'extrusion et la rotation
   (point, virgule ou touche decimale du pave, affiche en point dans la boite ;
   le champ nombre est un entier, sans separateur par conception) ;
-- la batterie est a **113 verifications** (+ enfoncement -0.5 le long de la
+- la batterie est a **115 verifications** (+ separateurs : la virgule francaise, le point, la decimale du pave et ';' acceptes ; lettre, tiret, retour arriere, Entree et Echap refutes) (+ enfoncement -0.5 le long de la
   normale ; valeur au-dela de la butee = rien ne depasse le plan ; duplication
   refusee hors plage ; retrait d'instances : -k supprime les k derniers
   numeros de la serie, original epargne, depassement = tout le disponible,
