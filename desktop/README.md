@@ -259,6 +259,24 @@ build\Debug\sketch3d.exe
   B a chaud avec angle conserve, echange des positions par +180, ancre pos
   inchangee, preview exacte autour du barycentre, annulation, mono/B isole).
 
+## Deplacement de groupe T1.11 (drag multi)
+
+- **clic gauche simple sur un objet deja membre d'une selection multi**
+  (de plus d'un objet) : la selection multi est **conservee** (pas de
+  reduction au seul objet clique) et le drag deplace **tout le groupe** ;
+- le deplacement suit le modele mono : delta dans le plan camera passant par
+  le point de saisie, **verrou d'axe X/Y/Z** (touches tenues) actif pour tout
+  le groupe (meme delta projete) ;
+- clic sur un objet HORS selection : comportement mono historique inchange
+  (selection seule + drag singleton) ; Ctrl+clic reste la selection pure
+  (jamais de drag) ; le double-clic ne recentre que hors multi ;
+- relachement gauche = pose, capture de groupe videe ; console au demarrage :
+  `deplacement multi : N objets` ;
+- batterie : **182 verifications, 0 echec** (+11 : membres captures avec leur
+  position de depart, delta plan camera identique exact des deux membres,
+  verrou X herite commun, pose + selection intacte au relachement, mono hors
+  multi inchange).
+
 ## Outillages T1 : duplication + rotation
 
 - **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de

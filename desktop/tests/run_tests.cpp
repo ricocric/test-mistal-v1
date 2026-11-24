@@ -1089,6 +1089,101 @@ int main() {
         g_rotMulti.clear(); g_rotActive = false; g_rotMode = false; g_rotPivotKind = 0;
     }
 
+    /* 26 - T1.11 : deplacement de groupe (drag multi) - clic gauche simple sur
+       un objet DEJA membre d'une multi de plus d'un objet = tout le groupe
+       suit le meme delta (plan camera, verrou d'axe commun), le clic ne
+       reduit PAS la selection ; mono : chemin historique strictement inchange */
+    {
+        extern double g_stubCursorX, g_stubCursorY;
+        const double colM[3] = {0.6, 0.6, 0.6};
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        g_winW = 800; g_winH = 600;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_rotActive = false; g_rotMode = false; g_ppActive = false; g_ppMode = false;
+        g_axisHeld[0] = g_axisHeld[1] = g_axisHeld[2] = false;
+        g_cam.theta = 0.0; g_cam.phi = 0.5; g_cam.dist = 9.0; g_cam.target = Vec3(0, 0.5, 0);
+        g_objs.push_back(makeBoxObject("DA", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("DB", Vec3(2, 0.5, 0), Vec3(0.5, 0.25, 0.5), colM));
+
+        /* clic gauche SANS Ctrl sur DA, membre de la multi : selection
+           multi conservee, capture de groupe armee */
+        selectOnly(0);
+        toggleSelect(1);
+        g_lastClickTime = -100.0;              /* stub : jamais un double-clic */
+        g_stubCursorX = 400.0; g_stubCursorY = 300.0;   /* centre : rayon vise DA */
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_mode == M_Drag && g_dragMulti.size() == 2
+              && g_dragMulti[0].idx == 0 && g_dragMulti[1].idx == 1
+              && selectedCount() == 2,
+              "drag multi : clic sur un membre = multi conservee (pas de selectOnly), 2 membres capturees");
+        CHECK((g_dragMulti[0].startPos - Vec3(0, 0.5, 0)).norm() < 1e-12
+              && (g_dragMulti[1].startPos - Vec3(2, 0.5, 0)).norm() < 1e-12,
+              "drag multi : position de depart capturee pour chaque membre");
+
+        {   /* delta libre : meme delta plan camera pour les deux membres */
+            g_stubCursorX = 400.0 + 40.0;
+            Vec3 org2, dir2;
+            CHECK(rayFromMouse(W, org2, dir2), "drag multi : rayon disponible dans le stub");
+            const Vec3 nrm = g_cam.forward();
+            const double tP = dot(g_grabPoint - org2, nrm) / dot(dir2, nrm);
+            const Vec3 delta = (org2 + dir2 * tP) - g_grabPoint;
+            CHECK(delta.norm() > 0.1, "drag multi : deplacement du curseur = delta non nul");
+            updateDrag(W);
+            CHECK((g_objs[0].pos - g_dragMulti[0].startPos - delta).norm() < 1e-9
+                  && (g_objs[1].pos - g_dragMulti[1].startPos - delta).norm() < 1e-9,
+                  "drag multi : delta du plan camera applique a l IDENTIQUE aux deux membres");
+
+            const double dx = delta.x;            /* verrou d'axe X herite : commun au groupe */
+            g_axisHeld[0] = true;
+            updateDrag(W);
+            const Vec3 ex(dx, 0, 0);
+            CHECK((g_objs[0].pos - g_dragMulti[0].startPos - ex).norm() < 1e-12
+                  && (g_objs[1].pos - g_dragMulti[1].startPos - ex).norm() < 1e-12,
+                  "drag multi : verrou d'axe X herite, commun a tout le groupe");
+            g_axisHeld[0] = false;
+        }
+
+        /* relachement gauche = pose : groupe pose, selection intacte */
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        CHECK(g_mode == M_None && g_dragMulti.empty() && selectedCount() == 2,
+              "drag multi : relachement = pose, capture videe, multi toujours active");
+
+        /* chemin mono historique : clic sur un objet HORS multi = selectOnly
+           (mono) + drag singleton ; les autres objets ne bougent pas */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_axisHeld[0] = g_axisHeld[1] = g_axisHeld[2] = false;
+        g_objs.push_back(makeBoxObject("DA", Vec3(0, 0.5, 1.5), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("DB", Vec3(0, 0.5, 3.0), Vec3(0.5, 0.25, 0.5), colM));
+        g_objs.push_back(makeBoxObject("DM", Vec3(0, 0.5, 0.0), Vec3(0.5, 0.5, 0.5), colM));
+        g_cam.target = Vec3(0, 0.5, 0);      /* le rayon central vise DM (hors multi) */
+        selectOnly(0);
+        toggleSelect(1);
+        g_lastClickTime = -100.0;
+        g_stubCursorX = 400.0; g_stubCursorY = 300.0;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_mode == M_Drag && g_dragMulti.empty() && g_selected == 2 && selectedCount() == 1,
+              "drag : clic sur un objet HORS multi = selection mono (selectOnly), aucune capture de groupe");
+        {
+            Vec3 org4, dir4;
+            const Vec3 startDM = g_startPos;
+            g_stubCursorX = 400.0 - 30.0;
+            CHECK(rayFromMouse(W, org4, dir4), "drag mono : rayon disponible");
+            const Vec3 nrm = g_cam.forward();
+            const double tP = dot(g_grabPoint - org4, nrm) / dot(dir4, nrm);
+            const Vec3 delta = (org4 + dir4 * tP) - g_grabPoint;
+            updateDrag(W);
+            CHECK((g_objs[2].pos - startDM - delta).norm() < 1e-9,
+                  "drag mono : chemin historique intact (pos = startPos + delta)");
+            CHECK((g_objs[0].pos - Vec3(0, 0.5, 1.5)).norm() < 1e-12
+                  && (g_objs[1].pos - Vec3(0, 0.5, 3.0)).norm() < 1e-12,
+                  "drag mono : les autres objets ne bougent pas");
+        }
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_dragMulti.clear();
+        g_axisHeld[0] = g_axisHeld[1] = g_axisHeld[2] = false;
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }
