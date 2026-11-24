@@ -62,7 +62,7 @@ add_executable(sketch3d src/main.cpp)
 target_link_libraries(sketch3d PRIVATE ${S3D_GLFW_TARGET} OpenGL::GL)
 
 if(WIN32)
-    target_link_libraries(sketch3d PRIVATE comdlg32)
+    target_link_libraries(sketch3d PRIVATE comdlg32 gdi32)   /* gdi32 : mesure de texte du bandeau */
 endif()
 
 if(S3D_GLFW_DLL AND EXISTS "${S3D_GLFW_DLL}")

@@ -517,6 +517,114 @@ int main() {
               "rotation : chaine +90 Z puis +90 X -> volume, aretes et pivot stables");
     }
 
+    /* --- 19. T1.5 : ancre du drag d'extrusion (d relatif au rayon de capture).
+       Retour de test : des la capture d'une face, la face passait en feuille
+       avant de suivre le curseur - le plan de souris est percé ailleurs qu'au
+       point clique (il passe par un sommet du triangle), le d brut valait
+       plusieurs unites des la premiere frame et etait clampé d'emblée a la
+       butee. Le correctif ancre d sur le rayon de capture (g_pp.dRef). */
+    {
+        g_objs.clear();
+        Object imp; std::string err;
+        CHECK(loadMeshFile(dataPath("cube_sketchup.obj"), imp, err), err.c_str());
+        imp.name = "cube";
+        computeObjectDerived(imp);
+        normalizeImportScale(imp);
+        weldObject(imp);
+        placeImport(imp);
+        const Vec3 centre = imp.pos + (imp.bmin + imp.bmax) * (0.5 * imp.scl);
+        const double rImp = ((imp.bmax - imp.bmin) * (0.5 * imp.scl)).norm();
+        g_cam.target = centre;
+        g_cam.dist = std::max(rImp / std::tan(kFovDeg * 3.14159265358979 / 360.0), 1.0) * 1.5;
+        g_winW = 1600; g_winH = 900;
+        const double tt = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+        const double aspect = double(g_winW) / double(g_winH);
+        bool captureVu = false, noJump = true;
+        Extrude ddRefVue;
+        bool ddRefOk = false;
+        for (double phi : {0.5, 0.2, 0.05}) {
+            for (double theta : {0.8, 2.0}) {
+                g_cam.phi = phi; g_cam.theta = theta;
+                auto rayFor = [&](double mx, double my) {
+                    const double nx = 2.0 * mx / double(g_winW) - 1.0;
+                    const double ny = 1.0 - 2.0 * my / double(g_winH);
+                    return normalized(g_cam.right() * (nx * tt * aspect) + g_cam.up() * (ny * tt) + g_cam.forward());
+                };
+                const Vec3 dir0 = rayFor(g_winW * 0.5, g_winH * 0.5);
+                const Vec3 org = g_cam.pos();
+                double tHit; size_t tri;
+                if (!rayObjectTri(org, dir0, imp, tHit, &tri)) continue;
+                Extrude dd;
+                if (!makeExtrude(imp, tri, dd)) continue;
+                const Vec3 camDir = g_cam.forward();
+                Vec3 pn = camDir - dd.normal * dot(camDir, dd.normal);
+                if (dot(pn, pn) < 0.04) {
+                    if (std::fabs(dd.normal.y) > 0.9) pn = Vec3(1, 0, 0);
+                    else pn = Vec3(dd.normal.z, 0, -dd.normal.x);
+                }
+                dd.pn = pn;
+                auto dBrut = [&](double mx, double my) -> double {
+                    const Vec3 d2 = rayFor(mx, my);
+                    const double den = dot(d2, dd.pn);
+                    if (std::fabs(den) < 1e-9) return 0.0 / 0.0;
+                    const double tv = dot(dd.planePoint - org, dd.pn) / den;
+                    if (tv < 0.0) return 0.0 / 0.0;
+                    return dot((org + d2 * tv) - dd.planePoint, dd.normal);
+                };
+                /* ancre posee comme au clic : d = 0 au rayon de capture */
+                const double dCap = dBrut(g_winW * 0.5, g_winH * 0.5);
+                if (!std::isfinite(dCap)) continue;
+                dd.dRef = dCap;
+                captureVu = true;
+                if (std::fabs(dBrut(g_winW * 0.5, g_winH * 0.5) - dd.dRef) > 1e-9) noJump = false;
+                if (phi == 0.5 && theta == 0.8) { ddRefVue = dd; ddRefOk = true; }
+            }
+        }
+        CHECK(captureVu, "ancre extrusion : faces capturees sur le cube SketchUp reel sous plusieurs vues");
+        CHECK(captureVu && noJump, "ancre extrusion : d = 0 au rayon de capture, quel que soit l'angle (fin de l'aplatissement immediat)");
+        CHECK(ddRefOk, "ancre extrusion : capture reproductible de la vue de reference (phi 0.5, theta 0.8)");
+        CHECK(ddRefOk && ddRefVue.hasLow && std::fabs(dot(ddRefVue.normal, ddRefVue.normal) - 1.0) < 1e-9,
+              "ancre extrusion : la face capturee a la vue de reference a une normale unitaire et de la matiere derriere (butee negative)");
+        if (ddRefOk) {
+            g_cam.phi = 0.5; g_cam.theta = 0.8;
+            const Vec3 org = g_cam.pos();
+            const double ttR = tt, aspectR = aspect;
+            auto dBrutRef = [&](double mx, double my) -> double {
+                const double nx = 2.0 * mx / double(g_winW) - 1.0;
+                const double ny = 1.0 - 2.0 * my / double(g_winH);
+                const Vec3 d2 = normalized(g_cam.right() * (nx * ttR * aspectR) + g_cam.up() * (ny * ttR) + g_cam.forward());
+                const double den = dot(d2, ddRefVue.pn);
+                if (std::fabs(den) < 1e-9) return 0.0 / 0.0;
+                const double tv = dot(ddRefVue.planePoint - org, ddRefVue.pn) / den;
+                if (tv < 0.0) return 0.0 / 0.0;
+                return dot((org + d2 * tv) - ddRefVue.planePoint, ddRefVue.normal);
+            };
+            const double d40 = dBrutRef(g_winW * 0.5, g_winH * 0.5 - 40.0) - ddRefVue.dRef;
+            const double d80 = dBrutRef(g_winW * 0.5, g_winH * 0.5 - 80.0) - ddRefVue.dRef;
+            const double d120 = dBrutRef(g_winW * 0.5, g_winH * 0.5 - 120.0) - ddRefVue.dRef;
+            CHECK(std::isfinite(d40) && std::isfinite(d80) && std::isfinite(d120)
+                  && d40 > 0.0 && d80 > d40 && d120 > d80,
+                  "ancre extrusion : la face suit le curseur - souris vers le haut = tirage positif croissant");
+            auto spanAlong = [](const Object& o, const Vec3& n) {
+                double lo = 1e300, hi = -1e300;
+                for (const Vec3& p : o.v) {
+                    const double al = dot(o.pos + p * o.scl, n);
+                    if (al < lo) lo = al;
+                    if (al > hi) hi = al;
+                }
+                return hi - lo;
+            };
+            const double spanB = spanAlong(imp, ddRefVue.normal);
+            const size_t nmB = countNonManifold(imp);
+            applyExtrude(imp, ddRefVue, 1.25);
+            const double spanA = spanAlong(imp, ddRefVue.normal);
+            CHECK(std::fabs((spanA - spanB) - 1.25) < 1e-6 && countNonManifold(imp) == nmB,
+                  "ancre extrusion : dimension tapee 1.25 (Entree) posee depuis la capture -> portee +1.25 le long de la normale, topologie inchangée");
+        }
+        g_objs.clear();
+        g_selected = -1;
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }

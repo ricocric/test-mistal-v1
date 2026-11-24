@@ -46,7 +46,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.4";
+static const char* BUILD_VERSION = "T1.5";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1001,6 +1001,7 @@ static LRESULT CALLBACK menuWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 
 #ifdef _WIN32
 static unsigned g_fontBase = 0;   /* liste d'affichage : fonte bitmap GDI 32..127 */
+static HFONT g_hFont = nullptr;   /* fonte conservee : mesure de largeur du texte */
 
 static void buildFont(HWND hwnd) {
     HDC hdc = GetDC(hwnd);
@@ -1011,8 +1012,20 @@ static void buildFont(HWND hwnd) {
     g_fontBase = glGenLists(96);
     if (g_fontBase && g_fontBase != (unsigned)-1) wglUseFontBitmapsA(hdc, 32, 96, g_fontBase);
     SelectObject(hdc, old);
-    DeleteObject(hf);
+    g_hFont = hf;               /* pas de DeleteObject : sert a textWidthPx */
     ReleaseDC(hwnd, hdc);
+}
+
+static int textWidthPx(const char* s) {
+    if (!g_hFont) return 0;
+    HDC hdc = wglGetCurrentDC();
+    if (!hdc) return 0;
+    HGDIOBJ old = SelectObject(hdc, g_hFont);
+    SIZE sz = {0, 0};
+    const int n = (int)std::strlen(s);
+    const int ok = n > 0 ? GetTextExtentPoint32A(hdc, s, n, &sz) : 1;
+    SelectObject(hdc, old);
+    return ok ? sz.cx : 0;
 }
 #endif
 
@@ -1071,7 +1084,8 @@ struct Extrude {
     std::vector<char> inCompTri;     /* tris de cette composante : butee, pli et feuille ne la concernent qu'elle */
     double dLow = 0.0, dHigh = 0.0;  /* butees : epaisseur de matiere disponible */
     bool hasLow = false, hasHigh = false;
-    double d = 0.0;                  /* dernier deplacement applique */
+    double d = 0.0;                  /* dernier deplacement applique (relatif a la capture) */
+    double dRef = 0.0;               /* d brut mesure au rayon de capture : ancre du drag */
     std::string numBuf;              /* saisie de dimension exacte */
 };
 static bool g_ppMode = false;        /* touche P : mode Push/Pull */
@@ -1504,7 +1518,12 @@ static void updatePP(GLFWwindow* w) {
     if (std::fabs(denom) < 1e-9) return;
     const double t = dot(g_pp.planePoint - org, g_pp.pn) / denom;
     if (t < 0.0) return;
-    const double d = dot((org + dir * t) - g_pp.planePoint, g_pp.normal);
+    /* d relatif au rayon de capture : le plan de souris percé ailleurs qu'au
+       point cliqué (il passe par un sommet du triangle, pas par le curseur),
+       le d brut valait plusieurs unites des la capture - clampé d'emblée a la
+       butee : la face s'aplatissait au lieu de suivre le curseur. L'ancre
+       met le d a zero a la capture, la face suit ensuite le curseur. */
+    const double d = dot((org + dir * t) - g_pp.planePoint, g_pp.normal) - g_pp.dRef;
     applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, d);
     g_pp.d = d;
     const double now = glfwGetTime();
@@ -1683,6 +1702,17 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int) {
                 else pn = Vec3(dd.normal.z, 0, -dd.normal.x);
             }
             dd.pn = pn;      /* plan de souris : passe par la face, face a l ecran */
+            /* ancre du drag : d brut mesure au rayon de capture (le curseur
+               vient de cliquer, la face doit rester en place tant qu'il bouge
+               a peine) ; sinon le d initial, non nul, etait clampé a la butee */
+            {
+                const double den = dot(dir, dd.pn);
+                if (std::fabs(den) > 1e-9) {
+                    const double ts = dot(dd.planePoint - org, dd.pn) / den;
+                    if (ts > 0.0) dd.dRef = dot((org + dir * ts) - dd.planePoint, dd.normal);
+                }
+            }
+            dd.d = 0.0;
             g_pp = std::move(dd);
             g_ppActive = true;
             std::printf("face capturee — deplacez le long de la normale, cliquez pour poser la face (clic droit ou Echap : annuler ; chiffres + Entree : dimension exacte)\n");
@@ -1725,12 +1755,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
         if (topRow || padRow) {
             if (g_dupNumBuf.size() < 4)
                 g_dupNumBuf += padRow ? char('0' + (key - GLFW_KEY_KP_0)) : char(key);
-            std::printf("\rNombre d'instances : %s — Entree pour dupliquer (vide = 1)   ", g_dupNumBuf.c_str());
-            std::fflush(stdout);
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (!g_dupNumBuf.empty()) g_dupNumBuf.pop_back();
-            std::printf("\rNombre d'instances : %s — Entree pour dupliquer (vide = 1)   ", g_dupNumBuf.c_str());
-            std::fflush(stdout);
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
             const long n = g_dupNumBuf.empty() ? 1 : std::atol(g_dupNumBuf.c_str());
             g_dupPending = false;
@@ -1746,19 +1772,16 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
     }
     if (g_rotActive) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
-        if ((key >= GLFW_KEY_0 && key <= GLFW_KEY_9) || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA) {
+        const bool topRowR = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
+        const bool padRowR = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
+        if (topRowR || padRowR || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL) {
             if (g_rotNumBuf.size() < 16)
-                g_rotNumBuf += (key == GLFW_KEY_COMMA) ? char('.') : char(key);
-            std::printf("\rAngle saisi : %s — Entree pour appliquer (signe autorise)   ", g_rotNumBuf.c_str());
-            std::fflush(stdout);
+                g_rotNumBuf += (padRowR ? char('0' + (key - GLFW_KEY_KP_0))
+                              : (topRowR ? char(key) : char('.')));
         } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
             if (g_rotNumBuf.size() < 16) g_rotNumBuf.insert(g_rotNumBuf.begin(), '-');
-            std::printf("\rAngle saisi : %s — Entree pour appliquer (signe autorise)   ", g_rotNumBuf.c_str());
-            std::fflush(stdout);
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (!g_rotNumBuf.empty()) g_rotNumBuf.pop_back();
-            std::printf("\rAngle saisi : %s — Entree pour appliquer   ", g_rotNumBuf.c_str());
-            std::fflush(stdout);
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
             const double a = std::atof(g_rotNumBuf.c_str());
             if (!std::isfinite(a)) {
@@ -1786,16 +1809,15 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
     }
     if (g_ppActive) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
-        if ((key >= GLFW_KEY_0 && key <= GLFW_KEY_9) || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA) {
+        const bool topRowP = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
+        const bool padRowP = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
+        if (topRowP || padRowP || key == GLFW_KEY_PERIOD || key == GLFW_KEY_COMMA || key == GLFW_KEY_KP_DECIMAL) {
             if (g_pp.numBuf.size() < 16)
-                g_pp.numBuf += (key == GLFW_KEY_COMMA) ? char('.') : char(key);
-            std::printf("\rValeur saisie : %s — Entree pour appliquer (Retour arriere pour corriger)   ", g_pp.numBuf.c_str());
-            std::fflush(stdout);
+                g_pp.numBuf += (padRowP ? char('0' + (key - GLFW_KEY_KP_0))
+                              : (topRowP ? char(key) : char('.')));
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (!g_pp.numBuf.empty()) g_pp.numBuf.pop_back();
-            std::printf("\rValeur saisie : %s — Entree pour appliquer   ", g_pp.numBuf.c_str());
-            std::fflush(stdout);
-        } else if (key == GLFW_KEY_ENTER) {
+        } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
             const double v = std::atof(g_pp.numBuf.c_str());
             if (!std::isfinite(v) || v <= 0.0) {
                 std::printf("\nValeur invalide — tapez un nombre positif puis Entree.\n");
@@ -1931,17 +1953,13 @@ static void render() {
    console de saisie, tout dans la fenetre */
 static std::string statusPrompt() {
     char buf[256];
-    if (g_dupPending) {
-        std::snprintf(buf, sizeof(buf), "Dupliquer : nombre d'instances = %s  (Entree pour dupliquer, vide = 1 ; Echap pour annuler)",
-                      g_dupNumBuf.empty() ? "-" : g_dupNumBuf.c_str());
-    } else if (g_ppActive) {
-        if (!g_pp.numBuf.empty())
-            std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (valeur saisie : %s — Entree pour poser ; clic droit ou Echap : annuler)", g_pp.d, g_pp.numBuf.c_str());
-        else
-            std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (clic gauche : poser ; chiffres puis Entree : dimension exacte ; clic droit ou Echap : annuler)", g_pp.d);
-    } else if (g_rotActive) {
-        std::snprintf(buf, sizeof(buf), "Rotation %s : %+.1f deg  (clic gauche : poser ; X/Y/Z : changer d'axe ; clic droit ou Echap : annuler)", axisName(g_rotAxis), g_rotAngle);
-    } else if (g_ppMode) {
+    if (g_dupPending)
+        return "Dupliquer : tapez le nombre d instances puis Entree (vide = 1, Echap pour annuler)";
+    else if (g_ppActive)
+        std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (clic gauche : poser ; chiffres puis Entree : dimension exacte ; clic droit ou Echap : annuler)", g_pp.d);
+    else if (g_rotActive)
+        std::snprintf(buf, sizeof(buf), "Rotation %s : %+.1f deg  (clic gauche : poser ; X/Y/Z : changer d axe ; chiffres puis Entree : angle exact ; clic droit ou Echap : annuler)", axisName(g_rotAxis), g_rotAngle);
+    else if (g_ppMode) {
         return "Push/Pull : cliquez une face d'un objet";
     } else if (g_rotMode) {
         return "Rotation : selectionnez un objet, puis la lettre de l'axe (X, Y ou Z)";
@@ -1949,6 +1967,32 @@ static std::string statusPrompt() {
         return "P : Push/Pull   R : Rotation   clic gauche : selection/deplacement (X/Y/Z tenus = axe)   clic droit : menu   F : cadrer   H : origine   roulette : zoom";
     }
     return buf;
+}
+
+/* zone de saisie du bandeau : (libelle, buffer tape) - la meme boite pour
+   chaque cas qui accepte une valeur clavier (duplication, extrusion, rotation) */
+static bool inputZoneState(const char** label, const std::string** buf) {
+    if (g_dupPending) { *label = "nombre";    *buf = &g_dupNumBuf; return true; }
+    if (g_ppActive)   { *label = "dimension"; *buf = &g_pp.numBuf; return true; }
+    if (g_rotActive)  { *label = "angle";     *buf = &g_rotNumBuf; return true; }
+    return false;
+}
+
+static void drawTextClipped(float x, float y, const char* s, float maxW) {
+#ifdef _WIN32
+    const std::string str(s);
+    if (textWidthPx(str.c_str()) <= maxW) { drawText2D(x, y, s); return; }
+    std::string txt(s);
+    while (txt.size() > 1) {
+        txt = str.substr(0, txt.size() - 1);
+        txt += "...";
+        if (textWidthPx(txt.c_str()) <= maxW) break;
+    }
+    if (txt == "...") txt.clear();
+    drawText2D(x, y, txt.c_str());
+#else
+    (void)x; (void)y; (void)s; (void)maxW;
+#endif
 }
 
 static void drawStatusBand() {
@@ -1960,7 +2004,7 @@ static void drawStatusBand() {
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
-    if (g_winH > 0) glOrtho(0, g_winW, 0, g_winH, -1, 1);
+    if (g_winH > 0) glOrtho(0, g_winW, 0, g_winH, -1, 11);
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
@@ -1972,7 +2016,43 @@ static void drawStatusBand() {
     glVertex2f(0.0f, h);
     glEnd();
     glColor3f(0.08f, 0.09f, 0.12f);
-    drawText2D(8.0f, 8.0f, statusPrompt().c_str());
+    /* boite de saisie (alignee a droite, adaptée au texte tape) ; le texte
+       d'invite du bandeau est rogné pour ne jamais la recouvrir */
+    const char* label = nullptr;
+    const std::string* buf = nullptr;
+    const bool inputOn = inputZoneState(&label, &buf);
+    const bool caret = std::fmod(glfwGetTime(), 1.0) < 0.6;
+    char inTxt[96];
+    float boxX = (float)g_winW, boxW = 0.0f;
+    std::string prompt = statusPrompt();
+    if (inputOn) {
+        std::snprintf(inTxt, sizeof(inTxt), "%s : %s%s", label, buf->c_str(), caret ? "_" : " ");
+        boxW = (float)(textWidthPx(inTxt) + 16);
+        if (boxW < 130.0f) boxW = 130.0f;
+        boxX = (float)g_winW - boxW - 6.0f;
+        if (boxX < 80.0f) boxX = 80.0f;
+    }
+    const float maxTxtW = (inputOn ? boxX - 14.0f : (float)g_winW - 16.0f) - 8.0f;
+    drawTextClipped(8.0f, 8.0f, prompt.c_str(), maxTxtW);
+    if (inputOn) {
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glBegin(GL_QUADS);
+        glVertex2f(boxX, 3.5f);
+        glVertex2f(boxX + boxW, 3.5f);
+        glVertex2f(boxX + boxW, 22.5f);
+        glVertex2f(boxX, 22.5f);
+        glEnd();
+        glColor3f(0.08f, 0.09f, 0.12f);
+        glLineWidth(1.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(boxX + 0.5f, 4.0f);
+        glVertex2f(boxX + boxW - 0.5f, 4.0f);
+        glVertex2f(boxX + boxW - 0.5f, 22.0f);
+        glVertex2f(boxX + 0.5f, 22.0f);
+        glEnd();
+        glColor3f(0.08f, 0.09f, 0.12f);
+        drawText2D(boxX + 8.0f, 8.0f, inTxt);
+    }
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);

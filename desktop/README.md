@@ -4,12 +4,35 @@ Transcription du prototype web (`index.html` a la racine du depot) en programme
 natif Windows, par petits lots testables. Modele geometrique en **double
 precision** natif (la version web stockait en Float32).
 
-## Outillages T1 (celui-ci) : duplication + rotation
+## Outillages T1.5 (retours de test extrusion) : ancre du drag + zone de saisie
 
 **Version affichee** : la console et la barre de titre indiquent la build
-(macro `BUILD_VERSION` en tete de `src/main.cpp`, ex. `T1.3`) — incrementee a
+(macro `BUILD_VERSION` en tete de `src/main.cpp`, ex. `T1.5`) — incrementee a
 chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
 `git pull`.
+
+- **correctif grave "la face passe en feuille des la capture"** : le plan de
+  souris du Push/Pull (plan face a l'ecran passant par la face) est percé par
+  le rayon ailleurs qu'au point cliqué (il est ancré sur un sommet du
+  triangle, comme dans la version web) ; le `d` brut mesuré des la premiere
+  frame valait plusieurs unites sur une grande face et se retrouvait clampé
+  d'emblée a la butee : la face s'aplatissait **avant** de suivre le curseur.
+  Le deplacement est desormais **relatif au rayon de capture** (`dRef`) : d = 0
+  a la capture, la face suit ensuite le curseur (souris vers le haut = tirage) ;
+- **pave numerique accepte pendant l'extrusion** : chiffres du pave
+  numerique, separateur decimal du pave et **Entree du pave** fonctionnent
+  comme la rangee du haut (idem pendant la rotation ; le pavé marchait deja
+  pour la duplication) ;
+- **zone de saisie unique et bien marquee** : en fin de bandeau, une boite
+  blanche adaptee au texte tape (libelle `nombre :`, `dimension :` ou
+  `angle :`, curseur clignotant) affiche la valeur en cours — la meme pour les
+  trois cas qui acceptent une valeur clavier (duplication, extrusion,
+  rotation) ; le texte d'invite est rogné si la fenetre est etroite ;
+- la batterie monte a **103 verifications** (famille ancre-extrusion sur le
+  cube SketchUp reel : d = 0 au rayon de capture, suivi croissant du curseur,
+  dimension tapee exacte).
+
+## Outillages T1 : duplication + rotation
 
 - **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de
   statut) : affiche en permanence l'invite du mode courant et la valeur en
