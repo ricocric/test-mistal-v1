@@ -31,6 +31,7 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_KEY_0           48
 #define GLFW_KEY_9           57
 #define GLFW_KEY_F 70
+#define GLFW_KEY_B 66
 #define GLFW_KEY_C 67
 #define GLFW_KEY_H 72
 #define GLFW_KEY_I 73

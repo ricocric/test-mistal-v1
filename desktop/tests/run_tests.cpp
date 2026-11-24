@@ -999,6 +999,96 @@ int main() {
         g_rotMulti.clear(); g_rotActive = false; g_rotMode = false;
     }
 
+    /* 25 - T1.10 : rotation multi cas 2 - pivot = barycentre du groupe
+       (centre de la boite englobant toutes les geometries capturees),
+       bascule a chaud B, angle conserve ; mono non concerne */
+    {
+        extern double g_stubCursorX, g_stubCursorY;
+        const double colM[3] = {0.6, 0.6, 0.6};
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_rotActive = false; g_rotMode = false; g_rotMulti.clear(); g_rotNumBuf.clear(); g_rotPivotKind = 0;
+        g_objs.push_back(makeBoxObject("GA", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("GB", Vec3(4, 0.5, 0), Vec3(0.5, 0.25, 0.5), colM));
+
+        selectOnly(0);
+        toggleSelect(1);
+        g_stubCursorX = 25.0;
+        rotBegin(W, 2);   /* axe Z, defaut = centre propre (cas 1) */
+        CHECK(g_rotActive && g_rotMulti.size() == 2 && g_rotPivotKind == 0,
+              "rotation multi cas 2 : capture par defaut = centre propre (T1.9 inchange)");
+        CHECK(std::fabs(g_rotGroupPivot.x - 2.0) < 1e-12 && std::fabs(g_rotGroupPivot.y - 0.5) < 1e-12
+              && std::fabs(g_rotGroupPivot.z) < 1e-12,
+              "rotation multi cas 2 : pivot groupe = centre de la boite union (x=2, y=0.5)");
+
+        onKey(W, GLFW_KEY_B, 0, GLFW_PRESS, 0);   /* bascule a chaud -> barycentre */
+        CHECK(g_rotPivotKind == 1,
+              "rotation multi cas 2 : B bascule le pivot sur le barycentre du groupe");
+        CHECK(std::fabs((g_objs[0].bmax.x - g_objs[0].bmin.x) - 1.0) < 1e-9,
+              "rotation multi cas 2 : la bascule B ne transforme rien tant que l'angle ne bouge pas");
+        CHECK(std::fabs(g_rotAngle) < 1e-12,
+              "rotation multi cas 2 : l'angle courant est conserve a la bascule");
+
+        /* angle exact 180 + Entree : le groupe pivote rigidement, les POSITIONS monde s'echangent */
+        const Vec3 cA = g_objs[0].pos, cB = g_objs[1].pos;
+        const double vA = signedVolume(g_objs[0]), vB = signedVolume(g_objs[1]);
+        g_rotMode = true;
+        g_rotNumBuf = "180";
+        onKey(W, GLFW_KEY_ENTER, 0, GLFW_PRESS, 0);
+        CHECK(g_rotActive == false && g_rotPivotKind == 0,
+              "rotation multi cas 2 : pose (Entree) puis remise du pivot propre pour le prochain tour");
+        const Vec3 centreMA = g_objs[0].pos + (g_objs[0].bmin + g_objs[0].bmax) * (0.5 * g_objs[0].scl);
+        const Vec3 centreMB = g_objs[1].pos + (g_objs[1].bmin + g_objs[1].bmax) * (0.5 * g_objs[1].scl);
+        CHECK((centreMA - Vec3(4, 0.5, 0)).norm() < 1e-9 && (centreMB - Vec3(0, 0.5, 0)).norm() < 1e-9,
+              "rotation multi cas 2 +180 deg en Z : GA et GB s'echangent (rotation rigide du groupe)");
+        CHECK((g_objs[0].pos - cA).norm() < 1e-12 && (g_objs[1].pos - cB).norm() < 1e-12,
+              "rotation multi cas 2 : o.pos reste l ancre locale (la geometrie porte le deplacement)");
+        CHECK(std::fabs(signedVolume(g_objs[0]) - vA) < 1e-9 && std::fabs(signedVolume(g_objs[1]) - vB) < 1e-9
+              && countNonManifold(g_objs[0]) == 0 && countNonManifold(g_objs[1]) == 0,
+              "rotation multi cas 2 : volumes preserves, aretes coherentes");
+
+        /* bascule B en PLEIN preview : angle conserve, geometrie = rotation de la base autour du pivot groupe */
+        g_stubCursorX = 25.0;
+        rotBegin(W, 1);
+        g_stubCursorX = 25.0 + 40.0;
+        updateRot(W);                       /* +10 deg en Y */
+        onKey(W, GLFW_KEY_B, 0, GLFW_PRESS, 0);   /* -> barycentre, angle conserve */
+        CHECK(g_rotPivotKind == 1 && std::fabs(g_rotAngle - 10.0) < 1e-12,
+              "rotation multi cas 2 : B pendant la preview conserve l angle (10 deg) et change le pivot");
+        {
+            const RotCapture& rc = g_rotMulti[0];
+            const Object& ra = g_objs[(size_t)rc.idx];
+            const Vec3 wxVu = ra.pos + ra.v[0] * ra.scl;
+            const Vec3 wxExact = rotateAroundAxis(ra.pos + rc.base[0] * ra.scl, g_rotGroupPivot, 1, 10.0);
+            CHECK((wxVu - wxExact).norm() < 1e-12,
+                  "rotation multi cas 2 : preview exacte autour du barycentre (vertex 0 de GA)");
+        }
+        rotCancel();
+        CHECK(!g_rotActive && g_rotMulti.empty() && g_rotPivotKind == 0
+              && std::fabs((g_objs[0].bmax.x - g_objs[0].bmin.x) - 1.0) < 1e-9,
+              "rotation multi cas 2 : annulation (clic droit) restaure tout, pivot reinitialise");
+
+        /* regression mono : B sans selection multi = sans effet de pivot groupe
+           (scene recreee : l'annulation precedente restaure l'etat de SA capture,
+           qui datait d'apres la pose 180 - CF rotation mono, annulation = retour
+           a la capture ; une scene fraiche isole le cas B isole) */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_objs.push_back(makeBoxObject("GA", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("GB", Vec3(4, 0.5, 0), Vec3(0.5, 0.25, 0.5), colM));
+        selectOnly(1);
+        rotBegin(W, 0);
+        onKey(W, GLFW_KEY_B, 0, GLFW_PRESS, 0);
+        CHECK(g_rotPivotKind == 0 && g_rotMulti.empty() && g_rotActive,
+              "rotation mono : B sans selection multi = sans effet (pivot = centre propre)");
+        rotApplyCurrent(0, 30.0);
+        CHECK((objectRotationPivot(g_objs[1]) - Vec3(4, 0.5, 0)).norm() < 1e-12,
+              "rotation mono : le pivot reste le centre propre apres un B isole");
+        rotCancel();
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_rotMulti.clear(); g_rotActive = false; g_rotMode = false; g_rotPivotKind = 0;
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }
