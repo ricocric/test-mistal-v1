@@ -43,3 +43,9 @@ void glLineWidth(GLfloat);
 void glPushMatrix(void);
 void glPopMatrix(void);
 void glScaled(GLdouble, GLdouble, GLdouble);
+/* bandeau de statut (texte 2D, facon barre d infos) */
+void glOrtho(GLdouble, GLdouble, GLdouble, GLdouble, GLdouble, GLdouble);
+void glRasterPos2f(GLfloat, GLfloat);
+void glVertex2f(GLfloat, GLfloat);
+GLuint glGenLists(GLsizei);
+void glCallList(GLuint);

@@ -46,7 +46,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.3";
+static const char* BUILD_VERSION = "T1.4";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -999,10 +999,41 @@ static LRESULT CALLBACK menuWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 }
 #endif
 
+#ifdef _WIN32
+static unsigned g_fontBase = 0;   /* liste d'affichage : fonte bitmap GDI 32..127 */
+
+static void buildFont(HWND hwnd) {
+    HDC hdc = GetDC(hwnd);
+    HFONT hf = CreateFontA(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET,
+                           OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                           FF_DONTCARE | DEFAULT_PITCH, "Segoe UI");
+    HFONT old = (HFONT)SelectObject(hdc, hf);
+    g_fontBase = glGenLists(96);
+    if (g_fontBase && g_fontBase != (unsigned)-1) wglUseFontBitmapsA(hdc, 32, 96, g_fontBase);
+    SelectObject(hdc, old);
+    DeleteObject(hf);
+    ReleaseDC(hwnd, hdc);
+}
+#endif
+
+static void drawText2D(float x, float y, const char* s) {
+#ifdef _WIN32
+    if (!g_fontBase) return;
+    glRasterPos2f(x, y);
+    for (const char* p = s; *p; ++p) {
+        const unsigned char c = (unsigned char)*p;
+        glCallList(g_fontBase + (c >= 32 && c < 128 ? c - 32 : 32));
+    }
+#else
+    (void)x; (void)y; (void)s;
+#endif
+}
+
 static void attachMenus(GLFWwindow* win) {
     g_mainWin = win;
 #ifdef _WIN32
     const HWND hwnd = glfwGetWin32Window(win);
+    buildFont(hwnd);
     HMENU file = CreatePopupMenu();
     AppendMenuA(file, MF_STRING, IDM_NEW_PROJECT, "&Nouveau projet");
     AppendMenuA(file, MF_STRING, IDM_OPEN_PROJECT, "&Ouvrir un projet...");
@@ -1895,6 +1926,60 @@ static void render() {
         drawObject(g_objs[i], (int)i == g_selected && g_mode != M_Drag);
 }
 
+/* bandeau de statut en bas de fenetre (petite barre d'infos, façon SketchUp) :
+   affiche l'invite du mode courant et la valeur en cours — rien dans la
+   console de saisie, tout dans la fenetre */
+static std::string statusPrompt() {
+    char buf[256];
+    if (g_dupPending) {
+        std::snprintf(buf, sizeof(buf), "Dupliquer : nombre d'instances = %s  (Entree pour dupliquer, vide = 1 ; Echap pour annuler)",
+                      g_dupNumBuf.empty() ? "-" : g_dupNumBuf.c_str());
+    } else if (g_ppActive) {
+        if (!g_pp.numBuf.empty())
+            std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (valeur saisie : %s — Entree pour poser ; clic droit ou Echap : annuler)", g_pp.d, g_pp.numBuf.c_str());
+        else
+            std::snprintf(buf, sizeof(buf), "Extrusion : %+.3f  (clic gauche : poser ; chiffres puis Entree : dimension exacte ; clic droit ou Echap : annuler)", g_pp.d);
+    } else if (g_rotActive) {
+        std::snprintf(buf, sizeof(buf), "Rotation %s : %+.1f deg  (clic gauche : poser ; X/Y/Z : changer d'axe ; clic droit ou Echap : annuler)", axisName(g_rotAxis), g_rotAngle);
+    } else if (g_ppMode) {
+        return "Push/Pull : cliquez une face d'un objet";
+    } else if (g_rotMode) {
+        return "Rotation : selectionnez un objet, puis la lettre de l'axe (X, Y ou Z)";
+    } else {
+        return "P : Push/Pull   R : Rotation   clic gauche : selection/deplacement (X/Y/Z tenus = axe)   clic droit : menu   F : cadrer   H : origine   roulette : zoom";
+    }
+    return buf;
+}
+
+static void drawStatusBand() {
+#ifdef _WIN32
+    if (!g_fontBase) return;
+    const float h = 26.0f;
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    if (g_winH > 0) glOrtho(0, g_winW, 0, g_winH, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    glBegin(GL_QUADS);
+    glColor3f(0.85f, 0.85f, 0.88f);
+    glVertex2f(0.0f, 0.0f);
+    glVertex2f((float)g_winW, 0.0f);
+    glVertex2f((float)g_winW, h);
+    glVertex2f(0.0f, h);
+    glEnd();
+    glColor3f(0.08f, 0.09f, 0.12f);
+    drawText2D(8.0f, 8.0f, statusPrompt().c_str());
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+#endif
+}
+
 static void drawAxisGuide() {
     if (g_mode != M_Drag || g_selected < 0 || g_lockAxis < 0) return;
     const Vec3 p = g_objs[(size_t)g_selected].pos;
@@ -1962,6 +2047,7 @@ int main() {
         }
         render();
         drawAxisGuide();
+        drawStatusBand();
         glfwSwapBuffers(win);
         glfwPollEvents();
     }

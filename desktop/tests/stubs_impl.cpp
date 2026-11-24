@@ -43,3 +43,8 @@ void glScaled(GLdouble,GLdouble,GLdouble){}
 #include <windows.h>
 HWND glfwGetWin32Window(GLFWwindow*){return nullptr;}
 #endif
+void glOrtho(double,double,double,double,double,double){}
+void glRasterPos2f(float,float){}
+void glVertex2f(float,float){}
+unsigned int glGenLists(int){return 1000;}
+void glCallList(unsigned int){}

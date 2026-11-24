@@ -11,6 +11,10 @@ precision** natif (la version web stockait en Float32).
 chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
 `git pull`.
 
+- **bandeau de statut dans la fenêtre** (bas de l'écran, façon barre de
+  statut) : affiche en permanence l'invite du mode courant et la valeur en
+  cours (nombre d'instances tape, extrusion en cours, rotation en direct...)
+  — les questions/réponses ne passent plus par la console ;
 - **regle generale des transformations** : le **clic droit** revient au neutre
   partout — annule la transformation en cours (extrusion posee en suspens,
   rotation en cours) ET quitte le mode (le deplacement en vol ne peut pas etre
