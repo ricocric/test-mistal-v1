@@ -259,6 +259,24 @@ build\Debug\sketch3d.exe
   B a chaud avec angle conserve, echange des positions par +180, ancre pos
   inchangee, preview exacte autour du barycentre, annulation, mono/B isole).
 
+## Copier-coller T1.12 (Ctrl+C / Ctrl+V)
+
+- **Ctrl+C** : copie la selection courante (mono OU multi, Ctrl+clic) dans un
+  presse-papiers interne (copies entieres : geometrie, couleur, echelle,
+  position) ; sans selection : rien + message bandeau ;
+- **Ctrl+V** : colle le groupe copie decale vers +X d un pas (largeur X de la
+  boite du groupe copie + petit espace) ; l espacement interne du groupe reste
+  identique ; chaque Ctrl+V successif decale encore d un pas (serie visible,
+  facon duplication) ; **le groupe colle devient la selection** ;
+- nommage type duplication : `Nom (1)`, `Nom (2)`... ;
+- le presse-papiers survit aux suppressions (le collage repart des copies) ;
+- `C` sans Ctrl reste le recentrage sur le point vise ; **Ctrl+X (couper) :
+  plus tard** (copie + suppression existent deja separement) ;
+- aide du bandeau : `Ctrl+C/Ctrl+V : copier/coller` ;
+- batterie : **191 verifications, 0 echec** (+9 : copie mono/multi, position
+  decalee exacte, serie visible, selection = groupe colle, presse-papiers
+  independant des suppressions, presse-papiers vide = rien pose).
+
 ## Deplacement de groupe T1.11 (drag multi)
 
 - **clic gauche simple sur un objet deja membre d'une selection multi**

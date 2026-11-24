@@ -1184,6 +1184,77 @@ int main() {
         g_axisHeld[0] = g_axisHeld[1] = g_axisHeld[2] = false;
     }
 
+    /* 27 - T1.12 : copier-coller Ctrl+C / Ctrl+V - presse-papiers interne,
+       collage decale d un pas (largeur X + 0.25), serie visible sur Ctrl+V
+       repetes, groupe colle = selection ; presse-papiers independant des
+       suppressions ; Ctrl+X plus tard */
+    {
+        const double colM[3] = {0.6, 0.6, 0.6};
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_rotActive = false; g_rotMode = false; g_ppActive = false; g_ppMode = false;
+        g_clipboard.clear(); g_pasteRepeat = 0; g_lastClickTime = -100.0;
+        g_objs.push_back(makeBoxObject("CA", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+
+        /* Ctrl+C sans selection : rien, message bandeau */
+        onKey(W, GLFW_KEY_C, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
+        CHECK(g_clipboard.empty() && g_bandFlash.find("rien a copier") != std::string::npos,
+              "copie : Ctrl+C sans selection = presse-papiers intact + message bandeau");
+
+        /* copie mono par le clavier, collage x2 (serie decalee) */
+        selectOnly(0);
+        onKey(W, GLFW_KEY_C, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
+        CHECK(g_clipboard.size() == 1 && g_clipboard[0].name == "CA" && g_pasteRepeat == 0,
+              "copie : Ctrl+C capture l objet (copie entiere, serie remise a zero)");
+        const double step = (g_objs[0].bmax.x - g_objs[0].bmin.x) * g_objs[0].scl + 0.25;
+        onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
+        CHECK((int)g_objs.size() == 2 && g_objs[1].name == "CA (1)"
+              && (g_objs[1].pos - Vec3(step, 0.5, 0)).norm() < 1e-12
+              && g_selected == 1 && g_selMulti.empty(),
+              "colle : Ctrl+V pose 1 copie decalee d un pas, nommee CA (1), selectionnee");
+        onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
+        CHECK((int)g_objs.size() == 3 && (g_objs[2].pos - Vec3(2.0 * step, 0.5, 0)).norm() < 1e-12,
+              "colle : Ctrl+V repete = serie visible (chaque collage decale encore d un pas)");
+
+        /* copie multi : le GROUPE est pose, espacement interne identique */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_clipboard.clear(); g_pasteRepeat = 0;
+        g_objs.push_back(makeBoxObject("GA", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        g_objs.push_back(makeBoxObject("GB", Vec3(3, 0.5, 0), Vec3(0.5, 0.25, 0.5), colM));
+        selectOnly(0);
+        toggleSelect(1);
+        onKey(W, GLFW_KEY_C, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
+        CHECK(g_clipboard.size() == 2 && g_pasteRepeat == 0,
+              "copie multi : Ctrl+C capture les 2 objets de la multi");
+        onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
+        const double step2 = (3.5 - (-0.5)) + 0.25;    /* largeur X du groupe copie + espace */
+        CHECK((int)g_objs.size() == 4
+              && (g_objs[2].pos - Vec3(step2, 0.5, 0)).norm() < 1e-12
+              && (g_objs[3].pos - Vec3(3.0 + step2, 0.5, 0)).norm() < 1e-12
+              && g_selected == 2 && g_selMulti.size() == 1 && g_selMulti[0] == 3,
+              "colle multi : le GROUPE est pose (espacement interne identique) et devient la selection");
+        onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
+        CHECK((int)g_objs.size() == 6
+              && (g_objs[4].pos - Vec3(2.0 * step2, 0.5, 0)).norm() < 1e-12
+              && (g_objs[5].pos - Vec3(3.0 + 2.0 * step2, 0.5, 0)).norm() < 1e-12,
+              "colle multi : Ctrl+V suivant = nouvelle serie decalee d un pas supplementaire");
+
+        /* le presse-papiers survit aux suppressions ; vide = rien pose */
+        deleteObject(0);
+        onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
+        CHECK((int)g_objs.size() == 7
+              && (g_objs[5].pos - Vec3(3.0 * step2, 0.5, 0)).norm() < 1e-12
+              && (g_objs[6].pos - Vec3(3.0 + 3.0 * step2, 0.5, 0)).norm() < 1e-12,
+              "presse-papiers : independant des suppressions (le collage repart des captures)");
+        g_clipboard.clear(); g_pasteRepeat = 0; g_bandFlash.clear();
+        onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
+        CHECK((int)g_objs.size() == 7 && g_bandFlash.find("presse-papiers vide") != std::string::npos,
+              "colle : presse-papiers vide = rien pose, message bandeau");
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_clipboard.clear(); g_pasteRepeat = 0;
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }
