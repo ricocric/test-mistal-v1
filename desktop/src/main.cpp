@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.6.2";
+static const char* BUILD_VERSION = "T1.6.3";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1021,13 +1021,13 @@ static void handleMenuAction(int id) {
         return;
     }
     case IDM_EXPORT_OBJ_SEL: {
-        if (g_selected < 0 || g_selected >= (int)g_objs.size()) { std::printf("export cible : selectionnez d'abord un objet (clic gauche)\n"); return; }
+        if (g_selected < 0 || g_selected >= (int)g_objs.size()) { flashBand("selectionnez d'abord un objet (clic gauche)"); return; }
         const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter l'objet en OBJ");
         if (!p.empty()) exportOBJ(p, g_selected);
         return;
     }
     case IDM_EXPORT_STL_SEL: {
-        if (g_selected < 0 || g_selected >= (int)g_objs.size()) { std::printf("export cible : selectionnez d'abord un objet (clic gauche)\n"); return; }
+        if (g_selected < 0 || g_selected >= (int)g_objs.size()) { flashBand("selectionnez d'abord un objet (clic gauche)"); return; }
         const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter l'objet en STL");
         if (!p.empty()) exportSTL(p, g_selected);
         return;
@@ -1066,9 +1066,6 @@ static void showContextMenu(GLFWwindow* w) {
     AppendMenuA(m, MF_STRING, IDM_DELETE_OBJECT, "Suppri&mer");
     AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(m, MF_STRING, IDM_DUPLICATE, "&Dupliquer...");
-    AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuA(m, MF_STRING, IDM_EXPORT_OBJ_SEL, "Exporter l'objet en &OBJ...");
-    AppendMenuA(m, MF_STRING, IDM_EXPORT_STL_SEL, "Exporter l'objet en S&TL...");
     POINT pt;
     GetCursorPos(&pt);
     SetForegroundWindow(glfwGetWin32Window(w));
@@ -1146,8 +1143,11 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(file, MF_STRING, IDM_CLOSE_PROJECT, "&Fermer le projet");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(file, MF_STRING, IDM_IMPORT_OBJECT, "&Importer un objet...");
-    AppendMenuA(file, MF_STRING, IDM_EXPORT_OBJ, "Exporter en &OBJ...");
-    AppendMenuA(file, MF_STRING, IDM_EXPORT_STL, "Exporter en &STL...");
+    AppendMenuA(file, MF_STRING, IDM_EXPORT_OBJ, "Exporter la scene en &OBJ...");
+    AppendMenuA(file, MF_STRING, IDM_EXPORT_STL, "Exporter la scene en S&TL...");
+    AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(file, MF_STRING, IDM_EXPORT_OBJ_SEL, "Exporter la selection en OBJ...");
+    AppendMenuA(file, MF_STRING, IDM_EXPORT_STL_SEL, "Exporter la selection en STL...");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(file, MF_STRING, IDM_QUIT, "&Quitter");
     HMENU bar = CreateMenu();

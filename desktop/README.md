@@ -91,9 +91,13 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
 
 ## Outillages T1.6 : export cible + suppression + compteur de selection
 
-- **export cible** : menu contextuel > **Exporter l'objet en OBJ... / STL...** -
-  n'exporte que l'objet selectionne (les menus Fichier gardent l'export de la
-  scene entiere) ;
+- **export cible** : n'exporte que l'objet selectionne (7 verifications de
+  relecture dans le harnais) ; **T1.6.3 (retour de test)** : tout l'
+  **import/export reste au menu Fichier** (plus homogene pour l'utilisateur)
+  - `Exporter la scene en OBJ/STL` et, sous un separateur, `Exporter la
+  selection en OBJ/STL` ; sans selection, un avis s'affiche dans le bandeau
+  (flash 3 s) au lieu d'un message console ; les entrees export du menu
+  contextuel sont retirees (dernier mot de l'utilisateur) ;
 - **outil Supprimer** : menu contextuel > **Supprimer** - retire l'objet
   selectionne (original ou copie), la selection suit l'objet suivant a la
   meme place, index invalides refuses, liste videe = selection a -1 ;
