@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.11";
+static const char* BUILD_VERSION = "T1.12";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -942,6 +942,71 @@ static double g_bandFlashUntil = 0.0;
 static void flashBand(const char* msg) {
     g_bandFlash = msg;
     g_bandFlashUntil = glfwGetTime() + 3.0;
+}
+
+/* T1.12 : presse-papiers interne (copier-coller clavier Ctrl+C / Ctrl+V) ;
+   Ctrl+X (couper) : plus tard, copie + suppression existent deja separement. */
+static std::vector<Object> g_clipboard;   /* copies entieres de la selection au Ctrl+C */
+static int g_pasteRepeat = 0;             /* serie : chaque Ctrl+V successif decale encore d'un pas */
+
+static void copySelected() {
+    const std::vector<int> idxs = selectedIndices();
+    if (idxs.empty()) {
+        flashBand("rien a copier : selectionnez d'abord (clic gauche ou Ctrl+clic)");
+        return;
+    }
+    g_clipboard.clear();
+    g_pasteRepeat = 0;              /* nouvelle copie = nouvelle serie */
+    for (int i : idxs) g_clipboard.push_back(g_objs[(size_t)i]);
+    std::printf("copie : %zu objet(s) dans le presse-papiers\n", g_clipboard.size());
+}
+
+static void pasteClipboard() {
+    if (g_clipboard.empty()) {
+        flashBand("presse-papiers vide : Ctrl+C sur une selection d'abord");
+        return;
+    }
+    /* boite englobante du groupe COPIE (monde) : pas = largeur X + petit espace ;
+       chaque Ctrl+V successif decale encore d'un pas (serie visible, facon
+       duplication), l'espacement interne du groupe reste identique. */
+    double lo[3], hi[3];
+    {
+        const Vec3 p0lo = g_clipboard[0].pos + g_clipboard[0].bmin * g_clipboard[0].scl;
+        const Vec3 p0hi = g_clipboard[0].pos + g_clipboard[0].bmax * g_clipboard[0].scl;
+        lo[0] = p0lo.x; lo[1] = p0lo.y; lo[2] = p0lo.z;
+        hi[0] = p0hi.x; hi[1] = p0hi.y; hi[2] = p0hi.z;
+    }
+    for (size_t i = 1; i < g_clipboard.size(); ++i) {
+        const Vec3 blo = g_clipboard[i].pos + g_clipboard[i].bmin * g_clipboard[i].scl;
+        const Vec3 bhi = g_clipboard[i].pos + g_clipboard[i].bmax * g_clipboard[i].scl;
+        const double blos[3] = { blo.x, blo.y, blo.z };
+        const double bhis[3] = { bhi.x, bhi.y, bhi.z };
+        for (int a = 0; a < 3; ++a) {
+            if (blos[a] < lo[a]) lo[a] = blos[a];
+            if (bhis[a] > hi[a]) hi[a] = bhis[a];
+        }
+    }
+    const double step = (hi[0] - lo[0]) + 0.25;
+    const Vec3 off(step * (g_pasteRepeat + 1), 0.0, 0.0);
+    std::vector<int> newIdxs;
+    for (size_t i = 0; i < g_clipboard.size(); ++i) {
+        Object o = g_clipboard[i];
+        /* nommage type duplication : Nom (k), k = rang de ce nom dans la copie */
+        int k = 1;
+        for (size_t j = 0; j < i; ++j)
+            if (g_clipboard[j].name == g_clipboard[i].name) ++k;
+        o.name = g_clipboard[i].name + " (" + std::to_string(k) + ")";
+        o.pos = g_clipboard[i].pos + off;
+        g_objs.push_back(std::move(o));
+        newIdxs.push_back((int)g_objs.size() - 1);
+    }
+    /* le groupe colle devient la selection (principal + multi) */
+    if (!newIdxs.empty()) {
+        selectOnly(newIdxs[0]);
+        for (size_t i = 1; i < newIdxs.size(); ++i) g_selMulti.push_back(newIdxs[i]);
+    }
+    g_pasteRepeat += 1;
+    std::printf("colle : %zu objet(s) poses vers +X (decalage %.3f)\n", g_clipboard.size(), step);
 }
 
 /* ------------------------------------------------------------------ */
@@ -2310,6 +2375,10 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             handleMenuAction(IDM_SAVE_PROJECT);
             return;
         }
+        /* Ctrl+C / Ctrl+V : copier / coller la selection (T1.12) ;
+           C sans Ctrl reste le recentrage sur le point vise */
+        if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_C) { copySelected(); return; }
+        if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_V) { pasteClipboard(); return; }
         if (key == GLFW_KEY_ESCAPE) {
             /* Echelle Echap : d'abord sortir de l'etat en cours (mode P/R en attente,
                puis deselection) ; Echap ne ferme JAMAIS l'application (rebonds de
@@ -2473,7 +2542,7 @@ static std::string statusPrompt() {
     } else if (g_rotMode) {
         return "Rotation : selectionnez un objet, puis la lettre de l'axe (X, Y ou Z)";
     } else {
-        return "P : Push/Pull   R : Rotation   clic gauche : selection/deplacement (X/Y/Z tenus = axe)   molette-clic/Shift+glisser : deplacer la vue   C : centrer sur le point vise   clic droit : menu   F : cadrer   H : origine   roulette : zoom";
+        return "P : Push/Pull   R : Rotation   clic gauche : selection/deplacement (X/Y/Z tenus = axe)   molette-clic/Shift+glisser : deplacer la vue   C : centrer sur le point vise   clic droit : menu   F : cadrer   H : origine   Ctrl+C/Ctrl+V : copier/coller   roulette : zoom";
     }
     return buf;
 }
