@@ -225,7 +225,15 @@ build\Debug\sketch3d.exe
 - en mono (un seul objet selectionne) : chemin historique strictement inchange ;
 - `applyRotationAt` gere desormais le pivot en parametre explicite (les 3 cas
   de pivot multi n'ont plus qu'a fournir un pivot different) ;
-- batterie : **158 verifications, 0 echec** (+12 : capture d'une base par
+- **correctif T1.9.1 (fenetre entierement grisee pendant la rotation multi)** :
+  bug ancien de `drawTextClipped` mouille par le message de bandeau multi
+  (plus long) - l'abreviation repartait de la taille gonflee par les "..."
+  (substr sur `txt.size() - 1` puis `+= "..."`) : aucune iteration ne pouvait
+  repasser sous la largeur une fois le message trop long, boucle infinie =
+  fenetre sans pompage = grisee "ne repond pas", bandeau fige. Correction :
+  la longueur de reference diminue reellement a chaque tour + garde-fou final ;
+  message bandeau multi raccourci ;
+- batterie : **159 verifications, 0 echec** (+12 : capture d'une base par
   objet, pivot propre, angle commun a la souris, preview exacte au vertex,
   voie numerique 90 + Entree, portees permutees par objet, position figee,
   volumes preserves, annulation complete, regression mono).
