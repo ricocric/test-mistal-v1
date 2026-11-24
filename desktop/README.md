@@ -33,13 +33,16 @@ chaque lot ou correctif, pour verifier que l'exe correspond bien au dernier
   (chaque frame) l'ecrasait des la frame suivante - la face retombait au
   niveau du curseur et l'effet ne reparaissait qu'a la capture suivante
   (impression de "sans effet", et effet devu "affecte a la selection
-  suivante"). La dimension tapee est desormais **figee** jusqu'au prochain
-  mouvement du curseur : Entree la pose et la tient ; le moindre mouvement
-  de souris leve le verrou et la face suit de nouveau le curseur ;
-- la batterie monte a **109 verifications** (ancre-extrusion sur le cube
+  suivante"). **Nouveau contrat (retour de test)** : saisir une valeur puis
+  **Entree applique la dimension, pose la face et quitte le mode P** - une
+  action complete au clavier, sans retoucher la souris (le micro-mouvement
+  de main lors d'un clic ne peut plus revenir derriere la valeur) ; le drag
+  souris garde tout le reste du comportement (ancre dRef, la face suit le
+  curseur) ;
+- la batterie monte a **106 verifications** (ancre-extrusion sur le cube
   SketchUp reel : d = 0 au rayon de capture, suivi croissant du curseur,
-  dimension tapee exacte ; puis le verrou de saisie : valeur figee, reprise
-  en main du curseur au moindre mouvement).
+  dimension tapee exacte ; pose clavier : calcul central ppDragDelta, rayon
+  perpendiculaire = rien applique).
 
 ## Outillages T1 : duplication + rotation
 

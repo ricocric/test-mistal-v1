@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
@@ -46,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.5.1";
+static const char* BUILD_VERSION = "T1.5.2";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1086,8 +1087,6 @@ struct Extrude {
     bool hasLow = false, hasHigh = false;
     double d = 0.0;                  /* dernier deplacement applique (relatif a la capture) */
     double dRef = 0.0;               /* d brut mesure au rayon de capture : ancre du drag */
-    double lastX = 0.0, lastY = 0.0; /* curseur du dernier passage de updatePP (levee du verrou) */
-    bool numLock = false;            /* dimension tapee + Entree : figee jusqu'au prochain mouvement du curseur */
     std::string numBuf;              /* saisie de dimension exacte */
 };
 static bool g_ppMode = false;        /* touche P : mode Push/Pull */
@@ -1513,35 +1512,23 @@ static void ppCommit() {
 }
 
 /* d relatif au rayon de capture : d = 0 au curseur de la capture, positif
-   vers la normale (tirage). Pur : lit g_pp, ne touche pas au mesh.        */
+   vers la normale (tirage). Pur : lit g_pp, ne touche pas au mesh.
+   NaN si le rayon perce ailleurs sans croiser le plan utile.              */
 static double ppDragDelta(const Vec3& org, const Vec3& dir) {
     const double denom = dot(dir, g_pp.pn);
-    if (std::fabs(denom) < 1e-9) return 0.0 / 0.0;
+    if (std::fabs(denom) < 1e-9) return std::numeric_limits<double>::quiet_NaN();
     const double t = dot(g_pp.planePoint - org, g_pp.pn) / denom;
-    if (t < 0.0) return 0.0 / 0.0;
+    if (t < 0.0) return std::numeric_limits<double>::quiet_NaN();
     return dot((org + dir * t) - g_pp.planePoint, g_pp.normal) - g_pp.dRef;
-}
-
-/* verrou de saisie : renvoie true quand le suivi du curseur doit reprendre
-   (pas de verrou pose, ou curseur bouge depuis le dernier passage).       */
-static bool ppTakeControl(double mx, double my) {
-    if (!g_pp.numLock) return true;
-    if (mx != g_pp.lastX || my != g_pp.lastY) { g_pp.numLock = false; return true; }
-    return false;
 }
 
 static void updatePP(GLFWwindow* w) {
     if (!g_ppActive || g_pp.obj < 0 || g_pp.obj >= (int)g_objs.size()) return;
-    double mx, my;
-    glfwGetCursorPos(w, &mx, &my);
-    /* dimension tapee au clavier : figee jusqu'au prochain mouvement du
-       curseur, sinon la relecture du curseur l'ecrasait des la frame suivante
-       (retour de test T1.5 : aucun effet visible) ; moindre mouvement = la
-       face suit de nouveau le curseur (ancre dRef : d = 0 a la capture).   */
-    if (!ppTakeControl(mx, my)) return;
-    g_pp.lastX = mx; g_pp.lastY = my;
     Vec3 org, dir;
     if (!rayFromMouse(w, org, dir)) return;
+    /* ancre dRef : d = 0 au rayon de capture, la face suit ensuite le curseur.
+       Une dimension tapee + Entree pose ET termine (voir onKey) : pas besoin
+       de verrou, le curseur n'ecrase jamais une valeur posee.              */
     const double d = ppDragDelta(org, dir);
     if (!std::isfinite(d)) return;
     applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, d);
@@ -1845,8 +1832,9 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int) {
                 applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, v);
                 g_pp.d = v;
                 g_pp.numBuf.clear();
-                g_pp.numLock = true;   /* figee : le curseur n'ecrase la valeur tapee tant qu'il ne bouge pas */
-                std::printf("\nExtrusion posee : %.3f — cliquez pour valider, ou bougez la souris pour reprendre le suivi\n", v);
+                ppCommit();            /* Entree = pose, comme le second clic gauche */
+                g_ppMode = false;      /* sortie du mode P apres application (demande de test) */
+                std::printf("mode selection\n");
             }
         } else if (key == GLFW_KEY_ESCAPE) {
             ppCancel();                 /* premier Echap : annule la face, reste en mode */
