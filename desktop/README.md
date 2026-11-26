@@ -656,7 +656,19 @@ aligne aux axes (largeur en X, profondeur en Z), pose au sol y = 0.
 - nommage uniqueName commun aux profils B2 (« Rectangle », « Rectangle (2) ») ;
 - stub corrige au passage : GL_LINE_LOOP valait 0x0003 (confusion avec
   GL_LINE_STRIP), remis a la vraie valeur 0x0002 ;
-- moteur de tests : +7 verifications, total **247, 0 echec**.
+- B2.2c (retour de test, 2 bugs) :
+  - push/pull mort sur le rectangle trace a la souris : la garde d'entree de
+    makeExtrude (tri.size() < 9) refusait toute feuille de 2 tris ; relachee
+    a 1 tri complet - une feuille est une face valide, tout le reste (flip
+    camera, butees, recreation du volume) gerait deja les feuilles ;
+  - clavier FR : le point-virgule (Maj + touche a cote de M) arrive en
+    GLFW_KEY_COMMA + Maj ; l'affichage brut char(key) montrait une virgule.
+    Mapping explicite des ponctuations dans la saisie : PERIOD/KP_DECIMAL =
+    '.', SEMICOLON ou COMMA+Maj = ';', COMMA seule = ',' decimale FR ;
+    le parseur convertit ';' en separateur et ',' en '.' decimale ;
+  - convention generale : « ; » = separateur de champs, « , » et « . » =
+    decimales ;
+- moteur de tests : +5 verifications, total **252, 0 echec**.
 
 ## Organiseur des prochains lots
 
