@@ -639,6 +639,23 @@ ajoutant encore o.pos).
   5 aretes / volume plat nul / 4 sommets sans doublon ; fil ouvert = 4
   aretes, 0 tri ; sortie du mode ; noms uniques), total **240, 0 echec**.
 
+## B2.2 : outil Rectangle
+
+Maj+R (bouton « Rectangle » de la barre, entree du menu Outils). Clic 1 =
+coin, souris = apercu du contour au sol, clic 2 = coin oppose pose. v1
+aligne aux axes (largeur en X, profondeur en Z), pose au sol y = 0.
+
+- objet pose = feuille pleine de 2 tris (normale +y) + aretes de bord, UN
+  objet, etirable au push/pull (coherent avec la ligne fermee B2.5) ;
+- chiffres + Entree = dimensions exactes « L,H » (largeur, profondeur) ;
+  le quadrant du curseur par rapport au premier coin oriente le rectangle
+  (fidele SketchUp : la diagonale dirige), puis pose + sortie du mode ;
+- clic droit ou Echap = annulation SANS objet pose (mecanique commune B2) ;
+- nommage uniqueName commun aux profils B2 (« Rectangle », « Rectangle (2) ») ;
+- stub corrige au passage : GL_LINE_LOOP valait 0x0003 (confusion avec
+  GL_LINE_STRIP), remis a la vraie valeur 0x0002 ;
+- moteur de tests : +7 verifications, total **247, 0 echec**.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils

@@ -44,6 +44,10 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   Entree vide = fin, chiffres+Entree = longueur exacte puis pose, Echap =
   tout annule) ; chaine d'aretes derivee pour objets sans triangle
   (computeObjectDerived) ; menu Outils cree (regle B1.7c) ;
+- B2.2 RECTANGLE fait : Maj+R, clic coin/clic coin oppose, feuille pleine
+  de 2 tris normale +y (coherente avec la ligne fermee B2.5), UN objet
+  etirable au push/pull ; chiffres L,H + Entree = dimensions exactes
+  orientees par le quadrant du curseur ; clic droit/Echap = annule ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil
