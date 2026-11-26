@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1.1";
+static const char* BUILD_VERSION = "B1.2";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1501,7 +1501,7 @@ static void drawText2D(float x, float y, const char* s) {
 /* B1.1 : barre d'outils flottante - fenetre outil (WS_EX_TOOLWINDOW,
    deplacable par la barre de titre = 2 ecrans inclus), boutons = modes
    exclusifs identiques aux raccourcis, via runToolCommand. La croix cache
-   la barre : menu Affichage > Barre d'outils la rappelle. Orientation
+   la barre et decoche Affichage > Barre d'outils (le menu la rappelle). Orientation
    verticale ou horizontale, aimantation sur les 4 bords du bureau (24 px),
    tout est persiste dans la section [outils] du sketch3d.ini. */
 static HWND g_toolWin = nullptr;
@@ -1526,7 +1526,12 @@ static LRESULT CALLBACK toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         runToolCommand((int)LOWORD(wp));
         return 0;
     }
-    if (msg == WM_CLOSE) { ShowWindow(h, SW_HIDE); return 0; }
+    if (msg == WM_CLOSE) {
+        /* croix = meme chemin que le menu Affichage : coche decochee,
+           preference gravee -> le rappel par menu reste synchrone */
+        toolbarSetVisible(false);
+        return 0;
+    }
     if (msg == WM_EXITSIZEMOVE) {
         /* fin de deplacement : aimantation sur un bord du bureau si proche */
         RECT r, wa;

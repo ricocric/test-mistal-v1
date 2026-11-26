@@ -281,7 +281,8 @@ build\Debug\sketch3d.exe
 
 - **menu Affichage** (a cote de Fichier) : `Barre d'outils` (coche = visible)
   et `Barre verticale` (coche = verticale) ; **rappel facile** : la croix
-  cache la barre, le menu la fait revenir ;
+  cache la barre ET decoche la ligne du menu (et grave la preference),
+  le menu la fait revenir ;
 - **orientation** : horizontale (2 rangees de 4) ou verticale (1 colonne),
   bascule a chaud, les coches suivent ;
 - **aimantation** : en fin de deplacement de la barre, elle se colle au bord
