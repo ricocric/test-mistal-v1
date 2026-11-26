@@ -106,6 +106,10 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   correction au passage d'un bug de relocalisation (v locales, pos + v =
   monde) ; la derive du fan compte la diagonale (5 aretes pour un carre) -
   se rattrapera avec le vrai solide de B6 ;
+- REGLE DES VARIANTES (B2.5b, generalisee B2.7b, validation
+  utilisateur) : tout choix de conception a deux usages = variantes
+  COMMUTABLES par la commande d'armement, rien de memorise ; bascule a
+  chaud quand les points survivent au changement (spline Maj+S/Maj+B) ;
 - B2.7 SPLINE fait (conception avant code, DERNIER TRACE DE BASE, choix
   utilisateur : Maj+S, points de PASSAGE - reserve de tester les points
   de controle plus tard -, entree unique, fil seul) : courbe cubique C1

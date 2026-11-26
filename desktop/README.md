@@ -678,6 +678,13 @@ aligne aux axes (largeur en X, profondeur en Z), pose au sol y = 0.
   directe du code GLFW pour une lettre. Les touches de controle
   (Entree, Echap, Suppr, Backspace, moins, KP_*) restent comparees par
   code : positions universelles ;
+- REGLE DES VARIANTES (B2.5b, generalisee B2.7b - validation
+  utilisateur : « c'est la bonne facon de faire ») : tout choix de
+  conception a deux usages se traduit par des VARIANTES COMMUTABLES par
+  la COMMANDE d'armement (deux entrees de menu / deux raccourcis), RIEN
+  de memorise entre les traces (defaut a chaque lancement) ; la bascule
+  reste disponible A CHAUD pendant un trace quand les points survivent
+  au changement (ex. spline passage/controle, Maj+S/Maj+B) ;
 - moteur de tests : +7 verifications (B2.2c/d).
 
 ## B2.3 : outil Cercle
