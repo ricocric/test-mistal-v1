@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.7d";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B1.8";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1620,10 +1620,13 @@ static void toolFollow() {
                  0, 0, SWP_NOSIZE | SWP_NOZORDER);
 }
 
+/* B1.8 : style partage (THICKFRAME = poignees de redimensionnement) */
+static const DWORD kToolStyle = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME;
+
 static void toolLayout(HWND tw) {
     const int n = (int)(sizeof(g_toolBtn) / sizeof(g_toolBtn[0]));   /* synchro automatique avec la creation */
     const int bw = 86, bh = 26, pad = 6;
-    const int cols = g_setup.toolVertical ? 1 : 4;
+    const int cols = g_setup.toolVertical ? 1 : n;   /* B1.8 : UNE rangee par defaut (l'etalement 4 colonnes fixes erait corrige) */
     const int rows = (n + cols - 1) / cols;
     for (int i = 0; i < n; ++i)
         SetWindowPos(g_toolBtn[i], nullptr, pad + (i % cols) * (bw + pad),
@@ -1634,7 +1637,7 @@ static void toolLayout(HWND tw) {
        AdjustWindowRect, la barre de titre rognait la derniere rangee
        (Rectangle, Cercle, Arc invisibles depuis B2.3 - retour de test) */
     RECT r = {0, 0, cw, ch};
-    AdjustWindowRect(&r, WS_POPUP | WS_CAPTION | WS_SYSMENU, FALSE);
+    AdjustWindowRect(&r, kToolStyle, FALSE);
     SetWindowPos(tw, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
 }
 
@@ -1642,6 +1645,45 @@ static LRESULT CALLBACK toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_COMMAND && HIWORD(wp) == BN_CLICKED) {
         runToolCommand((int)LOWORD(wp));
         SetFocus(g_mainHwnd);   /* B2.4c : un clic bouton vole le focus clavier a la vue 3D */
+        return 0;
+    }
+    if (msg == WM_SIZE && wParam != SIZE_MINIMIZED) {
+        /* B1.8 : barre redimensionnable - horizontal : le nombre de colonnes
+           suit la largeur client (1 rangee par defaut, l'utilisateur retrecit
+           a sa main) ; vertical : le nombre de rangees suit la hauteur.
+           La dimension se reajuste sur l'autre axe (hauteur / largeur). */
+        static bool enCours = false;
+        const int n = (int)(sizeof(g_toolBtn) / sizeof(g_toolBtn[0]));
+        const int bw = 86, bh = 26, pad = 6;
+        if (!enCours && n > 0 && g_toolBtn[0] != nullptr) {
+            RECT c;
+            GetClientRect(h, &c);
+            int cols, rows;
+            if (g_setup.toolVertical) {
+                rows = (c.bottom - c.top - pad) / (bh + pad);
+                if (rows < 1) rows = 1;
+                if (rows > n) rows = n;
+                cols = (n + rows - 1) / rows;
+            } else {
+                cols = (c.right - c.left - pad) / (bw + pad);
+                if (cols < 1) cols = 1;
+                if (cols > n) cols = n;
+                rows = (n + cols - 1) / cols;
+            }
+            for (int i = 0; i < n; ++i) {
+                const int col = g_setup.toolVertical ? i / rows : i % cols;
+                const int row = g_setup.toolVertical ? i % rows : i / cols;
+                SetWindowPos(g_toolBtn[i], nullptr, pad + col * (bw + pad),
+                             pad + row * (bh + pad), bw, bh, SWP_NOZORDER);
+            }
+            const int cw = g_setup.toolVertical ? pad + cols * (bw + pad) : c.right - c.left;
+            const int ch = g_setup.toolVertical ? c.bottom - c.top : pad + rows * (bh + pad);
+            RECT w = {0, 0, cw, ch};
+            AdjustWindowRect(&w, kToolStyle, FALSE);
+            enCours = true;   /* anti-recursion : notre propre SetWindowPos */
+            SetWindowPos(h, nullptr, 0, 0, w.right - w.left, w.bottom - w.top, SWP_NOMOVE | SWP_NOZORDER);
+            enCours = false;
+        }
         return 0;
     }
     if (msg == WM_CLOSE) {
@@ -1693,7 +1735,7 @@ static void attachToolbar(HWND mainHwnd) {
     POINT o = {0, 0};
     ClientToScreen(mainHwnd, &o);
     const HWND tw = CreateWindowExA(WS_EX_TOOLWINDOW, cls, "Outils",
-        WS_POPUP | WS_CAPTION | WS_SYSMENU, o.x + g_setup.toolX, o.y + g_setup.toolY, 0, 0,
+        kToolStyle, o.x + g_setup.toolX, o.y + g_setup.toolY, 0, 0,
         mainHwnd, nullptr, GetModuleHandleA(nullptr), nullptr);
     static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller", "Ligne", "Rectangle", "Cercle", "Arc", "Polygone", "Spline", "Spline ctrl" };
     static const int ids[] = { IDM_TOOL_SELECT, IDM_TOOL_PP, IDM_TOOL_ROT, IDM_TOOL_FRAME,
