@@ -1825,6 +1825,62 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
     }
 
+    { /* B2.7 : outil Spline (Maj+S, points de passage, fil discretise) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        onKey(W, GLFW_KEY_S, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_splMode && !g_splActive, "spline : Maj+S arme l outil");
+        onKey(W, GLFW_KEY_S, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(!g_splMode, "spline : rappel de Maj+S = desarme (toggle)");
+        /* courbe ouverte posee = fil en UN objet, sans triangle */
+        const std::vector<Vec3> passage = { Vec3(0, 0, 0), Vec3(2, 0, 1), Vec3(4, 0, 0), Vec3(6, 0, 2) };
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_splMode = true; splReset();
+        for (const Vec3& q : passage) g_splPts.push_back(q);
+        splFinish();
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.empty() && !g_splMode,
+              "spline : posee ouverte = fil en UN objet sans triangle, mode quitte");
+        { /* la discretisation PASSE PAR chaque point de passage */
+            bool passe = true;
+            const Object& o = g_objs[0];
+            for (const Vec3& q : passage) {
+                double dmin = 1e300;
+                for (const Vec3& loc : o.v) {
+                    const double d = (q - (o.pos + loc)).norm();
+                    if (d < dmin) dmin = d;
+                }
+                if (dmin > 1e-9) passe = false;
+            }
+            CHECK(passe, "spline ouverte : la courbe passe par chaque point de passage");
+        }
+        CHECK(g_objs[0].edges.size() == g_objs[0].v.size() - 1,
+              "spline ouverte : aretes = chaine continue (nv - 1)");
+        /* boucle fermee (clic sur le depart) : dernier sommet = premier */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_splMode = true; splReset();
+        for (const Vec3& q : passage) g_splPts.push_back(q);
+        splPose(true);
+        CHECK(g_objs.size() == 1
+              && (g_objs[0].v.front() - g_objs[0].v.back()).norm() < 1e-12,
+              "spline fermee : boucle = dernier sommet = premier (arete de cloture)");
+        CHECK(g_objs[0].edges.size() == g_objs[0].v.size() - 1,
+              "spline fermee : aretes = chaine fermee (nv - 1 avec cloture)");
+        /* validation prematuree : 1 point = refuse, mode conserve */
+        const size_t avantS = g_objs.size();
+        g_splMode = true; splReset();
+        g_splPts.push_back(Vec3(1, 0, 1));
+        splFinish();
+        CHECK(g_objs.size() == avantS && g_splMode,
+              "spline : validation a 1 point = refusee, mode conserve (Echap pour sortir)");
+        /* noms uniques */
+        g_splPts.push_back(Vec3(2, 0, 1));
+        splFinish();
+        CHECK(g_objs.size() == avantS + 1 && g_objs.back().name != g_objs[g_objs.size() - 2].name,
+              "spline : noms uniques (Spline, Spline (2))");
+        g_splMode = false; splReset();
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
     std::printf("resume : %d echec(s), %d verifications\n", g_fail, g_tot);
     return g_fail ? 1 : 0;
 }

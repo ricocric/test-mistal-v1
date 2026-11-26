@@ -783,6 +783,28 @@ a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
   a 3 sommets = posee, refus a 2 sommets = mode conserve), total
   **290, 0 echec**.
 
+## B2.7 : outil Spline (dernier trace de base)
+
+- Maj+S (Ctrl+S = enregistrer, aucune collision ; convention Maj + lettre) ;
+- points de PASSAGE (choix utilisateur, avec reserve de tester plus tard
+  les points de controle) : la courbe cubique C1 passe par chaque clic ;
+- parametrisation centripete (sqrt des cordes, tangentes Barry-Goldman) :
+  robuste aux espacements irreguliers (pas de boucle ni de pic) ;
+- entree unique : clic = point (doublon ignore) ; clic sur le depart
+  (>= 3 points, tolerance filPickTol) = boucle FERMEE lissee ; clic droit
+  ou Entree (pave inclus) = VALIDER la courbe ouverte (>= 2 points, regle
+  B2.6b) ; Echap = sortir sans rien poser ;
+- pose : fil discretise (16 sous-segments par intervalle, v1 fixe) en UN
+  objet sans triangle, ancre locale = premier point (pos + v = monde),
+  aretes = chaine derivee ; boucle fermee = sommet final = depart (arete
+  de cloture naturelle) ; etirable au deplacement (filRayHit) ;
+- apercu : courbe lisse a travers les points cliques + droite en rubber
+  band vers le curseur (prolongement droit en v1) ; pas de saisie
+  numerique v1 ; bandeau = etat de la commande seule (regle B1.7c) ;
+- 13e bouton de la barre (g_toolBtn[13], taille toolLayout derivee du
+  tableau) ; menu Outils ; entete console ;
+- moteur de tests : +9 verifications executees, total **299, 0 echec**.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils

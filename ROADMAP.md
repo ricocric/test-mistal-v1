@@ -106,11 +106,24 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   correction au passage d'un bug de relocalisation (v locales, pos + v =
   monde) ; la derive du fan compte la diagonale (5 aretes pour un carre) -
   se rattrapera avec le vrai solide de B6 ;
-- BACKLOG profils (demande utilisateur) : B-SPLINES - cas d'importance
-  majeure restant a traiter apres les lignes ouvertes/fermees, l'arc et
-  le polygone ; conception AVANT code (etude : degre, points de controle
-  vs points de passage, parametrage, pose au sol, etirabilite de la
-  surface generee) ;
+- B2.7 SPLINE fait (conception avant code, DERNIER TRACE DE BASE, choix
+  utilisateur : Maj+S, points de PASSAGE - reserve de tester les points
+  de controle plus tard -, entree unique, fil seul) : courbe cubique C1
+  passant par chaque clic ; parametrisation centripete (sqrt des cordes,
+  tangentes Barry-Goldman) = robuste aux espacements irreguliers (pas de
+  boucle ni de pic) ; clic = point (doublon ignore) ; clic sur le depart
+  (>= 3 points, tolerance filPickTol) = boucle FERMEE lissee ; clic droit
+  ou Entree (pave inclus) = VALIDER la courbe ouverte (>= 2 points,
+  regle B2.6b) ; Echap = sortir sans rien poser ; fil discretise (16
+  sous-segments par intervalle, v1 fixe) en UN objet sans triangle,
+  ancre locale = premier point, aretes = chaine derivee (boucle fermee :
+  sommet final = depart, arete de cloture naturelle), etirable au
+  deplacement (filRayHit) ; apercu = courbe lisse + rubber band droit
+  (prolongement droit en v1) ; pas de saisie numerique v1 ; 13e bouton +
+  menu Outils + entete console ; +9 verifications = 299, 0 echec ;
+  options futures (reserve utilisateur) : points de CONTROLE (la courbe
+  glisse dans le polygone, facon Rhino) et interpolation globale type
+  NURBS (A9.1) ;
 - B2.2 RECTANGLE (conception avant code, mecanique commune B2) :
   - clic 1 = coin, souris = apercu du rectangle au sol, clic 2 = pose ;
     clic droit ou Echap = annulation SANS objet pose ; Entree vide = rien ;
