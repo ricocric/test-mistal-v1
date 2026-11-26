@@ -76,6 +76,22 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   - nommage "Rectangle", "Rectangle (2)"... ; bouton + entree menu Outils ;
   - touche : R est pris (Tourner) -> Maj+R propose ;
 
+- B2.3 CERCLE (conception avant code, mecanique commune B2, choix
+  utilisateur : touche Maj+C) :
+  - clic 1 = centre (au sol y = 0), souris = apercu (contour jaune +
+    segment de rayon du centre au curseur), clic 2 = pose ;
+    clic droit ou Echap = annulation SANS objet pose ;
+  - chiffres + Entree = rayon exact (UN seul nombre, decimales FR acceptees
+    : ',' et '.' = decimales, convention B2.2b) ; direction : le curseur
+    donne l'orientation (comme le rectangle) puis pose + sortie du mode ;
+  - objet pose = feuille fan de 24 tris (centre + boucle de 24 sommets,
+    25 sommets au total), normale +y, UN objet, etirable au push/pull
+    (garde makeExtrude = 1 tri depuis B2.2c) ; 24 segments fixes en v1 ;
+  - saisie : etiquette reelle de la touche pour la decimale (B2.2d,
+    glfwGetKeyName) - meme contrat que le rectangle ;
+  - nommage "Cercle", "Cercle (2)"... ; bouton + entree menu Outils
+    "Cercle  Maj+C" (regle B1.7c) ; 10e bouton de la barre (toolLayout n=10) ;
+
 Questions ouvertes a trancher avec l'utilisateur :
 - ligne : objet "fil" (2 sommets, GL_LINES, pas de volume -> pas de
   push/pull) OU feuille fine ? (retenu : fil de la v1, c'est le chemin que
