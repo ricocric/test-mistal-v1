@@ -124,6 +124,13 @@ Questions ouvertes a trancher avec l'utilisateur :
   F cadrer, H origine) qui portera leurs raccourcis, aujourd'hui rappeles
   seulement dans l'entete console et les boutons de la barre flottante ;
 - STL ASCII editable (informationnel), export fiable par fichier
+- Surface -> fil : fonction qui part d'une surface quelconque (feuille ou
+  solide) et la transforme en fil (arêtes de contour / wireframe) - demande
+  utilisateur B2.5b ("il sera probablement utile de creer une fonction qui
+  part d'une surface quelconque et la transforme en fil") ; utile pour
+  l'edition de profils (B3 chemins), l'edition directe (B5) et la lecture
+  des structures (se rattachera naturellement a la vraie topologie de B6 :
+  tri des aretes de bord = utilisees par UNE seule face) ;
 - Deplacements aimantes / collisions (T2), groupes d'objets (T3)
 - Points de pivot choisis, mesures / cotes magnetees
 - Fermeture avec confirmation "projet modifie, enregistrer ?"
