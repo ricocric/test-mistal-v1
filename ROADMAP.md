@@ -56,7 +56,9 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   « ; » = separateur, « , »/« . » = decimales ;
 - B2.3 CERCLE fait : Maj+C, clic centre + clic rayon (apercu cercle +
   segment de rayon), feuille fan 24 tris normale +y etirable au push/pull,
-  chiffres + Entree = rayon exact (un seul nombre, decimales FR) ; note :
+  chiffres + Entree = rayon exact (un seul nombre, decimales FR) ;
+  B2.3b (retour de test) : chiffres du pave retablis (tout etait remplace
+  par la decimale) ; note :
   le moteur de tests compte desormais ses CHECKs executes (resume :
   "N echec(s), M verifications") - les totaux anterieurs etaient des
   comptages de lignes, sous-estimes ;

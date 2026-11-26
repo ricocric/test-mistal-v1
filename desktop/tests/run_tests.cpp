@@ -1673,6 +1673,15 @@ int main() {
         cerclePoseByRayon("2,5");
         CHECK(g_objs.size() == 1 && g_objs[0].bmax.x == 2.5 && g_objs[0].bmin.x == -2.5,
               "cercle : rayon tape avec decimale FR (2,5) = rayon 2.5");
+        /* pavé numerique : les CHIFFRES s'affichent (bug B2.3b : tout etait
+           remplace par la decimale) */
+        g_cercleMode = true; cercleReset(); g_cercleActive = true; g_cercleCentre = Vec3(0, 0, 0);
+        onKey(W, GLFW_KEY_KP_2, 0, GLFW_PRESS, 0);
+        onKey(W, GLFW_KEY_KP_DECIMAL, 0, GLFW_PRESS, 0);
+        onKey(W, GLFW_KEY_KP_5, 0, GLFW_PRESS, 0);
+        CHECK(g_cercleNumBuf == "2.5",
+              "cercle : pave numerique = chiffres tapes, KP_DECIMAL = decimale");
+        g_cercleMode = true; cercleReset();
         const size_t avant = g_objs.size();
         g_cercleMode = true; cercleReset();
         cerclePoseByRayon("abc");

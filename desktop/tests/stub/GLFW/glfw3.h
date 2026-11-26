@@ -28,6 +28,8 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_KEY_KP_ENTER    335
 #define GLFW_KEY_KP_DECIMAL  330
 #define GLFW_KEY_KP_0        320
+#define GLFW_KEY_KP_2        322
+#define GLFW_KEY_KP_5        325
 #define GLFW_KEY_KP_9        329
 #define GLFW_KEY_0           48
 #define GLFW_KEY_9           57

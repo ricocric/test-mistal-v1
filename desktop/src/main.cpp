@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.3";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.3b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -3261,9 +3261,14 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         const bool topRowC = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
         const bool padRowC = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
         if (topRowC || padRowC || isSeparatorKey(key, scancode)) {
-            /* un seul nombre : tout separateur (etiquette reelle de la
-               touche B2.2d, ou code) = decimale, comme la longueur de ligne */
-            if (g_cercleNumBuf.size() < 16) g_cercleNumBuf += '.';
+            /* chiffres = chiffres ; un seul nombre : tout separateur
+               (etiquette reelle de la touche B2.2d, ou code) = decimale,
+               comme la longueur de ligne */
+            char c;
+            if (padRowC) c = char('0' + (key - GLFW_KEY_KP_0));
+            else if (topRowC) c = char(key);
+            else c = '.';
+            if (g_cercleNumBuf.size() < 16) g_cercleNumBuf += c;
         } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
             if (g_cercleNumBuf.size() < 16) g_cercleNumBuf.insert(g_cercleNumBuf.begin(), '-');
         } else if (key == GLFW_KEY_BACKSPACE) {

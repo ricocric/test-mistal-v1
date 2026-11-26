@@ -689,7 +689,10 @@ droit = annulation sans objet (mecanique commune B2).
   prendre, le cercle est invariant par rotation) ; decimales FR acceptees
   (',' ; et '.' = decimale, convention B2.2b/B2.2d) ;
 - nommage uniqueName commun (« Cercle », « Cercle (2) ») ;
-- moteur de tests : +8 verifications, total execute **266, 0 echec**.
+- B2.3b (retour de test) : le pavé numerique n'affichait que des decimales
+  - la simplification de la saisie avait ecrase le mapping chiffres ;
+  retabli (chiffres = chiffres, separateur = decimale) ;
+- moteur de tests : +9 verifications, total execute **267, 0 echec**.
   Nouveau : le CHECK compte ses executions (g_tot) et le resume affiche
   le total execute - les totaux anterieurs comptaient des lignes de
   sortie, sous-estimes (messages multi-lignes) ;
