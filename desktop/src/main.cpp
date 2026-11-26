@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1.2";
+static const char* BUILD_VERSION = "B1.3";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1328,6 +1328,8 @@ static void runToolCommand(int id);
 /* B1.1 : toggles du menu Affichage (definis avec la barre d'outils) */
 static void toolbarSetVisible(bool vis);
 static void toolbarSetVertical(bool vert);
+/* B1.3 : la barre suit les mouvements de la fenetre principale */
+static void toolFollow();
 #endif
 
 static void handleMenuAction(int id) {
@@ -1450,6 +1452,7 @@ static WNDPROC g_baseWndProc = nullptr;
 
 static LRESULT CALLBACK menuWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_COMMAND) { handleMenuAction((int)LOWORD(wp)); return 0; }
+    if (msg == WM_MOVE || msg == WM_SIZE) toolFollow();   /* B1.3 : la barre suit */
     return CallWindowProc(g_baseWndProc, h, msg, wp, lp);
 }
 #endif
@@ -1502,11 +1505,24 @@ static void drawText2D(float x, float y, const char* s) {
    deplacable par la barre de titre = 2 ecrans inclus), boutons = modes
    exclusifs identiques aux raccourcis, via runToolCommand. La croix cache
    la barre et decoche Affichage > Barre d'outils (le menu la rappelle). Orientation
-   verticale ou horizontale, aimantation sur les 4 bords du bureau (24 px),
-   tout est persiste dans la section [outils] du sketch3d.ini. */
+   verticale ou horizontale. B1.3 : la position stockee (toolX/toolY) est un
+   DECALAGE par rapport au coin client de la fenetre principale - la barre
+   suit ses mouvements, et l'aimantation (24 px) se fait sur ses 4 bords.
+   Tout est persiste dans la section [outils] du sketch3d.ini. */
 static HWND g_toolWin = nullptr;
+static HWND g_mainHwnd = nullptr;    /* fenetre principale : suivi + aimantation */
 static HWND g_toolBtn[8];
 static HMENU g_viewMenu = nullptr;   /* menu Affichage : coches tenus a jour */
+
+/* replace la barre a mainHwnd + decalage persiste (appelee au WM_MOVE et
+   WM_SIZE de la fenetre principale) */
+static void toolFollow() {
+    if (!g_toolWin || !g_mainHwnd) return;
+    POINT o = {0, 0};
+    ClientToScreen(g_mainHwnd, &o);
+    SetWindowPos(g_toolWin, nullptr, o.x + g_setup.toolX, o.y + g_setup.toolY,
+                 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+}
 
 static void toolLayout(HWND tw) {
     const int n = 7;
@@ -1533,19 +1549,25 @@ static LRESULT CALLBACK toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     if (msg == WM_EXITSIZEMOVE) {
-        /* fin de deplacement : aimantation sur un bord du bureau si proche */
-        RECT r, wa;
+        /* fin de deplacement : decalage par rapport a la fenetre principale
+           + aimantation sur ses 4 bords (G/D/H/B) si proche (24 px) */
+        RECT r, wc;
         GetWindowRect(h, &r);
-        SystemParametersInfoA(SPI_GETWORKAREA, 0, &wa, 0);
+        RECT c;
+        GetClientRect(g_mainHwnd, &c);
+        POINT o = {0, 0};
+        ClientToScreen(g_mainHwnd, &o);
+        const int tw = r.right - r.left, th = r.bottom - r.top;
+        const int mw = c.right - c.left, mh = c.bottom - c.top;
         const int kMagnet = 24;
-        int x = r.left, y = r.top, changed = 0;
-        if (r.left <= wa.left + kMagnet) { x = wa.left; changed = 1; }
-        else if (wa.right - r.right <= kMagnet) { x = wa.right - (r.right - r.left); changed = 1; }
-        if (r.top <= wa.top + kMagnet) { y = wa.top; changed = 1; }
-        else if (wa.bottom - r.bottom <= kMagnet) { y = wa.bottom - (r.bottom - r.top); changed = 1; }
-        if (changed) SetWindowPos(h, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-        g_setup.toolX = x; g_setup.toolY = y;
+        int ox = r.left - o.x, oy = r.top - o.y;
+        if (std::abs(ox) <= kMagnet || ox < 0) ox = 0;                     /* bord gauche */
+        else if (mw - (ox + tw) <= kMagnet) ox = mw - tw;                  /* bord droit */
+        if (std::abs(oy) <= kMagnet || oy < 0) oy = 0;                     /* bord haut */
+        else if (mh - (oy + th) <= kMagnet) oy = mh - th;                  /* bord bas */
+        g_setup.toolX = ox; g_setup.toolY = oy;
         saveSetup();
+        toolFollow();
         return 0;
     }
     return DefWindowProcA(h, msg, wp, lp);
@@ -1565,8 +1587,11 @@ static void attachToolbar(HWND mainHwnd) {
         RegisterClassA(&wc);
         clsDone = true;
     }
+    g_mainHwnd = mainHwnd;
+    POINT o = {0, 0};
+    ClientToScreen(mainHwnd, &o);
     const HWND tw = CreateWindowExA(WS_EX_TOOLWINDOW, cls, "Outils",
-        WS_POPUP | WS_CAPTION | WS_SYSMENU, g_setup.toolX, g_setup.toolY, 0, 0,
+        WS_POPUP | WS_CAPTION | WS_SYSMENU, o.x + g_setup.toolX, o.y + g_setup.toolY, 0, 0,
         mainHwnd, nullptr, GetModuleHandleA(nullptr), nullptr);
     static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller" };
     static const int ids[] = { IDM_TOOL_SELECT, IDM_TOOL_PP, IDM_TOOL_ROT, IDM_TOOL_FRAME,
