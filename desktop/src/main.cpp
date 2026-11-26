@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.2b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.2c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1855,7 +1855,10 @@ static double g_ppStatusTick = 0.0;
 
 static bool makeExtrude(const Object& o, size_t clickedTri, Extrude& dd) {
     const size_t triCount = o.tri.size() / 3;
-    if (o.tri.size() < 9 || clickedTri >= triCount || clickedTri >= o.n.size()) return false;
+    /* garde = 1 tri complet : une feuille (2 tris, B2.2 rectangle) est une
+       face valide pour le Push/Pull (bug retour de test : < 9 refusait toute
+       feuille) ; tout le reste (BFS, butee, recolation) gere deja triCount */
+    if (o.tri.size() < 3 || clickedTri >= triCount || clickedTri >= o.n.size()) return false;
     const Vec3 n0raw = o.n[clickedTri];
     if (!(dot(n0raw, n0raw) > 0.5)) return false;
     const Vec3 n0 = n0raw;
@@ -2761,7 +2764,9 @@ static void rectPoseByDims(const std::string& txt) {
         return;
     }
     std::string t = txt;
-    for (char& c : t) if (c == ';') c = ' ';   /* separateur = point-virgule (virgule proscrite : confusion decimale) */
+    /* ';' = separateur de champs ; ',' = decimale FR, convertie en '.'
+       (convention B2.2b : jamais de virgule comme separateur) */
+    for (char& c : t) { if (c == ';') c = ' '; else if (c == ',') c = '.'; }
     double L = 0.0, H = 0.0;
     if (std::sscanf(t.c_str(), "%lf %lf", &L, &H) != 2
         || !std::isfinite(L) || !std::isfinite(H) || L <= 0.0 || H <= 0.0) {
@@ -3092,9 +3097,17 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         const bool topRowR = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
         const bool padRowR = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
         if (topRowR || padRowR || isSeparatorKey(key, scancode)) {
-            if (g_rectNumBuf.size() < 16)
-                g_rectNumBuf += (padRowR ? char('0' + (key - GLFW_KEY_KP_0))
-                              : (topRowR ? char(key) : char(key)));
+            /* mapping explicite (bug retour de test, clavier FR) : ';' = Maj +
+               la touche a cote de M, et Windows la signale comme
+               GLFW_KEY_COMMA + Maj -> char(key) brut affichait une virgule */
+            char c;
+            if (padRowR) c = char('0' + (key - GLFW_KEY_KP_0));
+            else if (topRowR) c = char(key);
+            else if (key == GLFW_KEY_PERIOD || key == GLFW_KEY_KP_DECIMAL) c = '.';
+            else if (key == GLFW_KEY_SEMICOLON
+                     || (key == GLFW_KEY_COMMA && (mods & GLFW_MOD_SHIFT))) c = ';';
+            else c = ',';                    /* ',' non majusculee = decimale FR */
+            if (g_rectNumBuf.size() < 16) g_rectNumBuf += c;
         } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
             if (g_rectNumBuf.size() < 16) g_rectNumBuf.insert(g_rectNumBuf.begin(), '-');
         } else if (key == GLFW_KEY_BACKSPACE) {

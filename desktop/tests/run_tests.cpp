@@ -1602,6 +1602,39 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
     }
 
+    { /* B2.2c : Push/Pull sur feuille rectangle + clavier FR (point-virgule) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        rectPose(Vec3(0, 0, 0), Vec3(2, 0, 3));
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.size() == 6,
+              "B2.2c : feuille rectangle posee avant tirage (2 tris)");
+        Extrude dd;
+        CHECK(makeExtrude(g_objs[0], 0, dd),
+              "B2.2c : Push/Pull disponible sur la feuille rectangle (garde makeExtrude = 1 tri)");
+        applyExtrude(g_objs[0], dd, 2.0);
+        double ymax = -1e300;
+        for (const Vec3& p : g_objs[0].v) if (p.y > ymax) ymax = p.y;
+        CHECK(ymax > 2.0 - 1e-9 && ymax < 2.0 + 1e-9 && g_objs[0].tri.size() > 6,
+              "B2.2c : tirage de la feuille = volume recree (couche a +2, jupe + fond)");
+        /* clavier FR : le ';' (Maj + touche a cote de M) arrive en GLFW_KEY_COMMA + SHIFT */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_rectActive = true; g_rectNumBuf.clear();
+        onKey(W, GLFW_KEY_COMMA, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_rectNumBuf == ";",
+              "B2.2c : Maj + touche virgule tape un POINT-VIRGULE (quirk clavier FR)");
+        onKey(W, GLFW_KEY_COMMA, 0, GLFW_PRESS, 0);
+        CHECK(g_rectNumBuf == ";,",
+              "B2.2c : virgule non majusculee = decimale FR acceptee dans la saisie");
+        g_rectActive = true; g_rectCorner = Vec3(0, 0, 0);
+        g_rectCursor = Vec3(1, 0, 1); g_rectCursorOk = true;
+        rectPoseByDims("2,5;3");
+        CHECK(g_objs.size() == 1 && g_objs[0].bmax.x == 2.5 && g_objs[0].bmax.z == 3.0,
+              "B2.2c : L;H avec decimales FR (2,5;3) = rectangle 2.5 x 3");
+        g_rectActive = false;
+        g_rectMode = false;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }
