@@ -1525,9 +1525,18 @@ int main() {
         lineReset();
     }
 
-    { /* B2.5 : fermeture de la ligne sur le depart (radio du menu Outils, NON persistee) */
+    { /* B2.5b : fermeture de la ligne - deux commandes (L = surface, Maj+L = fil), rien de memorise */
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
-        g_setup.ligneFerme = 1;                      /* defaut = surface fermee */
+        runToolCommand(IDM_TOOL_LINE);
+        CHECK(g_lineMode && g_lineFerme,
+              "ligne : L arme le mode, fermeture en surface (choix par la commande, rien de memorise)");
+        runToolCommand(IDM_TOOL_LINE);               /* rappel = desarme */
+        runToolCommand(IDM_TOOL_LIGNE_FIL);
+        CHECK(g_lineMode && !g_lineFerme,
+              "ligne : Maj+L arme le mode, fil ouvert (meme outil, autre commande)");
+        lineCancel("fin du test d'armement");
+        g_lineMode = false;
+        g_lineFerme = true;                          /* defaut : surface fermee */
         g_linePts = { Vec3(0, 0, 0), Vec3(2, 0, 0), Vec3(2, 0, 2), Vec3(0, 0, 2) };
         g_lineActive = true;
         g_lineMode = true;
@@ -1539,7 +1548,7 @@ int main() {
         CHECK(!g_lineMode && !g_lineActive && g_linePts.empty(),
               "ligne : fermeture = pose + sortie du mode");
 
-        g_setup.ligneFerme = 0;                      /* option : fil ouvert */
+        g_lineFerme = false;                         /* option : fil ouvert */
         g_linePts = { Vec3(0, 0, 0), Vec3(2, 0, 0), Vec3(2, 0, 2), Vec3(0, 0, 2) };
         g_lineActive = true;
         g_lineMode = true;
@@ -1547,7 +1556,7 @@ int main() {
         CHECK(g_objs.size() == 2 && g_objs[1].tri.empty() && g_objs[1].edges.size() == 4,
               "ligne : fil ouvert = boucle fermee sans surface (4 aretes, 0 tri)");
         CHECK(g_objs[1].name != g_objs[0].name, "ligne : noms uniques aux deux poses");
-        g_setup.ligneFerme = 1;                      /* retour au defaut (session) */
+        g_lineFerme = true;                          /* retour au defaut */
 
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_lineMode = false;
