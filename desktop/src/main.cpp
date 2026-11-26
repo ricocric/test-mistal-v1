@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "T1.12";
+static const char* BUILD_VERSION = "B0";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -944,6 +944,94 @@ static void flashBand(const char* msg) {
     g_bandFlashUntil = glfwGetTime() + 3.0;
 }
 
+/* B0 : fichier de setup - INI editable a cote de l exe (sketch3d.ini) ;
+   charge au lancement, sauvegarde a la fermeture + a chaque changement de
+   preference (choix valide). Contenu v1 : geometrie de fenetre, dernier
+   projet, formats d'export reels (memorises au fil des exports). */
+struct Setup {
+    int winX = 100, winY = 60;
+    int winW = 0, winH = 0;      /* 0 = garder les valeurs par defaut du programme */
+    int maximized = 0;
+    std::string dernierProjet;
+    std::string formatScene = "obj";
+    std::string formatSelection = "obj";
+};
+static Setup g_setup;
+static std::string g_setupPath = "sketch3d.ini";
+
+static std::string setupFilePath() {
+#ifdef _WIN32
+    char exe[MAX_PATH];
+    const DWORD n = GetModuleFileNameA(nullptr, exe, MAX_PATH);
+    const std::string p = (n > 0 && n < MAX_PATH) ? std::string(exe, (size_t)n) : std::string();
+    const size_t slash = p.find_last_of("\\/");
+    return (slash == std::string::npos) ? "sketch3d.ini" : p.substr(0, slash + 1) + "sketch3d.ini";
+#else
+    return "sketch3d.ini";       /* sandbox / tests : repertoire courant */
+#endif
+}
+
+static std::string setupTrim(const std::string& t) {
+    const size_t a = t.find_first_not_of(" \t\r\n");
+    if (a == std::string::npos) return std::string();
+    const size_t b = t.find_last_not_of(" \t\r\n");
+    return t.substr(a, b - a + 1);
+}
+
+static void saveSetup() {
+    std::ofstream f(g_setupPath.c_str());
+    if (!f) { std::printf("setup : ecriture impossible (%s)\n", g_setupPath.c_str()); return; }
+    f << "[fenetre]\n"
+      << "x = " << g_setup.winX << "\n"
+      << "y = " << g_setup.winY << "\n"
+      << "w = " << g_setup.winW << "\n"
+      << "h = " << g_setup.winH << "\n"
+      << "max = " << g_setup.maximized << "\n"
+      << "\n[projet]\n"
+      << "dernier = " << g_setup.dernierProjet << "\n"
+      << "\n[exports]\n"
+      << "format_scene = " << g_setup.formatScene << "\n"
+      << "format_selection = " << g_setup.formatSelection << "\n";
+}
+
+static void loadSetup() {
+    std::ifstream f(g_setupPath.c_str());
+    if (!f) return;              /* premiere utilisation : defauts du programme */
+    std::string line, section;
+    while (std::getline(f, line)) {
+        const std::string t = setupTrim(line);
+        if (t.empty() || t[0] == ';' || t[0] == '#') continue;
+        if (t.front() == '[' && t.back() == ']') { section = setupTrim(t.substr(1, t.size() - 2)); continue; }
+        const size_t eq = t.find('=');
+        if (eq == std::string::npos) continue;
+        const std::string k = setupTrim(t.substr(0, eq));
+        const std::string v = setupTrim(t.substr(eq + 1));
+        /* cles inconnues ou valeurs aberrantes : ignorees (setup tolerant) */
+        if (section == "fenetre") {
+            if (k == "x") g_setup.winX = std::atoi(v.c_str());
+            else if (k == "y") g_setup.winY = std::atoi(v.c_str());
+            else if (k == "w" && std::atoi(v.c_str()) > 0) g_setup.winW = std::atoi(v.c_str());
+            else if (k == "h" && std::atoi(v.c_str()) > 0) g_setup.winH = std::atoi(v.c_str());
+            else if (k == "max") g_setup.maximized = (std::atoi(v.c_str()) != 0) ? 1 : 0;
+        } else if (section == "projet") {
+            if (k == "dernier") g_setup.dernierProjet = v;
+        } else if (section == "exports") {
+            if (k == "format_scene" && (v == "obj" || v == "stl")) g_setup.formatScene = v;
+            else if (k == "format_selection" && (v == "obj" || v == "stl")) g_setup.formatSelection = v;
+        }
+    }
+}
+
+/* chaque changement de preference : sauvegarde immediate */
+static void noteProjectPath(const std::string& p) {
+    if (g_setup.dernierProjet != p) { g_setup.dernierProjet = p; saveSetup(); }
+}
+static void noteExportFormat(bool scene, bool stl) {
+    std::string& cible = scene ? g_setup.formatScene : g_setup.formatSelection;
+    const std::string voulu = stl ? "stl" : "obj";
+    if (cible != voulu) { cible = voulu; saveSetup(); }
+}
+
 /* T1.12 : presse-papiers interne (copier-coller clavier Ctrl+C / Ctrl+V) ;
    Ctrl+X (couper) : plus tard, copie + suppression existent deja separement. */
 static std::vector<Object> g_clipboard;   /* copies entieres de la selection au Ctrl+C */
@@ -1225,6 +1313,7 @@ static void handleMenuAction(int id) {
         if (p.empty()) return;
         std::string err;
         if (!loadProject(p, err)) { std::printf("ouverture impossible : %s\n", err.c_str()); return; }
+        noteProjectPath(p);
         frameSelected();
         return;
     }
@@ -1235,6 +1324,7 @@ static void handleMenuAction(int id) {
         if (p.empty()) return;
         std::string err;
         if (!saveProject(p, err)) std::printf("enregistrement impossible : %s\n", err.c_str());
+        else noteProjectPath(p);
         return;
     }
     case IDM_CLOSE_PROJECT:
@@ -1247,26 +1337,26 @@ static void handleMenuAction(int id) {
         return;
     case IDM_EXPORT_OBJ: {
         const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter en OBJ");
-        if (!p.empty()) exportOBJ(p);
+        if (!p.empty()) { exportOBJ(p); noteExportFormat(true, false); }
         return;
     }
     case IDM_EXPORT_STL: {
         const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter en STL");
-        if (!p.empty()) exportSTL(p);
+        if (!p.empty()) { exportSTL(p); noteExportFormat(true, true); }
         return;
     }
     case IDM_EXPORT_OBJ_SEL: {
         const std::vector<int> sel = selectedIndices();
         if (sel.empty()) { flashBand("selectionnez d'abord un objet (clic gauche ou Ctrl+clic)"); return; }
         const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter la selection en OBJ");
-        if (!p.empty()) exportOBJ(p, sel);
+        if (!p.empty()) { exportOBJ(p, sel); noteExportFormat(false, false); }
         return;
     }
     case IDM_EXPORT_STL_SEL: {
         const std::vector<int> sel = selectedIndices();
         if (sel.empty()) { flashBand("selectionnez d'abord un objet (clic gauche ou Ctrl+clic)"); return; }
         const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter la selection en STL");
-        if (!p.empty()) exportSTL(p, sel);
+        if (!p.empty()) { exportSTL(p, sel); noteExportFormat(false, true); }
         return;
     }
     case IDM_DUPLICATE:
@@ -2420,8 +2510,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             }
         }
         if (key == GLFW_KEY_I) { importFile(); }   /* importer OBJ/STL */
-        if (key == GLFW_KEY_O) { const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter en OBJ"); if (!p.empty()) exportOBJ(p); }
-        if (key == GLFW_KEY_S) { const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter en STL"); if (!p.empty()) exportSTL(p); }
+        if (key == GLFW_KEY_O) { const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter en OBJ"); if (!p.empty()) { exportOBJ(p); noteExportFormat(true, false); } }
+        if (key == GLFW_KEY_S) { const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter en STL"); if (!p.empty()) { exportSTL(p); noteExportFormat(true, true); } }
     }
     recordAxisKey(scancode, action);
 }
@@ -2695,6 +2785,10 @@ int main() {
     std::printf("Sketch3D natif — build %s (outillages T1 : duplication multi-instances, rotation autour des axes + menus du lot N5)\n", BUILD_VERSION);
     std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer, exporter OBJ/STL, quitter ; menu contextuel (clic droit) : infos objet, duplication\n");
     std::printf("P : mode Push/Pull ; R : mode Rotation (X/Y/Z = axe, souris ou chiffres+Entree) ; I : import ; F : cadrage ; H : origine ; molette-clic ou Shift+glisser : deplacer la vue ; C : centrer sur le point vise\n");
+    g_setupPath = setupFilePath();
+    loadSetup();                     /* B0 : preferences de la derniere session */
+    if (g_setup.winW > 0) g_winW = g_setup.winW;
+    if (g_setup.winH > 0) g_winH = g_setup.winH;
     buildScene();
     if (!glfwInit()) { std::fprintf(stderr, "glfwInit a echoue\n"); return 1; }
 
@@ -2714,6 +2808,9 @@ int main() {
     glfwSetKeyCallback(win, onKey);
     glfwSetFramebufferSizeCallback(win, [](GLFWwindow*, int w, int h) { g_winW = w; g_winH = h; });
     attachMenus(win);
+    /* B0 : geometrie de fenetre sauvegardee (position 2 ecrans incluse) */
+    glfwSetWindowPos(win, g_setup.winX, g_setup.winY);
+    if (g_setup.maximized) glfwMaximizeWindow(win);
 
     while (!glfwWindowShouldClose(win)) {
         if (g_mode == M_Orbit) {
@@ -2744,6 +2841,14 @@ int main() {
         glfwPollEvents();
     }
 
+    {   /* B0 : geometrie de la fenetre au moment de la fermeture */
+        int px, py, w2, h2;
+        glfwGetWindowPos(win, &px, &py);
+        glfwGetWindowSize(win, &w2, &h2);
+        g_setup.winX = px; g_setup.winY = py; g_setup.winW = w2; g_setup.winH = h2;
+        g_setup.maximized = (glfwGetWindowAttrib(win, GLFW_MAXIMIZED) == GLFW_TRUE) ? 1 : 0;
+    }
+    saveSetup();
     glfwTerminate();
     return 0;
 }

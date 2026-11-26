@@ -259,6 +259,24 @@ build\Debug\sketch3d.exe
   B a chaud avec angle conserve, echange des positions par +180, ancre pos
   inchangee, preview exacte autour du barycentre, annulation, mono/B isole).
 
+## Fichier de setup B0 (sketch3d.ini)
+
+- **INI editable a la main** pose a cote de l'exe (`sketch3d.ini`, sans
+  registry) ; charge au lancement ;
+- contenu v1 : **geometrie de fenetre** (x, y, largeur, hauteur, maximise =
+  restauration au lancement, position 2 ecrans incluse, sauvegarde a la
+  FERMETURE), **dernier projet** ouvert/enregistre, **formats d'export
+  reels** (scene / selection -> obj ou stl, memorises au fil des exports) ;
+- **sauvegarde a chaque changement de preference** (choix valide : dernier
+  projet note a l'ouverture/enregistrement reussis, format note a chaque
+  export reel) ;
+- parse tolerant : commentaires (`#`, `;`), cles ou valeurs inconnues
+  ignorees, w/h <= 0 ignores (defauts du programme), fichier absente =
+  premiere utilisation sans bruit ;
+- batterie : **198 verifications, 0 echec** (+7 : fichier absent, parse
+  tolerant, dernier projet, format invalide ignore, sauvegarde immediate,
+  round-trip fermeture -> relancement, INI lisible a la main).
+
 ## Copier-coller T1.12 (Ctrl+C / Ctrl+V)
 
 - **Ctrl+C** : copie la selection courante (mono OU multi, Ctrl+clic) dans un

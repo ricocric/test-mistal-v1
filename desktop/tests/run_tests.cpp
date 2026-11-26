@@ -1255,6 +1255,62 @@ int main() {
         g_clipboard.clear(); g_pasteRepeat = 0;
     }
 
+    /* 28 - B0 : fichier de setup (INI a cote de l exe) - parse tolerant,
+       sauvegarde immediate a chaque changement de preference, dernier
+       projet, round-trip complet fermeture -> lancement */
+    {
+        const std::string path = "/tmp/sketch3d_test_setup.ini";
+        g_setupPath = path;
+        g_setup = Setup{};
+        std::remove(path.c_str());
+        loadSetup();   /* fichier absent = defauts du programme conserves */
+        CHECK(g_setup.formatScene == "obj" && g_setup.dernierProjet.empty()
+              && g_setup.winW == 0,
+              "setup : fichier absent = defauts du programme");
+
+        /* parse d'un INI ecrit/editable a la main : commentaires, cle
+           inconnue, w = 0 (aberrant) ignore au profit du w valide lu avant */
+        {
+            std::ofstream f(path.c_str());
+            f << "# setup sketch3d\n"
+              << "[fenetre]\nx = 220\ny = 40\nw = 1600\nh = 900\nmax = 1\nw = 0\nzzz = 5\n"
+              << "\n[projet]\ndernier = C:\\proj\\essai.s3projet\n"
+              << "\n[exports]\nformat_scene = stl\nformat_selection = faux\n";
+        }
+        loadSetup();
+        CHECK(g_setup.winX == 220 && g_setup.winY == 40
+              && g_setup.winW == 1600 && g_setup.winH == 900 && g_setup.maximized == 1,
+              "setup : geometrie relue (w = 0 ignore, cles inconnues ignorees)");
+        CHECK(g_setup.dernierProjet == "C:\\proj\\essai.s3projet",
+              "setup : dernier projet relu");
+        CHECK(g_setup.formatScene == "stl" && g_setup.formatSelection == "obj",
+              "setup : format scene memorise, valeur invalide (format_selection) ignoree");
+
+        /* changement de preference = sauvegarde immediate, puis round-trip */
+        noteExportFormat(false, true);
+        CHECK(g_setup.formatSelection == "stl",
+              "setup : preference export selection -> stl appliquee et gravee sur le champ");
+        g_setup = Setup{};       /* simulation d un relancement */
+        loadSetup();
+        CHECK(g_setup.winW == 1600 && g_setup.winH == 900 && g_setup.winX == 220
+              && g_setup.formatScene == "stl" && g_setup.formatSelection == "stl"
+              && g_setup.dernierProjet == "C:\\proj\\essai.s3projet",
+              "setup : round-trip complet (fermeture -> lancement suivant)");
+        saveSetup();
+        {
+            std::ifstream f(path.c_str());
+            std::string contenu((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            CHECK(contenu.find("[fenetre]") != std::string::npos
+                  && contenu.find("format_scene = stl") != std::string::npos
+                  && contenu.find("max = 1") != std::string::npos,
+                  "setup : fichier INI lisible et editable a la main");
+        }
+
+        std::remove(path.c_str());
+        g_setupPath = "sketch3d.ini";
+        g_setup = Setup{};
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }
