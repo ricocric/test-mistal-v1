@@ -77,6 +77,10 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   volait le focus clavier a la vue 3D) ; gardes du dispatcher verbeuses ;
   B2.4d (retour de test) : limite des 180 deg levee - fleche libre,
   arc majeur (> 180 deg) jusqu'au proche-cercle ; +2 verifications = 278 ;
+  B2.4e (retour de test) : Maj+A mort = GLFW rapporte les touches par
+  POSITION QWERTY (AZERTY : A arrive en GLFW_KEY_Q) ; raccourcis lettres
+  desormais compares par ETIQUETTE reelle (keyIsLetter/glfwGetKeyName,
+  regle B2.2d), repli par code ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil

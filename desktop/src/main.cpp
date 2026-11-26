@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.4d";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.4e";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -3266,6 +3266,24 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
     }
 }
 
+/* B2.4e : GLFW rapporte les touches par POSITION QWERTY (codes US) - sur
+   AZERTY la touche etiquetee A arrive en GLFW_KEY_Q (c'etait le Maj+A mort,
+   retour de test ; R, C, L, P... sont aux memes positions sur les deux
+   dispositions, d'ou les autres raccourcis fonctionnels). Les raccourcis
+   suivent desormais l'ETIQUETTE reelle (regle B2.2d de la saisie) :
+   comparaison par glfwGetKeyName, repli par code si le nom manque
+   (tests, disposition inconnue). */
+static bool keyIsLetter(int key, int scancode, char letter) {
+    const char* nm = glfwGetKeyName(key, scancode);
+    if (nm && nm[0] && nm[1] == '\0') {
+        char a = nm[0], b = letter;
+        if (a >= 'a' && a <= 'z') a = char(a - 'a' + 'A');
+        if (b >= 'a' && b <= 'z') b = char(b - 'a' + 'A');
+        return a == b;
+    }
+    return key == (int)(unsigned char)letter;
+}
+
 static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
     if (g_dupPending) {
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
@@ -3322,7 +3340,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             rotCancel();                /* Echap : annule la rotation ET quitte le mode (sortie de l'etat en cours) */
             g_rotMode = false;
             std::printf("\nmode selection\n");
-        } else if (key == GLFW_KEY_R) {
+        } else if (keyIsLetter(key, scancode, 'R')) {
             runToolCommand(IDM_TOOL_ROT);  /* R disponible a tout moment : quitte le mode */
         } else if (key == GLFW_KEY_B && !g_rotMulti.empty()) {
             g_rotPivotKind = (g_rotPivotKind == 1) ? 0 : 1;   /* T1.10 : centre propre <-> barycentre du groupe, angle conserve */
@@ -3378,7 +3396,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             ppCancel();                 /* Echap : annule la face ET quitte le mode P (sortie de l'etat en cours) */
             g_ppMode = false;
             std::printf("\nmode selection\n");
-        } else if (key == GLFW_KEY_P) {
+        } else if (keyIsLetter(key, scancode, 'P')) {
             runToolCommand(IDM_TOOL_PP);  /* P disponible a tout moment : quitte le mode */
         }
         return;
@@ -3407,7 +3425,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             }
         } else if (key == GLFW_KEY_ESCAPE) {
             lineCancel("dessin annule");   /* Echap : tout annule et quitte le mode */
-        } else if (key == GLFW_KEY_L) {
+        } else if (keyIsLetter(key, scancode, 'L')) {
             runToolCommand(IDM_TOOL_LINE); /* L disponible a tout moment */
         }
         return;
@@ -3449,7 +3467,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             }
         } else if (key == GLFW_KEY_ESCAPE) {
             rectCancel("dessin annule");   /* Echap : tout annule et quitte le mode */
-        } else if (key == GLFW_KEY_R) {
+        } else if (keyIsLetter(key, scancode, 'R')) {
             runToolCommand(IDM_TOOL_RECT); /* R disponible a tout moment */
         }
         return;
@@ -3479,7 +3497,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             }
         } else if (key == GLFW_KEY_ESCAPE) {
             cercleCancel("dessin annule");   /* Echap : tout annule et quitte le mode */
-        } else if (key == GLFW_KEY_C && (mods & GLFW_MOD_SHIFT)) {
+        } else if (keyIsLetter(key, scancode, 'C') && (mods & GLFW_MOD_SHIFT)) {
             runToolCommand(IDM_TOOL_CERCLE); /* Maj+C disponible a tout moment */
         }
         return;
@@ -3515,21 +3533,21 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             }
         } else if (key == GLFW_KEY_ESCAPE) {
             arcCancel("dessin annule");    /* Echap : tout annule et quitte le mode */
-        } else if (key == GLFW_KEY_A && (mods & GLFW_MOD_SHIFT)) {
+        } else if (keyIsLetter(key, scancode, 'A') && (mods & GLFW_MOD_SHIFT)) {
             runToolCommand(IDM_TOOL_ARC);  /* Maj+A disponible a tout moment */
         }
         return;
     }
     if (action == GLFW_PRESS) {
         /* Ctrl+S = enregistrer le projet (retour utilisateur) ; position : avant les exports scene par O/S */
-        if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_S) {
+        if ((mods & GLFW_MOD_CONTROL) && keyIsLetter(key, scancode, 'S')) {
             handleMenuAction(IDM_SAVE_PROJECT);
             return;
         }
         /* Ctrl+C / Ctrl+V : copier / coller la selection (T1.12) ;
            C sans Ctrl reste le recentrage sur le point vise */
-        if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_C) { copySelected(); return; }
-        if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_V) { pasteClipboard(); return; }
+        if ((mods & GLFW_MOD_CONTROL) && keyIsLetter(key, scancode, 'C')) { copySelected(); return; }
+        if ((mods & GLFW_MOD_CONTROL) && keyIsLetter(key, scancode, 'V')) { pasteClipboard(); return; }
         if (key == GLFW_KEY_ESCAPE) {
             /* Echelle Echap : d'abord sortir de l'etat en cours (mode P/R en attente,
                puis deselection) ; Echap ne ferme JAMAIS l'application (rebonds de
@@ -3541,19 +3559,19 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); return; }
             if (selectedCount() > 0) { clearSelection(); std::printf("\nselection annulee\n"); return; }
         }
-        if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending && !g_lineMode) runToolCommand(IDM_TOOL_PP);
-        if (key == GLFW_KEY_R && !(mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineMode) runToolCommand(IDM_TOOL_ROT);
-        if (key == GLFW_KEY_R && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_rectActive)
+        if (keyIsLetter(key, scancode, 'P') && g_mode == M_None && !g_dupPending && !g_lineMode) runToolCommand(IDM_TOOL_PP);
+        if (keyIsLetter(key, scancode, 'R') && !(mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineMode) runToolCommand(IDM_TOOL_ROT);
+        if (keyIsLetter(key, scancode, 'R') && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_rectActive)
             runToolCommand(IDM_TOOL_RECT);   /* B2.2 : Maj+R = rectangle (R seul = Tourner) */
-        if (key == GLFW_KEY_C && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineActive && !g_rectActive) {
+        if (keyIsLetter(key, scancode, 'C') && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineActive && !g_rectActive) {
             runToolCommand(IDM_TOOL_CERCLE);   /* B2.3 : Maj+C = cercle (C seul = centrer, Ctrl+C = copie) */
             return;                            /* ne pas retomber sur le recentrage C */
         }
-        if (key == GLFW_KEY_A && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineActive && !g_rectActive) {
+        if (keyIsLetter(key, scancode, 'A') && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineActive && !g_rectActive) {
             runToolCommand(IDM_TOOL_ARC);      /* B2.4 : Maj+A = arc (convention Maj+lettre des formes) */
             return;
         }
-        if (key == GLFW_KEY_L && g_mode == M_None && !g_dupPending && !g_lineActive)
+        if (keyIsLetter(key, scancode, 'L') && g_mode == M_None && !g_dupPending && !g_lineActive)
             runToolCommand((mods & GLFW_MOD_SHIFT) ? IDM_TOOL_LIGNE_FIL : IDM_TOOL_LINE);  /* B2.5b : L = surface, Maj+L = fil ouvert */
         if (g_rotMode && !g_rotActive) {
             const char c = axisLetterFromScancode(scancode);
@@ -3563,9 +3581,9 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             deleteSelectedSet();
             return;
         }
-        if (key == GLFW_KEY_F) frameSelected();
-        if (key == GLFW_KEY_H) { goHome(); std::printf("vue d'origine\n"); }
-        if (key == GLFW_KEY_C && !(mods & GLFW_MOD_CONTROL)) {  /* centrer sur le point vise */
+        if (keyIsLetter(key, scancode, 'F')) frameSelected();
+        if (keyIsLetter(key, scancode, 'H')) { goHome(); std::printf("vue d'origine\n"); }
+        if (keyIsLetter(key, scancode, 'C') && !(mods & GLFW_MOD_CONTROL)) {  /* centrer sur le point vise */
             Vec3 org, dir, p;
             if (rayFromMouse(w, org, dir) && pickPointFromRay(org, dir, p)) {
                 g_cam.target = p;
@@ -3574,7 +3592,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
                 std::printf("C : aucun point vise (pointez un objet ou le sol)\n");
             }
         }
-        if (key == GLFW_KEY_I) { importFile(); }   /* importer OBJ/STL */
+        if (keyIsLetter(key, scancode, 'I')) { importFile(); }   /* importer OBJ/STL */
         /* B1.7 : touches O/S supprimees (collisions avec le format prefere) ;
            export par Fichier > Exporter la scene / la selection uniquement */
     }

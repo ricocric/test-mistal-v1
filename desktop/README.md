@@ -725,6 +725,13 @@ a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
   maintenant sa taille du tableau (synchro automatique, plus de
   desynchronisation possible) ; lecon : les sections Windows ne sont
   JAMAIS compilees en sandbox, seul le build MSVC les voit ;
+- B2.4e (retour de test : Maj+A mort alors que Maj+R/Maj+C fonctionnent) :
+  GLFW rapporte les touches par POSITION QWERTY (codes US) - sur AZERTY la
+  touche etiquetee A arrive en GLFW_KEY_Q (R, C, L, P... aux memes
+  positions, d'ou les autres raccourcis fonctionnels). Correctif :
+  comparateur keyIsLetter par ETIQUETTE reelle (glfwGetKeyName, regle
+  B2.2d de la saisie, repli par code) applique a TOUS les raccourcis
+  lettres (armements, Ctrl+C/V/S, F/H/I, recentrage C) ;
 - B2.4d (retour de test : "des formes ressemblent a un arc mais dont la
   fleche fait 5 ou 10 fois la corde") : limite des 180 deg levee - la
   construction par cercle unique (3 points) gere deja les grands arcs ;
