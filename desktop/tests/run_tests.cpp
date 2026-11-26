@@ -1502,6 +1502,24 @@ int main() {
         CHECK(!g_lineMode && !g_lineActive,
               "ligne : rappel du bouton = desarme (toggle)");
 
+        /* B2.1c : capture d'un fil par distance au rayon (tolerance explicite) */
+        {
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            Object fil;
+            fil.name = "F";
+            fil.pos = Vec3(0, 0, 0);
+            fil.v = { Vec3(0, 0, 0), Vec3(4, 0, 0) };
+            computeObjectDerived(fil);
+            g_objs.push_back(fil);
+            CHECK(fil.edges.size() == 1, "fil : la chaine d'aretes est derivee (1 segment)");
+            CHECK(filRayHit(Vec3(2, 0.3, 0), Vec3(0, -1, 0), g_objs[0], 0.5) > 0.0,
+                  "fil : rayon a 0.3 du segment = capture (tolerance 0.5)");
+            CHECK(filRayHit(Vec3(2, 0.3, 3), Vec3(0, -1, 0), g_objs[0], 0.5) < 0.0,
+                  "fil : rayon PARALLELE a 3 d'ecart = pas de capture (ne traverse jamais)");
+            CHECK(filRayHit(Vec3(5.5, 1.0, 0), Vec3(0, -1, 0), g_objs[0], 0.5) < 0.0,
+                  "fil : rayon au-dela de l'extremite (proche a 1.5) = pas de capture (tol 0.5)");
+        }
+
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_lineMode = false;
         lineReset();

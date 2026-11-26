@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.1b";   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.1c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -431,6 +431,42 @@ static bool pickPointFromRay(const Vec3& org, const Vec3& dir, Vec3& p) {
     return false;
 }
 
+/* B2.1c : un fil (objet sans triangle) n'est pas touchable par rayon ;
+   capture par distance minimale rayon-segments (echantillonnage le long du
+   rayon, distance point-segment standard). Retourne le t du point le plus
+   proche, ou -1. La tolerance est en unites monde, proportionnelle a la
+   distance de la camera (2% + marge), comme la precision visuelle du picking. */
+static double filRayHit(const Vec3& org, const Vec3& dir, const Object& o, double tol) {
+    if (!o.tri.empty() || o.v.size() < 2 || tol <= 0.0) return -1.0;
+    const Vec3 d = normalized(dir);
+    const int N = 128;
+    const double maxT = g_cam.dist * 2.0 + 1.0;
+    double bestD = tol, bestT = -1.0;
+    for (int i = 1; i <= N; ++i) {
+        const double t = maxT * (double)i / (double)N;
+        const Vec3 p = org + d * t;
+        for (const auto& e : o.edges) {
+            if (e.first < 0 || e.first >= (int)o.v.size()
+                || e.second < 0 || e.second >= (int)o.v.size()) continue;
+            const Vec3 a = o.pos + o.v[(size_t)e.first] * o.scl;
+            const Vec3 b = o.pos + o.v[(size_t)e.second] * o.scl;
+            const Vec3 ab = b - a;
+            const double len2 = dot(ab, ab);
+            double sFrac = 0.0;
+            if (len2 > 1e-24) {
+                sFrac = dot(p - a, ab) / len2;
+                if (sFrac < 0.0) sFrac = 0.0;
+                if (sFrac > 1.0) sFrac = 1.0;
+            }
+            const double dd = (p - (a + ab * sFrac)).norm();
+            if (dd < bestD) { bestD = dd; bestT = t; }
+        }
+    }
+    return bestT;
+}
+/* tolerance de capture des fils, partagee par pickAt et beginDrag */
+static double filPickTol() { return g_cam.dist * 0.02 + 0.05; }
+
 static int pickAt(GLFWwindow* w) {
     Vec3 org, dir;
     if (!rayFromMouse(w, org, dir)) return -1;
@@ -439,6 +475,13 @@ static int pickAt(GLFWwindow* w) {
     for (size_t i = 0; i < g_objs.size(); ++i) {
         double t;
         if (rayObject(org, dir, g_objs[i], t) && t < bestT) { bestT = t; best = (int)i; }
+    }
+    if (best < 0) {   /* B2.1c : aucun solide touche -> tenter les fils */
+        double bestTf = 1e300;
+        for (size_t i = 0; i < g_objs.size(); ++i) {
+            const double tf = filRayHit(org, dir, g_objs[i], filPickTol());
+            if (tf >= 0.0 && tf < bestTf) { bestTf = tf; best = (int)i; }
+        }
     }
     return best;
 }
@@ -451,7 +494,12 @@ static void beginDrag(GLFWwindow* w, int idx) {
     Vec3 org, dir;
     if (!rayFromMouse(w, org, dir)) return;
     double t;
-    if (!rayObject(org, dir, g_objs[(size_t)idx], t)) { g_mode = M_None; return; }
+    if (!rayObject(org, dir, g_objs[(size_t)idx], t)) {
+        /* B2.1c : fil sans triangle = capture par tolerance (meme seuil) */
+        const double tf = filRayHit(org, dir, g_objs[(size_t)idx], filPickTol());
+        if (tf < 0.0) { g_mode = M_None; return; }
+        t = tf;
+    }
     g_grabPoint = org + dir * t;
     g_startPos = g_objs[(size_t)idx].pos;
     g_dragMulti.clear();
@@ -3079,6 +3127,7 @@ static void drawObject(const Object& o, bool selected) {
         glColor3d(1.0, 0.85, 0.0);
         glLineWidth(2.5);
     }
+    else if (o.tri.empty()) glColor3dv(o.col);   /* B2.1c : fil = couleur propre (le gris sombre etait invisible sur le fond) */
     else glColor3d(0.2, 0.2, 0.22);
     for (const auto& e : o.edges) {
         if (e.first < 0 || e.first >= (int)o.v.size() || e.second < 0 || e.second >= (int)o.v.size()) continue;
