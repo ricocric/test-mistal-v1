@@ -259,6 +259,46 @@ build\Debug\sketch3d.exe
   B a chaud avec angle conserve, echange des positions par +180, ancre pos
   inchangee, preview exacte autour du barycentre, annulation, mono/B isole).
 
+## Barre d'outils flottante B1 (v1)
+
+- Petite fenetre outil `Outils` (WS_EX_TOOLWINDOW, gadget, depisable) avec
+  boutons : **Selection, P (Push/Pull), R (Rotation), F cadrer, H origine,
+  Copier, Coller** ; deplacable n'importe ou par sa barre de titre (2 ecrans
+  inclus) ; la croix la CACHE (la retrouver au lancement suivant) ;
+- **un seul chemin de code** : les boutons et les touches P/R passent par le
+  meme dispatcher `runToolCommand` - le bouton ne peut pas diverger du
+  raccourci (modes exclusifs, modes P/R mutuellement exclusifs, annulation de
+  la transformation en cours comprise) ;
+- bouton Selection = chaine Echap (sans jamais fermer l'application) :
+  1er clic = annule l'etat en cours (face en suspens / rotation en cours) et
+  quitte le mode, 2e clic = deselection ;
+- Copier / Coller = Ctrl+C / Ctrl+V (T1.12, mono et multi) ;
+- batterie : **211 verifications, 0 echec** (+13 : dispatcher boutons vs
+  raccourcis, exclusivite P/R, annulation via bouton, copier/coller boutons,
+  cadrer/origine boutons).
+
+## Barre d'outils B1.1 : menu Affichage, verticale, aimantation
+
+- **menu Affichage** (a cote de Fichier) : `Barre d'outils` (coche = visible)
+  et `Barre verticale` (coche = verticale) ; **rappel facile** : la croix
+  cache la barre ET decoche la ligne du menu (et grave la preference),
+  le menu la fait revenir ;
+- **orientation** : horizontale (2 rangees de 4) ou verticale (1 colonne),
+  bascule a chaud, les coches suivent ;
+- **B1.3 : la barre suit la fenetre principale** - sa position est un
+  decalage par rapport au coin de la fenetre (plus par rapport a l'ecran) :
+  bouger / maximiser / redimensionner la fenetre emporte la barre,
+- **aimantation** : en fin de deplacement de la barre,'elle se colle au bord
+  de la FENETRE PRINCIPALE si elle passe a 24 px ou moins (gauche, droite,
+  haut, bas) ;
+- **persistance** : visibilite, orientation et position gravees dans la
+  section `[outils]` du `sketch3d.ini` (visible, vertical, x, y) a chaque
+  changement - la barre revient exactement OU elle etait au lancement ;
+  valeurs non numeriques tolerees (parse = atoi, fichier toujours lisible) ;
+- batterie : **215 verifications, 0 echec** (+4 : section [outils] absente =
+  defauts, ini edite a la main relu, round-trip fermeture -> lancement,
+  valeurs non numeriques tolerees).
+
 ## Fichier de setup B0 (sketch3d.ini)
 
 - **INI editable a la main** pose a cote de l'exe (`sketch3d.ini`, sans

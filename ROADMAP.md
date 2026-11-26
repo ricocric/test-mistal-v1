@@ -48,7 +48,10 @@ backlog est revu a chaque franchissement d'etape importante.
 ## Lignes ouvertes (a replacer dans un lot)
 
 - Ctrl+X (couper) et collage au point clique (lie au sujet pivot B8)
-- Format d'export par defaut parametrable + menu Preferences (sous-menu Win32)
+- Menu Preferences a cote de Fichier : editer les choix au vol (formats
+  d'export, preferences d'outils, unites...) - le mecanisme B0 ([outils] et
+  [exports] sauvegardes a chaque changement) est deja pret pour l'accueillir ;
+  en attente : demande utilisateur (phase B)
 - STL ASCII editable (informationnel), export fiable par fichier
 - Deplacements aimantes / collisions (T2), groupes d'objets (T3)
 - Points de pivot choisis, mesures / cotes magnetees
