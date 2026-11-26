@@ -705,8 +705,9 @@ a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
 
 - les 3 points (P1, B, P2) definissent LE cercle unique (mediatrices) ;
   les 13 points poses sont recalcules EXACTS sur le cercle ; le bombement
-  clic ne sert qu'a definir ; v1 : arc <= 180 deg (message explicite si
-  le bombement depasse la moitie de la corde) ;
+  clic ne sert qu'a definir ; B2.4d : limite des 180 deg LEVEE - toute
+  fleche > 0 est valide, au-dela de la moitie de la corde l'arc est
+  MAJEUR (> 180 deg, fleche 5-10x la corde = proche du cercle complet) ;
 - objet pose = FIL OUVERT (choix utilisateur) : 12 segments (defaut
   SketchUp arc), sans triangle, chaine derivee comme la ligne (capture
   filRayHit, hors exports OBJ/STL) ; completable apres coup par une ligne
@@ -724,6 +725,12 @@ a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
   maintenant sa taille du tableau (synchro automatique, plus de
   desynchronisation possible) ; lecon : les sections Windows ne sont
   JAMAIS compilees en sandbox, seul le build MSVC les voit ;
+- B2.4d (retour de test : "des formes ressemblent a un arc mais dont la
+  fleche fait 5 ou 10 fois la corde") : limite des 180 deg levee - la
+  construction par cercle unique (3 points) gere deja les grands arcs ;
+  gardes remplacees : fleche > 0 uniquement (arc majeur > 180 deg possible,
+  proche du cercle complet pour les tres grandes fleches) ; +2
+  verifications executees = **278, 0 echec** ;
 - B2.4c (retour de test, build B2.4b confirme) : Arc toujours absent de la
   barre + Maj+A sans effet + fleche + Entree sans effet. Trois pieges
   Windows corriges : (1) toolLayout dimensionnait la fenetre EXTERIEURE

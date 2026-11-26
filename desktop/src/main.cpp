@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.4c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.4d";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -2986,8 +2986,8 @@ static void arcPose(const Vec3& p1, const Vec3& b, const Vec3& p2) {
     double sweep = wrapAngle(t2 - t1);
     if (db >= 0.0) { if (sweep < 0.0) sweep += 6.28318530717958647692; }
     else           { if (sweep > 0.0) sweep -= 6.28318530717958647692; }
-    if (std::fabs(sweep) < 1e-9 || std::fabs(sweep) > 3.14159265358979323846 + 1e-9) {
-        std::printf("arc : bombement hors limite (v1 : arc <= 180 deg) - reduisez le bombement\n");
+    if (std::fabs(sweep) < 1e-9 || std::fabs(sweep) > 6.28318530717958647692 - 1e-9) {
+        std::printf("arc : bombement invalide (arc nul ou cercle complet) - deplacez le bombement\n");
         return;
     }
     Object o;
@@ -3049,14 +3049,14 @@ static void arcPoseByCorde(double len) {
     std::printf("arc : corde posee - clic = bombement pose ; chiffres + Entree = fleche exacte\n");
 }
 /* fleche tapee + Entree : pose l'arc ; cote donne par le curseur ;
-   v1 : fleche < moitie de la corde (arc < 180 deg) */
+   B2.4d : toute fleche > 0 est valide - au-dela de la moitie de la corde
+   l'arc est MAJEUR (> 180 deg) ; fleche 5-10x la corde = proche du cercle */
 static void arcPoseByFleche(double f) {
-    const Vec3 mid = (g_arcP1 + g_arcP2) * 0.5;
-    const double c = (g_arcP2 - g_arcP1).norm();
-    if (f <= 0.0 || f >= 0.5 * c) {
-        std::printf("\nFleche invalide - tapez un nombre entre 0 et la moitie de la corde (%.3f) puis Entree.\n", 0.5 * c);
+    if (f <= 0.0) {
+        std::printf("\nFleche invalide - tapez un nombre strictement positif puis Entree.\n");
         return;
     }
+    const Vec3 mid = (g_arcP1 + g_arcP2) * 0.5;
     Vec3 perp((g_arcP2 - g_arcP1).z, 0.0, -(g_arcP2 - g_arcP1).x);
     perp = perp * (1.0 / perp.norm());
     if (g_arcCursorOk && dot(g_arcCursor - mid, perp) < 0.0) perp = perp * -1.0;

@@ -1731,12 +1731,31 @@ int main() {
         arcPoseByFleche(1.0);
         CHECK(g_objs.size() == 1 && g_objs[0].tri.empty() && g_objs[0].v.size() == 13,
               "arc : fleche tapee = arc pose (fil ouvert, cote curseur)");
+        /* B2.4d : la limite des 180 deg est LEVEE - toute fleche > 0 est
+           valide ; au-dela de la moitie de la corde l'arc est MAJEUR */
         const size_t avant2 = g_objs.size();
         g_arcMode = true; arcReset();
         g_arcP1 = Vec3(0, 0, 0); g_arcP2 = Vec3(4, 0, 0); g_arcState = 2;
-        arcPoseByFleche(2.0);
-        CHECK(g_objs.size() == avant2,
-              "arc : fleche >= moitie de la corde = refusee (v1 : arc < 180 deg)");
+        g_arcCursor = Vec3(2, 0, -3); g_arcCursorOk = true;
+        arcPoseByFleche(3.0);   /* fleche 3 > moitie de la corde (2) = arc majeur */
+        CHECK(g_objs.size() == avant2 + 1 && g_objs.back().tri.empty()
+              && g_objs.back().v.size() == 13,
+              "arc : fleche > moitie de la corde = arc MAJEUR pose (B2.4d, > 180 deg)");
+        {
+            const Vec3 m = g_objs.back().pos + g_objs.back().v[6];   /* milieu de l'arc = sommet du bombement */
+            CHECK(std::fabs(m.x - 2.0) < 1e-9 && std::fabs(m.z + 3.0) < 1e-9,
+                  "arc majeur : le milieu de l'arc passe par la fleche tapee (3 pour une corde de 4)");
+        }
+        const size_t avant3 = g_objs.size();
+        g_arcMode = true; arcReset();
+        g_arcP1 = Vec3(0, 0, 0); g_arcP2 = Vec3(4, 0, 0); g_arcState = 2;
+        g_arcCursor = Vec3(2, 0, -20); g_arcCursorOk = true;
+        arcPoseByFleche(20.0);  /* fleche 5x la corde = proche du cercle complet */
+        {
+            const Vec3 m = g_objs.size() == avant3 + 1 ? g_objs.back().pos + g_objs.back().v[6] : Vec3(0, 0, 0);
+            CHECK(g_objs.size() == avant3 + 1 && std::fabs(m.x - 2.0) < 1e-9 && std::fabs(m.z + 20.0) < 1e-9,
+                  "arc : fleche 5x la corde = posee, milieu de l'arc au sommet du bombement");
+        }
         g_arcMode = false; arcReset();
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
     }

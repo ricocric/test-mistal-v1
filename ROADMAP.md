@@ -66,7 +66,8 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   bombement pose au 3e clic, apercu arc flechissant), 12 segments, FIL
   OUVERT (choix utilisateur, completable par une ligne de 2 points) ;
   points recalcules EXACTS sur le cercle des 3 clics (mediatrices) ;
-  saisie corde puis fleche (decimales FR) ; Maj+A ; v1 : arc <= 180 deg ;
+  saisie corde puis fleche (decimales FR) ; Maj+A ; B2.4d : fleche libre
+  (arc majeur > 180 deg, proche du cercle complet) ;
   B2.4b (retour de test, grave) : g_toolBtn[9] debordait (11 boutons
   crees) = corruption memoire au demarrage ; [11] + taille de toolLayout
   derivee du tableau (synchro automatique) ;
@@ -74,6 +75,8 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   titre rognait la derniere rangee : Rectangle/Cercle/Arc invisibles
   depuis B2.3) ; SetFocus apres chaque commande menu/bouton (le clic
   volait le focus clavier a la vue 3D) ; gardes du dispatcher verbeuses ;
+  B2.4d (retour de test) : limite des 180 deg levee - fleche libre,
+  arc majeur (> 180 deg) jusqu'au proche-cercle ; +2 verifications = 278 ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil
@@ -120,8 +123,8 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   - les 3 points (P1, bombement B, P2) definissent LE cercle unique
     (centre = intersection des mediatrices, rayon) ; l'arc pose est la
     portion de P1 a P2 PASSANT PAR B, points recalculés exacts sur le
-    cercle ; v1 : angle balaye < 180 deg (limite du bombement a moitie
-    de corde, message explicite sinon) ;
+    cercle ; B2.4d : angle balaye LIBRE (< 360 deg) - fleche > moitie de
+    corde = arc majeur, fleche 5-10x la corde = proche du cercle ;
   - objet pose = fil ouvert (choix utilisateur) : N+1 points, N segments,
     SANS triangle (chaîne derivee comme la ligne B2.1 : capture filRayHit,
     hors exports OBJ/STL) ; completable apres coup par une ligne de 2
