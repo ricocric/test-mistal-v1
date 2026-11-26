@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.4";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.4b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1602,7 +1602,7 @@ static void drawText2D(float x, float y, const char* s) {
    Tout est persiste dans la section [outils] du sketch3d.ini. */
 static HWND g_toolWin = nullptr;
 static HWND g_mainHwnd = nullptr;    /* fenetre principale : suivi + aimantation */
-static HWND g_toolBtn[9];
+static HWND g_toolBtn[11];   /* B2.4b : 11 boutons - l'ancien [9] debordait des le 10e (corruption memoire) */
 static HMENU g_viewMenu = nullptr;   /* menu Affichage : coches tenus a jour */
 static HMENU g_prefSceneMenu = nullptr;  /* menu Preferences : export scene */
 static HMENU g_prefSelMenu = nullptr;    /* menu Preferences : export selection */
@@ -1618,7 +1618,7 @@ static void toolFollow() {
 }
 
 static void toolLayout(HWND tw) {
-    const int n = 9;
+    const int n = (int)(sizeof(g_toolBtn) / sizeof(g_toolBtn[0]));   /* synchro automatique avec la creation */
     const int bw = 86, bh = 26, pad = 6;
     const int cols = g_setup.toolVertical ? 1 : 4;
     const int rows = (n + cols - 1) / cols;

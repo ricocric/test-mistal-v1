@@ -67,6 +67,9 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   OUVERT (choix utilisateur, completable par une ligne de 2 points) ;
   points recalcules EXACTS sur le cercle des 3 clics (mediatrices) ;
   saisie corde puis fleche (decimales FR) ; Maj+A ; v1 : arc <= 180 deg ;
+  B2.4b (retour de test, grave) : g_toolBtn[9] debordait (11 boutons
+  crees) = corruption memoire au demarrage ; [11] + taille de toolLayout
+  derivee du tableau (synchro automatique) ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil

@@ -716,7 +716,14 @@ a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
   chiffres + Entree = fleche exacte (cote = curseur) pose l'arc ;
   decimales FR (convention B2.2b/B2.2d) ;
 - nommage « Arc », « Arc (2) »... ; 11e bouton de la barre ;
-- moteur de tests : +9 verifications, total execute **276, 0 echec**.
+- moteur de tests : +9 verifications, total execute **276, 0 echec** ;
+- B2.4b (retour de test, grave) : le tableau des boutons de la barre
+  etait reste a 9 alors que la creation en compte 11 (Cercle, Arc) -
+  DEBORDEMENT de 2 pointeurs au demarrage = corruption memoire (boucle
+  folle constatee par l'utilisateur) ; g_toolBtn[11] + toolLayout derive
+  maintenant sa taille du tableau (synchro automatique, plus de
+  desynchronisation possible) ; lecon : les sections Windows ne sont
+  JAMAIS compilees en sandbox, seul le build MSVC les voit.
 
 ## Organiseur des prochains lots
 
