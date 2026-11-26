@@ -1690,6 +1690,57 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
     }
 
+    { /* B2.4 : outil Arc (Maj+A, fil ouvert 12 segments) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        onKey(W, GLFW_KEY_A, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_arcMode && g_arcState == 0, "arc : Maj+A arme l outil");
+        onKey(W, GLFW_KEY_A, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(!g_arcMode, "arc : rappel de Maj+A = desarme (toggle)");
+        /* pose par 3 points : P1(0,0,0), P2(4,0,0), B(2,0,1) -> cercle centre (2,-1.5), r = 2.5 */
+        g_arcMode = true; arcReset();
+        arcPose(Vec3(0, 0, 0), Vec3(2, 0, 1), Vec3(4, 0, 0));
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.empty() && g_objs[0].v.size() == 13,
+              "arc : fil ouvert = 13 points (12 segments), SANS triangle");
+        CHECK(g_objs[0].edges.size() == 12,
+              "arc : aretes derivees = chaine de 12 segments (comme la ligne)");
+        bool surCercle = true;
+        for (const Vec3& p : g_objs[0].v) {
+            const double dx = g_objs[0].pos.x + p.x - 2.0;
+            const double dz = g_objs[0].pos.z + p.z + 1.5;
+            if (std::fabs(std::sqrt(dx * dx + dz * dz) - 2.5) > 1e-9) surCercle = false;
+        }
+        const Vec3 e0 = g_objs[0].pos + g_objs[0].v[0];
+        const Vec3 e1 = g_objs[0].pos + g_objs[0].v[12];
+        CHECK(surCercle && std::fabs(e0.x) < 1e-9 && std::fabs(e0.z) < 1e-9
+              && std::fabs(e1.x - 4.0) < 1e-9 && std::fabs(e1.z) < 1e-9,
+              "arc : points EXACTS sur le cercle, extremites = depart et fin (pos + v = monde)");
+        const size_t avant = g_objs.size();
+        g_arcMode = true; arcReset();
+        arcPose(Vec3(0, 0, 0), Vec3(2, 0, 0), Vec3(4, 0, 0));
+        CHECK(g_objs.size() == avant, "arc : bombement aligne avec la corde = rien pose");
+        /* saisie : corde puis fleche, cote du bombement = curseur */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_arcMode = true; arcReset();
+        g_arcP1 = Vec3(0, 0, 0); g_arcState = 1;
+        g_arcCursor = Vec3(3, 0, 0); g_arcCursorOk = true;
+        arcPoseByCorde(4.0);
+        CHECK(g_arcState == 2 && std::fabs(g_arcP2.x - 4.0) < 1e-12 && std::fabs(g_arcP2.z) < 1e-12,
+              "arc : corde tapee = fin posee dans la direction du curseur");
+        g_arcCursor = Vec3(2, 0, 1);
+        arcPoseByFleche(1.0);
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.empty() && g_objs[0].v.size() == 13,
+              "arc : fleche tapee = arc pose (fil ouvert, cote curseur)");
+        const size_t avant2 = g_objs.size();
+        g_arcMode = true; arcReset();
+        g_arcP1 = Vec3(0, 0, 0); g_arcP2 = Vec3(4, 0, 0); g_arcState = 2;
+        arcPoseByFleche(2.0);
+        CHECK(g_objs.size() == avant2,
+              "arc : fleche >= moitie de la corde = refusee (v1 : arc < 180 deg)");
+        g_arcMode = false; arcReset();
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
     std::printf("resume : %d echec(s), %d verifications\n", g_fail, g_tot);
     return g_fail ? 1 : 0;
 }

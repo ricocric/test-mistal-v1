@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.3b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.4";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1391,6 +1391,7 @@ enum {
     IDM_TOOL_LIGNE_FIL,
     IDM_TOOL_RECT,
     IDM_TOOL_CERCLE,
+    IDM_TOOL_ARC,
 };
 
 /* Homogeneite ("UN SEUL CHEMIN DE CODE", regle systematique) : tous les
@@ -1685,9 +1686,9 @@ static void attachToolbar(HWND mainHwnd) {
     const HWND tw = CreateWindowExA(WS_EX_TOOLWINDOW, cls, "Outils",
         WS_POPUP | WS_CAPTION | WS_SYSMENU, o.x + g_setup.toolX, o.y + g_setup.toolY, 0, 0,
         mainHwnd, nullptr, GetModuleHandleA(nullptr), nullptr);
-    static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller", "Ligne", "Rectangle", "Cercle" };
+    static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller", "Ligne", "Rectangle", "Cercle", "Arc" };
     static const int ids[] = { IDM_TOOL_SELECT, IDM_TOOL_PP, IDM_TOOL_ROT, IDM_TOOL_FRAME,
-                               IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE, IDM_TOOL_LINE, IDM_TOOL_RECT, IDM_TOOL_CERCLE };
+                               IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE, IDM_TOOL_LINE, IDM_TOOL_RECT, IDM_TOOL_CERCLE, IDM_TOOL_ARC };
     for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); ++i) {
         g_toolBtn[i] = CreateWindowExA(0, "BUTTON", labels[i],
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -1813,6 +1814,7 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(outils, MF_STRING, IDM_TOOL_LIGNE_FIL, "Ligne (&fil ouvert)\tMaj+L");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_RECT, "&Rectangle\tMaj+R");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_CERCLE, "&Cercle\tMaj+C");
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_ARC, "&Arc\tMaj+A");
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(outils, MF_STRING, IDM_TOOL_FRAME, "&Cadrer la selection\tF");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_HOME, "Vue d'&origine\tH");
@@ -2915,6 +2917,194 @@ static void drawCerclePreview() {
 }
 
 /* ------------------------------------------------------------------ */
+/* B2.4 : outil Arc (« Arc 2 points » de SketchUp) - 3 clics : depart,  */
+/* fin (corde), bombement. Les 3 points definissent LE cercle unique ;  */
+/* l'arc pose est un FIL OUVERT (sans triangle, comme la ligne).        */
+/* Maj+A arme ; clic droit/Echap annule.                                */
+/* ------------------------------------------------------------------ */
+static const int ARC_SEG = 12;
+static bool g_arcMode = false;          /* outil arme */
+static int g_arcState = 0;              /* 0 = attente depart, 1 = attente fin, 2 = attente bombement */
+static Vec3 g_arcP1(0, 0, 0);           /* depart (monde, y = 0) */
+static Vec3 g_arcP2(0, 0, 0);           /* fin de la corde (monde) */
+static std::string g_arcNumBuf;         /* corde ou fleche tapee */
+static Vec3 g_arcCursor(0, 0, 0);       /* point sol sous le curseur */
+static bool g_arcCursorOk = false;
+
+static void arcReset() {
+    g_arcState = 0;
+    g_arcNumBuf.clear();
+}
+static void arcCancel(const char* pourquoi) {
+    arcReset();
+    g_arcMode = false;
+    std::printf("\narc : %s\n", pourquoi);
+}
+/* suivi du curseur chaque tour (corde a venir + cote du bombement) */
+static void arcTrackCursor(GLFWwindow* w) {
+    Vec3 p;
+    bool ok;
+    lineGroundPoint(w, ok, p);
+    g_arcCursor = p;
+    g_arcCursorOk = ok;
+}
+/* cercle unique passant par 3 points (plan y = 0) ; faux si alignes */
+static bool arcCircle3(const Vec3& a, const Vec3& b, const Vec3& c, Vec3& C, double& r) {
+    const double d = 2.0 * (a.x * (b.z - c.z) + b.x * (c.z - a.z) + c.x * (a.z - b.z));
+    if (std::fabs(d) < 1e-12) return false;
+    const double sa = a.x * a.x + a.z * a.z, sb = b.x * b.x + b.z * b.z, sc = c.x * c.x + c.z * c.z;
+    const double cx = (sa * (b.z - c.z) + sb * (c.z - a.z) + sc * (a.z - b.z)) / d;
+    const double cz = (sa * (c.x - b.x) + sb * (a.x - c.x) + sc * (b.x - a.x)) / d;
+    C = Vec3(cx, 0.0, cz);
+    r = std::sqrt((a.x - cx) * (a.x - cx) + (a.z - cz) * (a.z - cz));
+    return r > 1e-12;
+}
+static double wrapAngle(double a) {      /* dans (-pi, pi] */
+    while (a > 3.14159265358979323846) a -= 6.28318530717958647692;
+    while (a <= -3.14159265358979323846) a += 6.28318530717958647692;
+    return a;
+}
+/* construction : les N+1 points sont recalcules EXACTS sur le cercle ;
+   v LOCALES (pos = depart, pos + v = monde, convention commune) */
+static void arcPose(const Vec3& p1, const Vec3& b, const Vec3& p2) {
+    Vec3 C;
+    double r;
+    if (!arcCircle3(p1, b, p2, C, r)) {
+        std::printf("arc : bombement aligne avec la corde - rien a poser\n");
+        return;
+    }
+    const double t1 = std::atan2(p1.z - C.z, p1.x - C.x);
+    const double t2 = std::atan2(p2.z - C.z, p2.x - C.x);
+    const double tb = std::atan2(b.z - C.z, b.x - C.x);
+    const double db = wrapAngle(tb - t1);
+    double sweep = wrapAngle(t2 - t1);
+    if (db >= 0.0) { if (sweep < 0.0) sweep += 6.28318530717958647692; }
+    else           { if (sweep > 0.0) sweep -= 6.28318530717958647692; }
+    if (std::fabs(sweep) < 1e-9 || std::fabs(sweep) > 3.14159265358979323846 + 1e-9) {
+        std::printf("arc : bombement hors limite (v1 : arc <= 180 deg) - reduisez le bombement\n");
+        return;
+    }
+    Object o;
+    o.name = uniqueName("Arc");
+    o.pos = p1;
+    o.scl = 1.0;
+    o.v.reserve((size_t)ARC_SEG + 1);
+    for (int i = 0; i <= ARC_SEG; ++i) {
+        const double a = t1 + sweep * double(i) / double(ARC_SEG);
+        o.v.push_back(Vec3(C.x + r * std::cos(a) - p1.x, 0.0, C.z + r * std::sin(a) - p1.z));
+    }
+    o.tri.clear();     /* fil ouvert : SANS triangle, chaine derivee (ligne B2.1) */
+    o.n.clear();
+    computeObjectDerived(o);
+    const size_t nseg = o.edges.size();
+    g_objs.push_back(std::move(o));
+    selectOnly((int)g_objs.size() - 1);
+    std::printf("arc pose : %s, %zu segment(s), rayon %.3g\n", g_objs.back().name.c_str(), nseg, r);
+    arcReset();
+    g_arcMode = false;
+    std::printf("mode selection\n");
+}
+static void arcTakePoint(GLFWwindow* w) {
+    bool ok;
+    Vec3 p;
+    lineGroundPoint(w, ok, p);
+    if (!ok) return;                                /* pointe le ciel : rien */
+    if (g_arcState == 0) {
+        g_arcP1 = p;
+        g_arcState = 1;
+        g_arcNumBuf.clear();
+        std::printf("arc : depart (%.3f, %.3f) - clic = fin de la corde ; chiffres + Entree = longueur de corde\n", p.x, p.z);
+        return;
+    }
+    if (g_arcState == 1) {
+        if ((p - g_arcP1).norm() < 1e-9) {
+            std::printf("arc : corde nulle - rien a poser\n");
+            return;
+        }
+        g_arcP2 = p;
+        g_arcState = 2;
+        g_arcNumBuf.clear();
+        std::printf("arc : corde posee - clic = bombement pose ; chiffres + Entree = fleche exacte\n");
+        return;
+    }
+    arcPose(g_arcP1, p, g_arcP2);                   /* etat 2 : le clic = bombement pose */
+}
+/* corde tapee + Entree : pose la fin dans la direction du curseur */
+static void arcPoseByCorde(double len) {
+    Vec3 dir = g_arcCursor - g_arcP1;
+    if (!g_arcCursorOk || dir.norm() < 1e-9) {
+        std::printf("corde tapee : pointez d'abord la direction (curseur sur le sol)\n");
+        return;
+    }
+    dir = dir * (1.0 / dir.norm());
+    g_arcP2 = g_arcP1 + dir * len;
+    g_arcState = 2;
+    g_arcNumBuf.clear();
+    std::printf("arc : corde posee - clic = bombement pose ; chiffres + Entree = fleche exacte\n");
+}
+/* fleche tapee + Entree : pose l'arc ; cote donne par le curseur ;
+   v1 : fleche < moitie de la corde (arc < 180 deg) */
+static void arcPoseByFleche(double f) {
+    const Vec3 mid = (g_arcP1 + g_arcP2) * 0.5;
+    const double c = (g_arcP2 - g_arcP1).norm();
+    if (f <= 0.0 || f >= 0.5 * c) {
+        std::printf("\nFleche invalide - tapez un nombre entre 0 et la moitie de la corde (%.3f) puis Entree.\n", 0.5 * c);
+        return;
+    }
+    Vec3 perp((g_arcP2 - g_arcP1).z, 0.0, -(g_arcP2 - g_arcP1).x);
+    perp = perp * (1.0 / perp.norm());
+    if (g_arcCursorOk && dot(g_arcCursor - mid, perp) < 0.0) perp = perp * -1.0;
+    arcPose(g_arcP1, mid + perp * f, g_arcP2);
+}
+/* apercu : etat 1 = corde a venir vers le curseur ; etat 2 = corde +
+   arc fléchissant vers le curseur (bombement candidat) */
+static void drawArcPreview() {
+    if (!g_arcMode || g_arcState == 0 || !g_arcCursorOk) return;
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    glColor3d(0.92, 0.75, 0.1);
+    glLineWidth(2.0);
+    if (g_arcState == 1) {
+        glBegin(GL_LINES);
+        glVertex3d(g_arcP1.x, 0.0, g_arcP1.z);
+        glVertex3d(g_arcCursor.x, 0.0, g_arcCursor.z);
+        glEnd();
+    } else {
+        glBegin(GL_LINES);
+        glVertex3d(g_arcP1.x, 0.0, g_arcP1.z);
+        glVertex3d(g_arcP2.x, 0.0, g_arcP2.z);
+        glEnd();
+        const Vec3 mid = (g_arcP1 + g_arcP2) * 0.5;
+        Vec3 perp((g_arcP2 - g_arcP1).z, 0.0, -(g_arcP2 - g_arcP1).x);
+        const double n = perp.norm();
+        if (n > 1e-9) {
+            perp = perp * (1.0 / n);
+            const double f = dot(g_arcCursor - mid, perp);
+            Vec3 C;
+            double r;
+            if (std::fabs(f) > 1e-9 && std::fabs(f) < 0.5 * n * 1e300
+                && arcCircle3(g_arcP1, mid + perp * f, g_arcP2, C, r)) {
+                const double t1 = std::atan2(g_arcP1.z - C.z, g_arcP1.x - C.x);
+                const double t2 = std::atan2(g_arcP2.z - C.z, g_arcP2.x - C.x);
+                const double tb = std::atan2((mid + perp * f).z - C.z, (mid + perp * f).x - C.x);
+                const double db = wrapAngle(tb - t1);
+                double sweep = wrapAngle(t2 - t1);
+                if (db >= 0.0) { if (sweep < 0.0) sweep += 6.28318530717958647692; }
+                else           { if (sweep > 0.0) sweep -= 6.28318530717958647692; }
+                glBegin(GL_LINE_STRIP);
+                for (int i = 0; i <= ARC_SEG; ++i) {
+                    const double a = t1 + sweep * double(i) / double(ARC_SEG);
+                    glVertex3d(C.x + r * std::cos(a), 0.0, C.z + r * std::sin(a));
+                }
+                glEnd();
+            }
+        }
+    }
+    glLineWidth(1.0);
+    glEnable(GL_DEPTH_TEST);
+}
+
+/* ------------------------------------------------------------------ */
 /* Callbacks                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -2945,6 +3135,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (action != GLFW_PRESS) return;
         if (g_rectMode) { rectCancel("dessin annule"); return; }   /* B2.2 : clic droit = annule (2 clics suffisent) */
         if (g_cercleMode) { cercleCancel("dessin annule"); return; }   /* B2.3 : clic droit = annule */
+        if (g_arcMode) { arcCancel("dessin annule"); return; }      /* B2.4 : clic droit = annule */
         if (g_lineMode) { lineFinish(); return; }   /* B2.1 : le clic droit FINIT (segments deja cliques poses) */
         if (g_ppActive) {
             ppCancel();                 /* restaure la piece */
@@ -2971,6 +3162,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_lineMode) { lineTakePoint(w); return; }   /* B2.1 : chaque clic pose un sommet */
         if (g_rectMode) { rectTakePoint(w); return; }   /* B2.2 : clic 1 = coin, clic 2 = coin oppose pose */
         if (g_cercleMode) { cercleTakePoint(w); return; }   /* B2.3 : clic 1 = centre, clic 2 = rayon pose */
+        if (g_arcMode) { arcTakePoint(w); return; }         /* B2.4 : clic depart, clic fin, clic bombement pose */
         if (g_ppActive) { ppCommit(); return; }   /* second clic gauche : pose la face */
         if (g_rotActive) { rotCommit(); return; }  /* clic gauche : pose la rotation */
         if (g_ppMode) {
@@ -3286,6 +3478,42 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         }
         return;
     }
+    if (g_arcMode && g_arcState > 0) {   /* B2.4 : saisie corde puis fleche (meme contrat) */
+        if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
+        const bool topRowA = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
+        const bool padRowA = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
+        if (topRowA || padRowA || isSeparatorKey(key, scancode)) {
+            char c;
+            if (padRowA) c = char('0' + (key - GLFW_KEY_KP_0));
+            else if (topRowA) c = char(key);
+            else c = '.';                  /* un seul nombre : separateur = decimale */
+            if (g_arcNumBuf.size() < 16) g_arcNumBuf += c;
+        } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+            if (g_arcNumBuf.size() < 16) g_arcNumBuf.insert(g_arcNumBuf.begin(), '-');
+        } else if (key == GLFW_KEY_BACKSPACE) {
+            if (!g_arcNumBuf.empty()) g_arcNumBuf.pop_back();
+        } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+            if (g_arcNumBuf.empty()) {
+                std::printf("\nValeur vide - tapez un nombre puis Entree (corde apres le depart, fleche apres la fin).\n");
+            } else {
+                std::string t = g_arcNumBuf;
+                for (char& cc : t) { if (cc == ',' || cc == ';') cc = '.'; }   /* decimale FR */
+                const double val = std::atof(t.c_str());
+                if (!std::isfinite(val) || val <= 0.0) {
+                    std::printf("\nValeur invalide - tapez un nombre positif puis Entree.\n");
+                } else if (g_arcState == 1) {
+                    arcPoseByCorde(val);
+                } else {
+                    arcPoseByFleche(val);
+                }
+            }
+        } else if (key == GLFW_KEY_ESCAPE) {
+            arcCancel("dessin annule");    /* Echap : tout annule et quitte le mode */
+        } else if (key == GLFW_KEY_A && (mods & GLFW_MOD_SHIFT)) {
+            runToolCommand(IDM_TOOL_ARC);  /* Maj+A disponible a tout moment */
+        }
+        return;
+    }
     if (action == GLFW_PRESS) {
         /* Ctrl+S = enregistrer le projet (retour utilisateur) ; position : avant les exports scene par O/S */
         if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_S) {
@@ -3303,6 +3531,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             if (g_lineMode) { lineCancel("dessin annule"); return; }   /* B2.1 */
             if (g_rectMode) { rectCancel("dessin annule"); return; }   /* B2.2 */
             if (g_cercleMode) { cercleCancel("dessin annule"); return; }   /* B2.3 */
+            if (g_arcMode) { arcCancel("dessin annule"); return; }      /* B2.4 */
             if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); return; }
             if (selectedCount() > 0) { clearSelection(); std::printf("\nselection annulee\n"); return; }
         }
@@ -3313,6 +3542,10 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         if (key == GLFW_KEY_C && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineActive && !g_rectActive) {
             runToolCommand(IDM_TOOL_CERCLE);   /* B2.3 : Maj+C = cercle (C seul = centrer, Ctrl+C = copie) */
             return;                            /* ne pas retomber sur le recentrage C */
+        }
+        if (key == GLFW_KEY_A && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineActive && !g_rectActive) {
+            runToolCommand(IDM_TOOL_ARC);      /* B2.4 : Maj+A = arc (convention Maj+lettre des formes) */
+            return;
         }
         if (key == GLFW_KEY_L && g_mode == M_None && !g_dupPending && !g_lineActive)
             runToolCommand((mods & GLFW_MOD_SHIFT) ? IDM_TOOL_LIGNE_FIL : IDM_TOOL_LINE);  /* B2.5b : L = surface, Maj+L = fil ouvert */
@@ -3424,6 +3657,17 @@ static void runToolCommand(int id) {
             g_ppMode = false;
             g_rotMode = false;
             std::printf("mode Cercle : clic = centre ; clic = rayon pose ; chiffres + Entree = rayon exact ; Echap = tout annuler\n");
+        }
+        return;
+    case IDM_TOOL_ARC:         /* = Maj+A (B2.4) */
+        if (g_arcMode) {
+            arcCancel("mode arc quitte");
+        } else if (g_mode == M_None && !g_dupPending && !g_lineActive && !g_lineMode && !g_rectActive && !g_cercleActive) {
+            g_arcMode = true;
+            arcReset();
+            g_ppMode = false;
+            g_rotMode = false;
+            std::printf("mode Arc : clic = depart ; clic = fin de la corde ; clic = bombement pose ; chiffres + Entree = corde puis fleche ; Echap = tout annuler\n");
         }
         return;
 #ifdef _WIN32
@@ -3565,6 +3809,10 @@ static std::string statusPrompt() {
         return "Rectangle : clic = coin oppose (pose) | chiffres L;H + Entree = dimensions exactes | Echap = tout annuler";
     if (g_cercleActive)
         return "Cercle : clic = rayon (pose) | chiffres + Entree = rayon exact | Echap = tout annuler";
+    if (g_arcMode && g_arcState == 1)
+        return "Arc : clic = fin de la corde | chiffres + Entree = longueur de corde | Echap = tout annuler";
+    if (g_arcMode && g_arcState == 2)
+        return "Arc : clic = bombement (pose) | chiffres + Entree = fleche exacte | Echap = tout annuler";
     if (g_dupPending)
         return "Dupliquer : tapez le nombre d instances puis Entree (vide = 1, negatif = retrait, Echap pour annuler)";
     else if (g_ppActive)
@@ -3593,6 +3841,8 @@ static bool inputZoneState(const char** label, const std::string** buf) {
     if (g_lineActive) { *label = "longueur";  *buf = &g_lineNumBuf; return true; }
     if (g_rectActive) { *label = "L;H";       *buf = &g_rectNumBuf; return true; }
     if (g_cercleActive) { *label = "rayon";   *buf = &g_cercleNumBuf; return true; }
+    if (g_arcMode && g_arcState == 1) { *label = "corde";  *buf = &g_arcNumBuf; return true; }
+    if (g_arcMode && g_arcState == 2) { *label = "fleche"; *buf = &g_arcNumBuf; return true; }
     if (g_dupPending) { *label = "nombre";    *buf = &g_dupNumBuf; return true; }
     if (g_ppActive)   { *label = "dimension"; *buf = &g_pp.numBuf; return true; }
     if (g_rotActive)  { *label = "angle";     *buf = &g_rotNumBuf; return true; }
@@ -3738,7 +3988,7 @@ int main() {
     /* entete console : court, groupe par theme (retour utilisateur : trop de
        verbiage noie les informations importantes) */
     std::printf("Sketch3D - build %s\n", BUILD_VERSION);
-    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Ctrl+C/V | Suppr\n");
+    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Ctrl+C/V | Suppr\n");
     std::printf("Vue     : orbite = clic gauche dans le vide | zoom = molette | panoramique = molette-clic ou Shift+glisser | C centrer | F cadrer | H origine\n");
     std::printf("Projets : Ctrl+S enregistrer | clic droit = infos objet + duplication | I importer\n");
     std::printf("Formats : export scene/selection = menu Fichier, format defini dans Preferences\n");
@@ -3796,6 +4046,8 @@ int main() {
             rectTrackCursor(win);     /* B2.2 : apercu du rectangle vers le curseur */
         } else if (g_cercleMode) {
             cercleTrackCursor(win);   /* B2.3 : apercu du cercle vers le curseur */
+        } else if (g_arcMode) {
+            arcTrackCursor(win);      /* B2.4 : apercu de l'arc vers le curseur */
         }
         updateWindowTitle(win);
         render();
@@ -3803,6 +4055,7 @@ int main() {
         drawLinePreview();
         drawRectPreview();
         drawCerclePreview();
+        drawArcPreview();
         drawStatusBand();
         glfwSwapBuffers(win);
         glfwPollEvents();
