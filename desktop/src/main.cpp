@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.1";   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.1b";   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -3348,6 +3348,9 @@ int main() {
             updateDrag(win);
         } else if (g_ppActive) {
             updatePP(win);
+        } else if (g_rotActive) {
+            updateRot(win);           /* B2.1b : branche RESTAUREE (remplacee par erreur
+                                         dans B2.1 : la rotation souris ne seguait plus) */
         } else if (g_lineMode) {
             lineTrackCursor(win);     /* B2.1 : apercu du fil vers le curseur */
         }
