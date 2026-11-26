@@ -147,6 +147,11 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   bandeau) ; +1 verification = 305, 0 echec ; VALIDATION UTILISATEUR :
   « la seconde version est plus proche de ce que j'avais en tete » (les
   deux variantes restent, regle des variantes) ;
+  VALIDATION FINALE UTILISATEUR : B2.7b (Maj+B points de controle,
+  bascule a chaud), B2.7c (groupes de menu) et B2.7d (courbe intérieure
+  au polygone) ok ; PR 31 marquee prete a fusionner (fusion par
+  l'utilisateur, phase B2 trace de base CLOSEE) ; suite B2.7e sur une
+  branche neuve repartant de main ;
 - B1.8 fait (retour de test : la barre de boutons s'etalait sur 4 niveaux
   sans etre redimensionnable) : UNE rangee par defaut en horizontal,
   WS_THICKFRAME = poignees de redimensionnement, le nombre de colonnes
