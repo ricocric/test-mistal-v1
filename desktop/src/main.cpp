@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B0";
+static const char* BUILD_VERSION = "B1";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1295,9 +1295,20 @@ enum {
     IDM_DELETE_OBJECT,
     IDM_EXPORT_OBJ_SEL,
     IDM_EXPORT_STL_SEL,
+    IDM_TOOL_SELECT,
+    IDM_TOOL_PP,
+    IDM_TOOL_ROT,
+    IDM_TOOL_FRAME,
+    IDM_TOOL_HOME,
+    IDM_TOOL_COPY,
+    IDM_TOOL_PASTE,
 };
 
 static GLFWwindow* g_mainWin = nullptr;
+
+/* B1 : dispatcher des boutons de la barre d'outils flottante - un seul
+   chemin de code : bouton = EXACTEMENT le raccourci (modes exclusifs). */
+static void runToolCommand(int id);
 
 static void handleMenuAction(int id) {
     switch (id) {
@@ -1458,6 +1469,57 @@ static void drawText2D(float x, float y, const char* s) {
 #endif
 }
 
+#ifdef _WIN32
+/* B1 : barre d'outils flottante v1 - fenetre outil (WS_EX_TOOLWINDOW,
+   deplacable par la barre de titre = 2 ecrans inclus), boutons = modes
+   exclusifs identiques aux raccourcis, via runToolCommand. La croix cache
+   la barre (rien n'est detruit, elle revient au lancement suivant). */
+static LRESULT CALLBACK toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_COMMAND && HIWORD(wp) == BN_CLICKED) {
+        runToolCommand((int)LOWORD(wp));
+        return 0;
+    }
+    if (msg == WM_CLOSE) { ShowWindow(h, SW_HIDE); return 0; }
+    return DefWindowProcA(h, msg, wp, lp);
+}
+
+static void attachToolbar(HWND mainHwnd) {
+    const char* cls = "Sketch3DToolbar";
+    static bool clsDone = false;
+    if (!clsDone) {
+        WNDCLASSA wc;
+        std::memset(&wc, 0, sizeof(wc));
+        wc.lpfnWndProc = toolWndProc;
+        wc.hInstance = GetModuleHandleA(nullptr);
+        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+        wc.lpszClassName = cls;
+        RegisterClassA(&wc);
+        clsDone = true;
+    }
+    const HWND tw = CreateWindowExA(WS_EX_TOOLWINDOW, cls, "Outils",
+        WS_POPUP | WS_CAPTION | WS_SYSMENU, 140, 140, 0, 0,
+        mainHwnd, nullptr, GetModuleHandleA(nullptr), nullptr);
+    const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller" };
+    const int ids[] = { IDM_TOOL_SELECT, IDM_TOOL_PP, IDM_TOOL_ROT, IDM_TOOL_FRAME,
+                        IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE };
+    const int bw = 86, bh = 26, pad = 6;
+    const int cols = 4;
+    const int rows = (int)(sizeof(ids) / sizeof(ids[0]) + cols - 1) / cols;
+    for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); ++i) {
+        const HWND btn = CreateWindowExA(0, "BUTTON", labels[i],
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            pad + (i % cols) * (bw + pad), pad + (i / cols) * (bh + pad),
+            bw, bh, tw, (HMENU)(INT_PTR)ids[i], GetModuleHandleA(nullptr), nullptr);
+        SendMessageA(btn, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
+    }
+    const int mx = pad + cols * (bw + pad);
+    const int my = pad + rows * (bh + pad);
+    SetWindowPos(tw, HWND_TOPMOST, 0, 0, mx, my, SWP_NOMOVE | SWP_NOZORDER);
+    ShowWindow(tw, SW_SHOW);
+}
+#endif
+
 static void attachMenus(GLFWwindow* win) {
     g_mainWin = win;
 #ifdef _WIN32
@@ -1487,6 +1549,7 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)file, "&Fichier");
     SetMenu(hwnd, bar);
     g_baseWndProc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)menuWndProc);
+    attachToolbar(hwnd);
 #else
     std::printf("menus natifs : barre Fichier indisponible hors Windows\n");
 #endif
@@ -2395,9 +2458,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             g_rotMode = false;
             std::printf("\nmode selection\n");
         } else if (key == GLFW_KEY_R) {
-            rotCancel();                /* R disponible a tout moment : quitte le mode */
-            g_rotMode = false;
-            std::printf("\nmode selection\n");
+            runToolCommand(IDM_TOOL_ROT);  /* R disponible a tout moment : quitte le mode */
         } else if (key == GLFW_KEY_B && !g_rotMulti.empty()) {
             g_rotPivotKind = (g_rotPivotKind == 1) ? 0 : 1;   /* T1.10 : centre propre <-> barycentre du groupe, angle conserve */
             rotApplyCurrent(g_rotAxis, g_rotAngle);
@@ -2453,9 +2514,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             g_ppMode = false;
             std::printf("\nmode selection\n");
         } else if (key == GLFW_KEY_P) {
-            ppCancel();                 /* P disponible a tout moment : quitte le mode */
-            g_ppMode = false;
-            std::printf("\nmode selection\n");
+            runToolCommand(IDM_TOOL_PP);  /* P disponible a tout moment : quitte le mode */
         }
         return;
     }
@@ -2476,20 +2535,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); return; }
             if (selectedCount() > 0) { clearSelection(); std::printf("\nselection annulee\n"); return; }
         }
-        if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending) {
-            g_ppMode = !g_ppMode;
-            if (g_ppMode) g_rotMode = false;
-            std::printf(g_ppMode
-                ? "mode Push/Pull : cliquez une face (dessus ou cote), deplacez, puis re-cliquez pour poser\n"
-                : "mode selection\n");
-        }
-        if (key == GLFW_KEY_R && g_mode == M_None && !g_dupPending) {
-            g_rotMode = !g_rotMode;
-            if (g_rotMode) g_ppMode = false;
-            std::printf(g_rotMode
-                ? "mode Rotation : selectionnez un objet (Ctrl+clic pour en selectionner plusieurs), puis X, Y ou Z (lettre) pour fixer l'axe\n"
-                : "mode selection\n");
-        }
+        if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending) runToolCommand(IDM_TOOL_PP);
+        if (key == GLFW_KEY_R && g_mode == M_None && !g_dupPending) runToolCommand(IDM_TOOL_ROT);
         if (g_rotMode && !g_rotActive) {
             const char c = axisLetterFromScancode(scancode);
             if (c) { rotBegin(w, c - 'x'); return; }
@@ -2514,6 +2561,57 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         if (key == GLFW_KEY_S) { const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter en STL"); if (!p.empty()) { exportSTL(p); noteExportFormat(true, true); } }
     }
     recordAxisKey(scancode, action);
+}
+
+/* B1 : boutons de la barre d'outils flottante = memes actions que les
+   raccourcis (les branches P/R de onKey appellent ceci : un seul chemin
+   de code, le bouton ne peut pas diverger du raccourci). */
+static void runToolCommand(int id) {
+    switch (id) {
+    case IDM_TOOL_SELECT:      /* = Echap, sans jamais fermer l'application */
+        if (g_ppActive) { ppCancel(); g_ppMode = false; std::printf("\nmode selection\n"); }
+        else if (g_rotActive) { rotCancel(); g_rotMode = false; std::printf("\nmode selection\n"); }
+        else if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); }
+        else if (selectedCount() > 0) { clearSelection(); std::printf("\nselection annulee\n"); }
+        return;
+    case IDM_TOOL_PP:          /* = touche P */
+        if (g_ppMode) {
+            ppCancel();          /* annule la face en suspens si active, sans effet sinon */
+            g_ppMode = false;
+            std::printf("\nmode selection\n");
+        } else if (g_mode == M_None && !g_dupPending) {
+            g_ppMode = true;
+            g_rotMode = false;
+            std::printf("mode Push/Pull : cliquez une face (dessus ou cote), deplacez, puis re-cliquez pour poser\n");
+        }
+        return;
+    case IDM_TOOL_ROT:         /* = touche R */
+        if (g_rotMode) {
+            rotCancel();         /* annule la rotation en suspens si active */
+            g_rotMode = false;
+            std::printf("\nmode selection\n");
+        } else if (g_mode == M_None && !g_dupPending) {
+            g_rotMode = true;
+            g_ppMode = false;
+            std::printf("mode Rotation : selectionnez un objet (Ctrl+clic pour en selectionner plusieurs), puis X, Y ou Z (lettre) pour fixer l'axe\n");
+        }
+        return;
+    case IDM_TOOL_FRAME:      /* = F */
+        frameSelected();
+        return;
+    case IDM_TOOL_HOME:       /* = H */
+        goHome();
+        std::printf("vue d'origine\n");
+        return;
+    case IDM_TOOL_COPY:       /* = Ctrl+C */
+        copySelected();
+        return;
+    case IDM_TOOL_PASTE:      /* = Ctrl+V */
+        pasteClipboard();
+        return;
+    default:
+        return;
+    }
 }
 
 /* ------------------------------------------------------------------ */

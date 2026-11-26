@@ -1311,6 +1311,78 @@ int main() {
         g_setup = Setup{};
     }
 
+    /* 29 - B1 : barre d'outils flottante v1 - runToolCommand : bouton =
+       raccourci (modes exclusifs, annulation en cours comprise) */
+    {
+        const double colM[3] = {0.6, 0.6, 0.6};
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_rotActive = false; g_rotMode = false; g_ppActive = false; g_ppMode = false;
+        g_dupPending = false; g_clipboard.clear(); g_pasteRepeat = 0;
+        extern double g_stubCursorX, g_stubCursorY;
+        g_lastClickTime = -100.0;
+        g_cam = Camera{}; g_camHome = Camera{};
+        g_objs.push_back(makeBoxObject("TA", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+
+        /* Selection sans rien : neutre, sans effet ni crash */
+        runToolCommand(IDM_TOOL_SELECT);
+        CHECK(!g_ppMode && !g_rotMode && selectedCount() == 0,
+              "toolbar : Selection sans rien = neutre (jamais de fermeture)");
+
+        /* Bouton R = touche R : entree de mode, exclusivite P/R sortie */
+        runToolCommand(IDM_TOOL_ROT);
+        CHECK(g_rotMode && !g_ppMode, "toolbar : bouton R = mode Rotation (identique au raccourci)");
+        runToolCommand(IDM_TOOL_PP);
+        CHECK(!g_rotMode && g_ppMode, "toolbar : bouton P sort du mode R (modes exclusifs)");
+        runToolCommand(IDM_TOOL_PP);
+        CHECK(!g_ppMode, "toolbar : bouton P re-clique = sortie du mode");
+
+        /* Bouton P via le clavier : onKey reutilise le MEME chemin */
+        onKey(W, GLFW_KEY_R, 0, GLFW_PRESS, 0);
+        CHECK(g_rotMode, "toolbar : touche R = meme chemin de code que le bouton");
+        onKey(W, GLFW_KEY_R, 0, GLFW_PRESS, 0);
+        CHECK(!g_rotMode, "toolbar : touche R re-cliquee = sortie du mode");
+
+        /* Bouton Selection pendant une rotation ACTIVE : annule ET quitte */
+        selectOnly(0);
+        g_stubCursorX = 400.0; g_stubCursorY = 300.0;
+        g_winW = 800; g_winH = 600;
+        rotBegin(W, 2);
+        CHECK(g_rotActive, "toolbar : rotation active avant le bouton Selection");
+        runToolCommand(IDM_TOOL_SELECT);   /* 1er clic : comme Echap, on sort de l'etat en cours */
+        CHECK(!g_rotActive && !g_rotMode && selectedCount() == 1
+              && std::fabs((g_objs[0].bmax.x - g_objs[0].bmin.x) - 1.0) < 1e-9,
+              "toolbar : 1er clic Selection = annulation en cours + mode quitte (selection gardee, comme Echap)");
+        runToolCommand(IDM_TOOL_SELECT);   /* 2e clic : deselection */
+        CHECK(selectedCount() == 0, "toolbar : 2e clic Selection = deselection (chaine Echap complete)");
+
+        /* Copier/Coller par boutons */
+        selectOnly(0);
+        runToolCommand(IDM_TOOL_COPY);
+        CHECK(g_clipboard.size() == 1, "toolbar : bouton Copier = Ctrl+C");
+        runToolCommand(IDM_TOOL_PASTE);
+        CHECK((int)g_objs.size() == 2 && g_selected == 1,
+              "toolbar : bouton Coller = Ctrl+V (copie posee et selectionnee)");
+
+        /* Cadrer / Origine par boutons */
+        selectOnly(1);
+        g_cam.target = Vec3(50, 40, 30); g_cam.dist = 200.0;
+        runToolCommand(IDM_TOOL_FRAME);
+        CHECK((g_cam.target - g_objs[1].pos).norm() < 1e-12,
+              "toolbar : bouton F cadrer = cadrage de la selection (vise le centre de la piece collee)");
+        runToolCommand(IDM_TOOL_HOME);
+        const Camera defaut{};
+        const Vec3 cibleVisee = defaut.target;
+        CHECK((g_cam.target - cibleVisee).norm() < 1e-12
+              && g_cam.dist == defaut.dist && selectedCount() == 0,
+              "toolbar : bouton H origine = retour vue d'origine + deselection");
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_rotActive = false; g_rotMode = false; g_ppActive = false; g_ppMode = false;
+        g_clipboard.clear(); g_pasteRepeat = 0;
+        g_rotMulti.clear(); g_rotPivotKind = 0;
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }

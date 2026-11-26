@@ -259,6 +259,24 @@ build\Debug\sketch3d.exe
   B a chaud avec angle conserve, echange des positions par +180, ancre pos
   inchangee, preview exacte autour du barycentre, annulation, mono/B isole).
 
+## Barre d'outils flottante B1 (v1)
+
+- Petite fenetre outil `Outils` (WS_EX_TOOLWINDOW, gadget, depisable) avec
+  boutons : **Selection, P (Push/Pull), R (Rotation), F cadrer, H origine,
+  Copier, Coller** ; deplacable n'importe ou par sa barre de titre (2 ecrans
+  inclus) ; la croix la CACHE (la retrouver au lancement suivant) ;
+- **un seul chemin de code** : les boutons et les touches P/R passent par le
+  meme dispatcher `runToolCommand` - le bouton ne peut pas diverger du
+  raccourci (modes exclusifs, modes P/R mutuellement exclusifs, annulation de
+  la transformation en cours comprise) ;
+- bouton Selection = chaine Echap (sans jamais fermer l'application) :
+  1er clic = annule l'etat en cours (face en suspens / rotation en cours) et
+  quitte le mode, 2e clic = deselection ;
+- Copier / Coller = Ctrl+C / Ctrl+V (T1.12, mono et multi) ;
+- batterie : **211 verifications, 0 echec** (+13 : dispatcher boutons vs
+  raccourcis, exclusivite P/R, annulation via bouton, copier/coller boutons,
+  cadrer/origine boutons).
+
 ## Fichier de setup B0 (sketch3d.ini)
 
 - **INI editable a la main** pose a cote de l'exe (`sketch3d.ini`, sans
