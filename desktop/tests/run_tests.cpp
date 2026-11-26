@@ -1259,7 +1259,7 @@ int main() {
        sauvegarde immediate a chaque changement de preference, dernier
        projet, round-trip complet fermeture -> lancement */
     {
-        const std::string path = "/tmp/sketch3d_test_setup.ini";
+        const std::string path = tmpPath("setup_test.ini");   /* portable : fs::temp_directory_path (le /tmp POSIX n existe pas sous Windows) */
         g_setupPath = path;
         g_setup = Setup{};
         std::remove(path.c_str());
@@ -1386,7 +1386,7 @@ int main() {
     /* 30 - B1.1 : preferences barre d'outils (section [outils] du INI) -
        round-trip visible/vertical/position, valeurs tolerees, ini editable */
     {
-        const std::string path = "/tmp/sketch3d_test_setup2.ini";
+        const std::string path = tmpPath("setup_test2.ini");
         g_setupPath = path;
         g_setup = Setup{};
         std::remove(path.c_str());
