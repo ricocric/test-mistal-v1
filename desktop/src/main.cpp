@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1.7";
+static const char* BUILD_VERSION = "B1.7b";   /* B1.7b : correctif prototype prefSyncCoches (erreur MSVC C3861) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1039,6 +1039,12 @@ static void loadSetup() {
 static void noteProjectPath(const std::string& p) {
     if (g_setup.dernierProjet != p) { g_setup.dernierProjet = p; saveSetup(); }
 }
+#ifdef _WIN32
+/* B1.6 : coches du menu Preferences (definies avec la barre d'outils) ;
+   le prototype DOIT preceder noteExportFormat, qui l'appelle des B1.6 */
+static void prefSyncCoches();
+#endif
+
 static void noteExportFormat(bool scene, bool stl) {
     std::string& cible = scene ? g_setup.formatScene : g_setup.formatSelection;
     const std::string voulu = stl ? "stl" : "obj";
@@ -1346,9 +1352,6 @@ static void toolbarSetVertical(bool vert);
 static void toolFollow();
 /* B1.4 : menu Preferences - formats d'export editables au vol */
 static void prefSetExportFormat(bool scene, bool stl);
-/* B1.6 : coches Preferences recoherentes avec l'etat reel (appele par
-   noteExportFormat, le goulot unique) */
-static void prefSyncCoches();
 #endif
 
 /* B1.7 : un seul lieu de choix du format = le menu Preferences (un seul
@@ -3091,9 +3094,13 @@ static void updateWindowTitle(GLFWwindow* w) {
 }
 
 int main() {
-    std::printf("Sketch3D natif — build %s (outillages T1 : duplication multi-instances, rotation autour des axes + menus du lot N5)\n", BUILD_VERSION);
-    std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer (I), exporter scene/selection (format = Preferences), quitter ; menu Affichage : barre d'outils (rappel, verticale) ; menu Preferences : formats d'export scene/selection ; menu contextuel (clic droit) : infos objet, duplication\n");
-    std::printf("P : mode Push/Pull ; R : mode Rotation (X/Y/Z = axe, souris ou chiffres+Entree) ; I : import ; F : cadrage ; H : origine ; molette-clic ou Shift+glisser : deplacer la vue ; C : centrer sur le point vise\n");
+    /* entete console : court, groupe par theme (retour utilisateur : trop de
+       verbiage noie les informations importantes) */
+    std::printf("Sketch3D - build %s\n", BUILD_VERSION);
+    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | Ctrl+C/V | Suppr\n");
+    std::printf("Vue     : orbite = clic gauche dans le vide | zoom = molette | panoramique = molette-clic ou Shift+glisser | C centrer | F cadrer | H origine\n");
+    std::printf("Projets : Ctrl+S enregistrer | clic droit = infos objet + duplication | I importer\n");
+    std::printf("Formats : export scene/selection = menu Fichier, format defini dans Preferences\n");
     g_setupPath = setupFilePath();
     loadSetup();                     /* B0 : preferences de la derniere session */
     if (g_setup.winW > 0) g_winW = g_setup.winW;
