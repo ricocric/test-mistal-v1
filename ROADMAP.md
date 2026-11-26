@@ -162,31 +162,40 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   redimensionnables ; NOTES.md cree a la racine du depot (bloc-notes
   versionne : formats/dimensions des icones boutons + regles permanentes) ;
 - B2.7e EDITION DES TRACES APRES COUP (conception AVANT code, PR dediee) :
-  remarque utilisateur : le probleme est le MEME pour la ligne (segments
-  droits) et la spline (courbe) - il faudra pouvoir les modifier toutes ;
-  l'objet pose ne garde aujourd'hui que la geometrie derivee (les points
-  de definition sont perdus apres la pose) ;
-  1. SOURCE DE VERITE : struct TraceData dans Object - type (LIGNE,
-     SPLINE_PASSAGE, SPLINE_CONTROLE), points de definition (coordonnees
-     LOCALES, l'ancre pos/scl s'applique comme au reste), ouvert/ferme ;
-     pour la LIGNE les points = deja les sommets de v (rien de plus a
-     stocker que type + ouvert/ferme) ; pour la SPLINE les points de clic ;
+  remarques utilisateur : (1) le probleme est le MEME pour la ligne
+  (segments droits) et la spline (courbe) - il faudra pouvoir les
+  modifier toutes ; (2) GENERALISATION : l'edition doit etre possible
+  pour TOUTES les formes, pas seulement les traces ;
+  PRINCIPE DIRECTEUR : tout objet porte ses PARAMETRES DE CONSTRUCTION
+  (les points de definition qui l'ont fait naitre) - la geometrie
+  (v/tri/edges) n'est qu'un DERIVE, regenerable a tout instant ;
+  l'objet pose ne garde aujourd'hui que la geometrie derivee (les
+  points de definition sont perdus apres la pose) ;
+  1. SOURCE DE VERITE : struct de parametres dans Object, par type -
+     LIGNE / POLYGONE : points de clic (la ligne a deja ses sommets v) ;
+     SPLINE_PASSAGE / SPLINE_CONTROLE : points de clic + ouvert/ferme ;
+     RECTANGLE : 2 coins ; CERCLE : centre + rayon (ou point du rayon) ;
+     ARC : centre + debut + fin ; plus tard EXTRUSION : profil (trace)
+     + vecteur/chemin - c'est la MEME structure qui decrit toute forme ;
   2. RECALCUL par les MEMES fonctions que le trace (splSample,
-     splTangents, chaine d'aretes de linePose via computeObjectDerived) -
-     UN SEUL CHEMIN DE CODE : le trace et l'edition ne font que remplir
-     TraceData puis regenerer ;
-  3. MODE EDITION (tracé selectionne + commande dediee) : poignees
-     (petits carres) sur les points de definition, drag = deplacement au
-     sol y=0 en v1 (tous les traces B2 sont au sol), recalcul CONTINU
-     pendant le drag ; clic sur la courbe = ajouter un point (insertion
-     au plus proche intervalle) ; poignee + Suppr = supprimer (minimums :
-     2 points ligne / spline ouverte, 3 spline fermee) ; Echap ou clic
-     droit = sortir du mode ;
+     splTangents, fan du polygone, generation rectangle/cercle/arc,
+     makeExtrude) - UN SEUL CHEMIN DE CODE : tracer et editer ne font
+     que remplir les parametres puis regenerer la geometrie ;
+  3. MODE EDITION (objet selectionne + commande dediee) : poignees
+     (petits carres) sur les points de definition, drag au sol y=0 en v1
+     (tous les objets B2 sont au sol), recalcul CONTINU pendant le drag ;
+     clic sur la courbe = ajouter un point (insertion au plus proche
+     intervalle, formes a N points) ; poignee + Suppr = supprimer
+     (minimums par forme : 2 points ligne/spline ouverte, 3 spline
+     fermee/polygone) ; Echap ou clic droit = sortir du mode ;
   4. PERSISTE avec l'objet (save/load) - sinon l'edition serait perdue
      a chaque reouverture du sketch (a confirmer en test) ;
-  5. EXTENSIONS PLUS TARD : memes poignees pour rectangle (2 coins),
-     cercle (centre + rayon), arc (centre + debut + fin), polygone ;
-     mecanisme qui prefigure l'edition directe de maillage (B5) ;
+  5. PAR PHASES : E1 = traces (ligne + spline) ; E2 = formes de base
+     (rectangle, cercle, arc, polygone) ; E3 = extrusions (profil +
+     hauteur, puis chemin B3) ; la structure de parametres est posee
+     DES E1 pour ne jamais devoir reecrire les objets ;
+  6. EXTENSIONS PLUS TARD : mecanisme qui prefigure l'edition directe
+     de maillage (B5) et le vrai solide (B6) ;
   ARBITRAGES A TRANCHER AVANT CODE (demande utilisateur) : touche
   d'entree en edition (E proposee) + bouton barre ; ajouter/supprimer
   des points des v1 ou seulement deplacer ; bascule variante
