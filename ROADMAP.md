@@ -51,7 +51,12 @@ Questions ouvertes a trancher avec l'utilisateur :
   propre, raccourcis rappeles dans le menu - regle B1.7c) ;
 - B4 offset + chanfrein
 - B5 edition directe : sommets / aretes / faces, scinder, pont
-- B6 booleens (union / intersection / soustraction)
+- B6 booleens (union / intersection / soustraction) - DECISION utilisateur :
+  le tri-soup (soupe de triangles, fidele au web) suffira jusqu'ici, mais un
+  VRAI SOLIDE doit naitre au plus tard avec B6 (topologie structuree type
+  demi-aretes : faces, aretes partagees, voisinnage) - les booleens sans
+  topologie veule devenir des rustines ; B5 (edition directe, notion de
+  face) et B4 (offset/chanfrein) tireront aussi parti de cette migration
 - B7 deformations : echelle non homogene, twist, bend, taper
 - B8 pivot intelligent : ETUDE DE CONCEPTION avant code (nombreux cas de
   figure : sommet, face, point clique, coordonnees, centre du monde...)
