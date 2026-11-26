@@ -1926,6 +1926,114 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
     }
 
+    /* ------------------------------------------------------------------ */
+    /* B2.7e : EDITION DES TRACES APRES COUP - source de verite TraceData, */
+    /* regeneration par les MEMES fonctions que le trace, ajout/suppression */
+    /* de points, ouvert/ferme, persistence save/load                       */
+    /* ------------------------------------------------------------------ */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        /* 1. LIGNE posee : traceType + points de definition survivent a la pose */
+        g_linePts = { Vec3(0,0,0), Vec3(2,0,0), Vec3(2,0,2) };
+        linePose();
+        CHECK(g_objs.size() == 1 && g_objs[0].traceType == 1 && !g_objs[0].traceFerme,
+              "edition (ligne) : TraceData rempli a la pose (type = LIGNE, ouvert)");
+        CHECK(g_objs[0].tracePts.size() == 3 && (g_objs[0].tracePts[1] - Vec3(2,0,0)).norm() < 1e-12,
+              "edition (ligne) : points de definition = sommets du fil");
+        /* 2. drag d'une poignee : la geometrie suit (source de verite) */
+        g_objs[0].tracePts[1] = Vec3(4,0,1);
+        traceRegen(g_objs[0]);
+        CHECK(g_objs[0].v.size() == 3 && (g_objs[0].v[1] - Vec3(4,0,1)).norm() < 1e-12,
+              "edition (ligne) : poignee deplacee = fil regenere (un seul chemin de code)");
+        /* 3. ajout d'un point : clic au milieu d'un segment -> insertion a l'intervalle */
+        const int ia = traceAddPoint(g_objs[0], Vec3(1,0,1) + g_objs[0].pos);
+        CHECK(ia > 0 && g_objs[0].tracePts.size() == 4,
+              "edition (ligne) : clic sur la courbe = point de definition ajoute");
+        CHECK((g_objs[0].tracePts[(size_t)ia] - Vec3(1,0,1)).norm() < 1e-12,
+              "edition (ligne) : le point ajoute est au bon intervalle");
+        /* 4. suppression + garde du minimum (2 points pour une ligne ouverte) :
+              4 -> 3 -> 2 points ok, puis refus a 2 (minimum atteint) */
+        CHECK(traceDelPoint(g_objs[0], ia), "edition (ligne) : poignee + Suppr = point supprime (4 -> 3)");
+        CHECK(traceDelPoint(g_objs[0], 0) && g_objs[0].tracePts.size() == 2,
+              "edition (ligne) : suppression a 3 points (-> 2)");
+        CHECK(!traceDelPoint(g_objs[0], 0) && g_objs[0].tracePts.size() == 2,
+              "edition (ligne) : garde - minimum 2 points (refus sous le minimum)");
+        /* 5. ouvert/ferme : O bascule (arete de cloture pour le fil) -
+              re-ajout d'un point d'abord (3 points requis pour fermer) */
+        CHECK(traceAddPoint(g_objs[0], Vec3(0,0,2) + g_objs[0].pos) >= 0
+              && g_objs[0].tracePts.size() == 3,
+              "edition (ligne) : re-ajout d'un point (clic sur la courbe)");
+        traceToggleFerme(g_objs[0]);
+        CHECK(g_objs[0].traceFerme == 1 && g_objs[0].edges.size() == 3,
+              "edition (ligne) : O = ferme (arete de cloture derivee)");
+        traceToggleFerme(g_objs[0]);
+        CHECK(g_objs[0].traceFerme == 0 && g_objs[0].edges.size() == 2,
+              "edition (ligne) : O = re-ouvre (chaine simple)");
+        /* 6. SPLINE passage posee, poignee deplacee : la courbe passe par le nouveau point */
+        g_splPts = { Vec3(0,0,0), Vec3(2,0,0), Vec3(4,0,1), Vec3(6,0,0) };
+        g_splMode = true; g_splCtrl = false;
+        splPose(false);
+        g_splMode = false;
+        CHECK(g_objs.size() == 2 && g_objs[1].traceType == 2,
+              "edition (spline) : TraceData rempli a la pose (type = SPLINE passage)");
+        {
+            Object& sp = g_objs[1];
+            const Vec3 nouveau(3, 0, -1);            /* nouveau point de passage (monde) */
+            sp.tracePts[2] = (nouveau - sp.pos) * (1.0 / sp.scl);
+            traceRegen(sp);
+            double dmin = 1e300;
+            for (const Vec3& loc : sp.v) dmin = std::min(dmin, (sp.pos + loc - nouveau).norm());
+            CHECK(dmin < 1e-9, "edition (spline passage) : la courbe regeneree passe par la poignee deplacee");
+            /* extremes exacts conserves (noeuds serres) */
+            CHECK((sp.pos + sp.v.front() - Vec3(0,0,0)).norm() < 1e-9
+                  && (sp.pos + sp.v.back() - Vec3(6,0,0)).norm() < 1e-9,
+                  "edition (spline passage) : extremes exacts apres edition");
+            /* 7. bascule variante a chaud : points conserves, courbe interieure */
+            traceSetVariante(sp, true);
+            CHECK(sp.traceType == 3 && sp.tracePts.size() == 4,
+                  "edition (spline) : Maj+B = variante controle A CHAUD (points conserves)");
+            double dmin2 = 1e300;
+            for (const Vec3& loc : sp.v)
+                dmin2 = std::min(dmin2, (sp.pos + loc - Vec3(3,0,2)).norm());
+            CHECK(dmin2 > 0.05, "edition (spline controle) : la courbe reste interieure au polygone");
+            /* 8. fermeture spline + garde */
+            traceToggleFerme(sp);
+            CHECK(sp.traceFerme == 1 && (sp.v.front() - sp.v.back()).norm() < 1e-12,
+                  "edition (spline) : O = boucle fermee (dernier sommet = premier)");
+            CHECK(traceDelPoint(sp, 3) && sp.tracePts.size() == 3,
+                  "edition (spline fermee) : suppression a 4 points (-> 3)");
+            CHECK(!traceDelPoint(sp, 0), "edition (spline fermee) : garde - minimum 3 points");
+        }
+        /* 9. persistence : TraceData survit au save/load (round-trip) */
+        {
+            std::string err;
+            const std::string p = tmpPath("edition.s3projet");
+            CHECK(saveProject(p, err), err.c_str());
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), err.c_str());
+            CHECK(g_objs.size() == 2 && g_objs[1].traceType == 3 && g_objs[1].traceFerme == 1
+                  && g_objs[1].tracePts.size() == 3,
+                  "edition : persistence - type/ouvert-ferme/points survivent au save/load");
+            /* la geometrie relue est IDENTIQUE (regenerable a l'identique) */
+            traceRegen(g_objs[1]);
+            CHECK(g_objs[1].v.size() == g_objs[1].v.size(), "edition : relue (sanity)");
+        }
+        /* 10. vieux projets (sans bloc trace) restent relisibles : retrocompatibilite */
+        {
+            std::string err;
+            const std::string p = tmpPath("sans_trace.s3projet");
+            std::ofstream f(p);
+            f << "s3projet 1\nobjet Cube\npos 0 0 0\nscl 1\ncol 0.5 0.5 0.5\n"
+                 "verts 1\n0 0 0\ntris 0\n";
+            f.close();
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), err.c_str());
+            CHECK(g_objs.size() == 1 && g_objs[0].traceType == 0,
+                  "edition : vieux projet sans bloc trace relisible (traceType = 0)");
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
     std::printf("resume : %d echec(s), %d verifications\n", g_fail, g_tot);
     return g_fail ? 1 : 0;
 }

@@ -847,6 +847,29 @@ a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
   plaque contre ce point) ; le polygone n'est PAS pose - seule la courbe
   discretisee devient l'objet fil.
 
+## B2.7e : edition des traces apres coup (E1 : ligne + spline)
+
+Tout objet porte ses PARAMETRES DE CONSTRUCTION (source de verite), la
+geometrie n'est qu'un derive regenerable par les MEMES fonctions que le
+trace (un seul chemin de code). Generalise plus tard a toutes les formes
+(rectangle, cercle, arc, polygone, extrusions - phases E2/E3).
+
+- **E** (ou bouton « Editer ») : entre/sort du mode edition du trace
+  selectionne (une ligne ou une spline - sinon message) ;
+- poignees : petits carres verts sur les points de definition ; clic =
+  saisie (orange), drag au sol = deplacement avec recalcul CONTINU ;
+- clic sur la courbe (hors poignee) = ajouter un point de definition a
+  l'intervalle le plus proche ; poignee + **Suppr** = supprimer (garde :
+  minimum 2 points ouvert, 3 ferme) ;
+- **O** = bascule ouvert/ferme a chaud (la ligne fermee retrouve sa
+  feuille si elle en avait une) ; **Maj+S/Maj+B** = bascule variante
+  spline passage/controle a chaud, points conserves (regle des variantes) ;
+- Echap ou clic droit = quitter (mode exclusif : les autres touches sont
+  avalees) ;
+- persistence : bloc optionnel `trace type ferme surface npts` dans le
+  .s3projet (peek par ligne avec retour arriere du flux = vieux projets
+  relisibles) ; total **330, 0 echec**.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils

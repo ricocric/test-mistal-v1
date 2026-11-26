@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1.8b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.7e";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -135,6 +135,14 @@ struct Object {
     std::vector<Vec3> n;
     std::vector<std::pair<int, int>> edges;
     Vec3 bmin, bmax;
+    /* B2.7e : PARAMETRES DE CONSTRUCTION (source de verite) - la geometrie
+       v/tri/edges n'est qu'un derive, regenerable par traceRegen avec les
+       MEMES fonctions que le trace (un seul chemin de code). tracePts sont
+       LOCAUX (pos + scl*p = monde), comme v. */
+    int traceType = 0;          /* 0 = aucun ; 1 = LIGNE ; 2 = SPLINE passage ; 3 = SPLINE controle */
+    int traceFerme = 0;         /* 1 = boucle fermee */
+    int traceSurface = 0;       /* 1 = feuille fermee en surface (fan, ligne B2.5) */
+    std::vector<Vec3> tracePts; /* points de definition */
 };
 
 static std::vector<Object> g_objs;
@@ -144,6 +152,13 @@ static int g_selected = -1;
    g_selMulti = objets supplementaires (Ctrl+clic : ajoute/retire) ;
    les actions (export, suppression, duplication) portent sur l'ensemble. */
 static std::vector<int> g_selMulti;
+
+/* B2.7e : edition des traces apres coup - etat declare TOT (utilise par
+   handleMenuAction comme par les callbacks ; lecon B1.7b : prototype avant
+   premiere utilisation) ; le reste du bloc edition est defini apres les
+   splines (il reutilise splSample). */
+static bool g_editMode = false;         /* mode edition arme (un seul objet) */
+static int g_editObj = -1;              /* objet edite (index dans g_objs) */
 
 static bool isSelectedRaw(int i) {
     if (i == g_selected) return true;
@@ -1282,6 +1297,13 @@ static bool saveProject(const std::string& path, std::string& err) {
         f << "tris " << o.tri.size() / 3 << "\n";
         for (size_t i = 0; i + 2 < o.tri.size(); i += 3)
             f << o.tri[i] << " " << o.tri[i + 1] << " " << o.tri[i + 2] << "\n";
+        /* B2.7e : parametres de construction (source de verite) - bloc
+           optionnel : les vieux projets (sans trace) restent relisibles */
+        if (o.traceType != 0) {
+            f << "trace " << o.traceType << " " << o.traceFerme << " " << o.traceSurface
+              << " " << o.tracePts.size() << "\n";
+            for (const Vec3& p : o.tracePts) f << p.x << " " << p.y << " " << p.z << "\n";
+        }
     }
     if (!f) { err = "ecriture interrompue"; return false; }
     std::printf("projet enregistre : %s (%zu objets)\n", path.c_str(), g_objs.size());
@@ -1328,6 +1350,33 @@ static bool loadProject(const std::string& path, std::string& err) {
             if (!(f >> t)) { err = "fichier corrompu (triangles)"; return false; }
         for (unsigned t : o.tri)
             if (t >= o.v.size()) { err = "fichier corrompu (index de sommet hors bornes)"; return false; }
+        /* B2.7e : bloc optionnel des parametres de construction (source de
+           verite). Peek par LIGNE avec RETOUR ARRIERE du flux si la ligne
+           suivante n'est pas "trace" (jamais f >> tok : le jeton "objet"
+           suivant serait consomme et la boucle casserait) ; le bloc est
+           absent dans les vieux projets = retrocompatibles. */
+        {
+            const std::streampos avant = f.tellg();
+            std::string finLigne, probe;
+            std::getline(f, finLigne);              /* reste de la ligne des tris */
+            std::getline(f, probe);                 /* ligne suivante (peek) */
+            if (!f.eof() && trimStr(probe).rfind("trace ", 0) == 0) {
+                std::istringstream is(probe);
+                std::string tag;
+                if (!(is >> tag >> o.traceType >> o.traceFerme >> o.traceSurface)
+                    || o.traceType < 0 || o.traceType > 3) {
+                    err = "fichier corrompu (entete de trace)"; return false;
+                }
+                size_t ntp = 0;
+                if (!(is >> ntp) || ntp > 20000000ull) { err = "fichier corrompu (compteur de trace)"; return false; }
+                o.tracePts.resize(ntp);
+                for (Vec3& p : o.tracePts)
+                    if (!(f >> p.x >> p.y >> p.z)) { err = "fichier corrompu (points du trace)"; return false; }
+            } else {
+                f.clear();                          /* lever eof/fail avant le retour arriere */
+                f.seekg(avant);                     /* le jeton "objet" suivant reste a lire */
+            }
+        }
         computeObjectDerived(o);
         objs.push_back(std::move(o));
     }
@@ -1395,6 +1444,7 @@ enum {
     IDM_TOOL_POLY,
     IDM_TOOL_SPL,
     IDM_TOOL_SPLC,
+    IDM_TOOL_EDIT,             /* B2.7e : edition des traces apres coup (E) */
 };
 
 /* Homogeneite ("UN SEUL CHEMIN DE CODE", regle systematique) : tous les
@@ -1442,6 +1492,7 @@ static void handleMenuAction(int id) {
     switch (id) {
     case IDM_NEW_PROJECT:
         g_objs.clear();
+        g_editMode = false; g_editObj = -1;   /* B2.7e : defense */
         clearSelection();
         std::printf("nouveau projet : scene vide\n");
         return;
@@ -1452,6 +1503,7 @@ static void handleMenuAction(int id) {
         if (p.empty()) return;
         std::string err;
         if (!loadProject(p, err)) { std::printf("ouverture impossible : %s\n", err.c_str()); return; }
+        g_editMode = false; g_editObj = -1;   /* B2.7e : defense */
         noteProjectPath(p);
         frameSelected();
         return;
@@ -1468,6 +1520,7 @@ static void handleMenuAction(int id) {
     }
     case IDM_CLOSE_PROJECT:
         g_objs.clear();
+        g_editMode = false; g_editObj = -1;   /* B2.7e : defense */
         clearSelection();
         std::printf("projet ferme\n");
         return;
@@ -1605,7 +1658,7 @@ static void drawText2D(float x, float y, const char* s) {
    Tout est persiste dans la section [outils] du sketch3d.ini. */
 static HWND g_toolWin = nullptr;
 static HWND g_mainHwnd = nullptr;    /* fenetre principale : suivi + aimantation */
-static HWND g_toolBtn[14];   /* B2.4b : dimension = nombre de boutons (l'ancien [9] debordait = corruption memoire) ; B2.7b : 14 */
+static HWND g_toolBtn[15];   /* B2.4b : dimension = nombre de boutons (l'ancien [9] debordait = corruption memoire) ; B2.7e : 15 */
 static HMENU g_viewMenu = nullptr;   /* menu Affichage : coches tenus a jour */
 static HMENU g_prefSceneMenu = nullptr;  /* menu Preferences : export scene */
 static HMENU g_prefSelMenu = nullptr;    /* menu Preferences : export selection */
@@ -1737,9 +1790,9 @@ static void attachToolbar(HWND mainHwnd) {
     const HWND tw = CreateWindowExA(WS_EX_TOOLWINDOW, cls, "Outils",
         kToolStyle, o.x + g_setup.toolX, o.y + g_setup.toolY, 0, 0,
         mainHwnd, nullptr, GetModuleHandleA(nullptr), nullptr);
-    static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller", "Ligne", "Rectangle", "Cercle", "Arc", "Polygone", "Spline", "Spline ctrl" };
+    static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller", "Ligne", "Rectangle", "Cercle", "Arc", "Polygone", "Spline", "Spline ctrl", "Editer" };
     static const int ids[] = { IDM_TOOL_SELECT, IDM_TOOL_PP, IDM_TOOL_ROT, IDM_TOOL_FRAME,
-                               IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE, IDM_TOOL_LINE, IDM_TOOL_RECT, IDM_TOOL_CERCLE, IDM_TOOL_ARC, IDM_TOOL_POLY, IDM_TOOL_SPL, IDM_TOOL_SPLC };
+                               IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE, IDM_TOOL_LINE, IDM_TOOL_RECT, IDM_TOOL_CERCLE, IDM_TOOL_ARC, IDM_TOOL_POLY, IDM_TOOL_SPL, IDM_TOOL_SPLC, IDM_TOOL_EDIT };
     for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); ++i) {
         g_toolBtn[i] = CreateWindowExA(0, "BUTTON", labels[i],
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -1859,6 +1912,7 @@ static void attachMenus(GLFWwindow* win) {
        des lots ; delegation automatique : id >= kIdCommandStart */
     HMENU outils = CreatePopupMenu();
     AppendMenuA(outils, MF_STRING, IDM_TOOL_SELECT, "&Selection\tEchap");
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_EDIT, "&Editer un trace\tE");   /* B2.7e */
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);   /* B2.7c : groupes de variantes separes */
     AppendMenuA(outils, MF_STRING, IDM_TOOL_PP, "&Extraire une face\tP");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_ROT, "&Tourner\tR");
@@ -2675,6 +2729,9 @@ static void linePose() {
     for (size_t i = 0; i < g_linePts.size(); ++i) o.v[i] = g_linePts[i] - o.pos;
     o.tri.clear();
     o.n.clear();
+    /* B2.7e : les points de definition survivent a la pose (edition apres coup) */
+    o.traceType = 1;
+    o.tracePts = o.v;
     /* B2.1 : les aretes (chaine du fil) sont DERIVEES par computeObjectDerived
        (objet sans triangle = chaine 0-1, ...), donc survives au save/load */
     computeObjectDerived(o);
@@ -2702,6 +2759,11 @@ static void lineCloseLoop() {
     for (size_t i = 0; i < o.v.size(); ++i) o.v[i] = g_linePts[i] - o.pos;
     o.tri.clear();
     o.n.clear();
+    /* B2.7e : les points de definition survivent a la pose (edition apres coup) */
+    o.traceType = 1;
+    o.traceFerme = 1;
+    o.traceSurface = surface ? 1 : 0;
+    o.tracePts = o.v;
     if (surface)
         for (size_t i = 1; i + 1 < o.v.size(); ++i) {
             o.tri.push_back(0); o.tri.push_back((int)i); o.tri.push_back((int)(i + 1));
@@ -3429,6 +3491,11 @@ static void splPose(bool fermee) {
     for (size_t i = 0; i < o.v.size(); ++i) o.v[i] = pts[i] - o.pos;
     o.tri.clear();
     o.n.clear();                                    /* fil = objet sans triangle */
+    /* B2.7e : les points de definition survivent a la pose (edition apres coup) */
+    o.traceType = g_splCtrl ? 3 : 2;
+    o.traceFerme = fermee ? 1 : 0;
+    o.tracePts.resize(g_splPts.size());            /* capture AVANT le reset */
+    for (size_t i = 0; i < o.tracePts.size(); ++i) o.tracePts[i] = g_splPts[i] - o.pos;
     computeObjectDerived(o);                        /* aretes = chaine derivee */
     const size_t np = g_splPts.size();              /* capture AVANT le reset */
     const size_t nv = o.v.size();
@@ -3491,6 +3558,201 @@ static void drawSplinePreview() {
 }
 
 /* ------------------------------------------------------------------ */
+/* B2.7e : EDITION DES TRACES APRES COUP - la source de verite est     */
+/* TraceData (type + points de definition + ouvert/ferme) ; la         */
+/* geometrie est regeneree par LES MEMES fonctions que le trace        */
+/* (un seul chemin de code). E = entrer/sortir, poignees drag au sol,  */
+/* clic sur la courbe = ajouter un point, poignee + Suppr = supprimer, */
+/* Maj+S/Maj+B = variante spline, O = ouvert/ferme.                    */
+/* ------------------------------------------------------------------ */
+static int g_editGrab = -1;             /* poignee saisie (drag en cours) */
+static int g_editSel = -1;              /* poignee selectionnee (cible de Suppr) */
+
+/* distance point-rayon (capture des poignees) */
+static double pointRayDist(const Vec3& org, const Vec3& dir, const Vec3& p) {
+    const double t = dot(p - org, dir);
+    if (t <= 0.0) return (p - org).norm();
+    return (org + dir * t - p).norm();
+}
+/* regeneration de la geometrie depuis les parametres (source de verite) :
+   MEMES fonctions que le trace ; tracePts LOCAUX -> v LOCAUX, la convention
+   pos + scl*v = monde est preservee (la translation ne change rien aux
+   echantillonnages, centripete incluse : longueurs de cordes). */
+static void traceRegen(Object& o) {
+    if (o.traceType == 0 || o.tracePts.size() < 2) return;
+    if (o.traceType == 1) {                     /* LIGNE : v = points */
+        const bool surface = o.traceFerme && o.traceSurface && !o.tri.empty();
+        o.v = o.tracePts;
+        o.tri.clear();
+        o.n.clear();
+        if (surface)
+            for (size_t i = 1; i + 1 < o.v.size(); ++i) {
+                o.tri.push_back(0); o.tri.push_back((int)i); o.tri.push_back((int)(i + 1));
+            }
+        computeObjectDerived(o);
+        if (o.traceFerme && o.tri.empty())      /* fil fermé : arete de cloture */
+            o.edges.emplace_back((int)o.v.size() - 1, 0);
+        return;
+    }
+    /* SPLINE (passage ou controle) : MEME code que le trace - g_splPts sert
+       de tampon (le mode de trace est force sorti avant toute edition) ;
+       points LOCAUX -> courbe LOCALE, posee telle quelle dans v */
+    g_splPts = o.tracePts;
+    const bool oldCtrl = g_splCtrl;
+    g_splCtrl = (o.traceType == 3);
+    const std::vector<Vec3> pts = splSample(o.traceFerme != 0);
+    g_splCtrl = oldCtrl;
+    g_splPts.clear();
+    if (pts.size() < 2) return;
+    o.v = pts;
+    o.tri.clear();
+    o.n.clear();
+    computeObjectDerived(o);
+}
+/* minimum de points de definition par forme (garde de suppression/fermeture) */
+static size_t traceMinPoints(const Object& o) {
+    return o.traceFerme ? 3 : 2;
+}
+/* index d'insertion dans tracePts : apres l'intervalle le plus proche du clic
+   (ligne = projection sur les segments ; spline = intervalle de discretisation
+   le plus proche, kSplSub sous-segments par intervalle, cf. splSample) */
+static int traceInsertIndex(const Object& o, const Vec3& pLocal) {
+    const size_t n = o.tracePts.size();
+    if (o.traceType == 1) {
+        double best = 1e300; int bi = 1;
+        for (size_t i = 0; i + 1 < n; ++i) {
+            const Vec3 a = o.tracePts[i], b = o.tracePts[i + 1];
+            const Vec3 ab = b - a;
+            const double l2 = dot(ab, ab);
+            double t = l2 > 1e-18 ? dot(pLocal - a, ab) / l2 : 0.0;
+            if (t < 0.0) t = 0.0;
+            if (t > 1.0) t = 1.0;
+            const double d = (a + ab * t - pLocal).norm();
+            if (d < best) { best = d; bi = (int)i + 1; }
+        }
+        return bi;
+    }
+    double best = 1e300; int bi = 1;
+    for (size_t j = 0; j < o.v.size(); ++j) {
+        const double d = (o.v[j] - pLocal).norm();
+        if (d < best) { best = d; bi = (int)(j / kSplSub) + 1; }
+    }
+    if (bi < 1) bi = 1;
+    if (bi > (int)n - 1) bi = (int)n - 1;
+    return bi;
+}
+/* clic sur la courbe = ajouter un point de definition ; retourne l'index
+   insere (-1 = refuse : doublon ou trace inedit) */
+static int traceAddPoint(Object& o, const Vec3& monde) {
+    if (o.traceType == 0 || o.tracePts.size() < 2) return -1;
+    const Vec3 pLocal = (monde - o.pos) * (1.0 / o.scl);
+    for (const Vec3& q : o.tracePts)
+        if ((q - pLocal).norm() < 1e-9) return -1;      /* meme point : rien */
+    const int idx = traceInsertIndex(o, pLocal);
+    o.tracePts.insert(o.tracePts.begin() + idx, pLocal);
+    traceRegen(o);
+    return idx;
+}
+/* poignee + Suppr = supprimer (garde : minimum par forme) */
+static bool traceDelPoint(Object& o, int idx) {
+    if (o.traceType == 0 || idx < 0 || idx >= (int)o.tracePts.size()) return false;
+    if (o.tracePts.size() <= traceMinPoints(o)) {
+        std::printf("edition : minimum %zu point(s) pour ce trace\n", traceMinPoints(o));
+        return false;
+    }
+    o.tracePts.erase(o.tracePts.begin() + idx);
+    if (g_editSel == idx) g_editSel = -1;
+    traceRegen(o);
+    return true;
+}
+/* O pendant l'edition : bascule ouvert/ferme (feuille <-> fil pour la ligne) */
+static void traceToggleFerme(Object& o) {
+    if (o.traceType == 0) return;
+    if (!o.traceFerme && o.tracePts.size() < 3) {
+        std::printf("edition : au moins 3 points pour fermer le trace\n");
+        return;
+    }
+    o.traceFerme = o.traceFerme ? 0 : 1;
+    traceRegen(o);
+    std::printf("edition : trace %s\n", o.traceFerme ? "FERME" : "ouvert");
+}
+/* Maj+S / Maj+B pendant l'edition d'une spline : bascule variante a chaud
+   (regle des variantes : points conserves) */
+static void traceSetVariante(Object& o, bool ctrl) {
+    if (o.traceType != 2 && o.traceType != 3) {
+        std::printf("edition : la bascule passage/controle concerne les splines\n");
+        return;
+    }
+    o.traceType = ctrl ? 3 : 2;
+    traceRegen(o);
+    std::printf("edition : variante spline %s (points conserves)\n", ctrl ? "POINTS DE CONTROLE" : "passage");
+}
+static void editExit() {
+    g_editMode = false;
+    g_editObj = -1;
+    g_editGrab = -1;
+    g_editSel = -1;
+    std::printf("\nmode selection\n");
+}
+/* clic gauche en edition : saisir une poignee (drag) ou ajouter un point */
+static void editClick(GLFWwindow* w) {
+    if (g_editObj < 0 || g_editObj >= (int)g_objs.size()) { editExit(); return; }
+    Object& o = g_objs[(size_t)g_editObj];
+    Vec3 org, dir;
+    if (!rayFromMouse(w, org, dir)) return;
+    double best = 1e300; int bi = -1;
+    for (size_t i = 0; i < o.tracePts.size(); ++i) {
+        const Vec3 wpt = o.pos + o.tracePts[i] * o.scl;
+        const double d = pointRayDist(org, dir, wpt);
+        if (d < best) { best = d; bi = (int)i; }
+    }
+    if (bi >= 0 && best <= filPickTol() * 2.0) {
+        g_editSel = bi;
+        g_editGrab = bi;                            /* drag jusqu'au relachement */
+        return;
+    }
+    bool ok; Vec3 p;
+    lineGroundPoint(w, ok, p);
+    if (!ok) return;                                /* pointe le ciel : rien */
+    const int idx = traceAddPoint(o, p);
+    if (idx >= 0) {
+        g_editSel = idx;
+        std::printf("edition : point ajoute (%zu au total)\n", o.tracePts.size());
+    }
+}
+/* drag d'une poignee au sol (recalcul CONTINU de la courbe) */
+static void editDrag(GLFWwindow* w) {
+    if (g_editObj < 0 || g_editObj >= (int)g_objs.size()) { g_editGrab = -1; return; }
+    bool ok; Vec3 p;
+    lineGroundPoint(w, ok, p);
+    if (!ok) return;
+    Object& o = g_objs[(size_t)g_editObj];
+    o.tracePts[(size_t)g_editGrab] = (p - o.pos) * (1.0 / o.scl);
+    traceRegen(o);
+}
+/* poignees dessinees : petits carres au sol sur les points de definition */
+static void drawEditHandles() {
+    if (!g_editMode || g_editObj < 0 || g_editObj >= (int)g_objs.size()) return;
+    const Object& o = g_objs[(size_t)g_editObj];
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    const double s = 0.07;
+    for (size_t i = 0; i < o.tracePts.size(); ++i) {
+        const Vec3 w = o.pos + o.tracePts[i] * o.scl;
+        if ((int)i == g_editSel) glColor3d(0.95, 0.5, 0.2);       /* selectionnee : orange */
+        else if ((int)i == g_editGrab) glColor3d(0.95, 0.75, 0.1);
+        else glColor3d(0.2, 0.85, 0.2);                            /* verte */
+        glBegin(GL_QUADS);
+        glVertex3d(w.x - s, w.y, w.z - s);
+        glVertex3d(w.x + s, w.y, w.z - s);
+        glVertex3d(w.x + s, w.y, w.z + s);
+        glVertex3d(w.x - s, w.y, w.z + s);
+        glEnd();
+    }
+    glEnable(GL_DEPTH_TEST);
+}
+
+/* ------------------------------------------------------------------ */
 /* Callbacks                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -3524,6 +3786,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_arcMode) { arcCancel("dessin annule"); return; }      /* B2.4 : clic droit = annule */
         if (g_polyMode) { polyFinish(); return; }   /* B2.6b : clic droit = valide (ferme la surface) */
         if (g_splMode) { splFinish(); return; }   /* B2.7 : clic droit = valide (courbe ouverte) */
+        if (g_editMode) { editExit(); return; }   /* B2.7e : clic droit = quitter l'edition */
         if (g_lineMode) { lineFinish(); return; }   /* B2.1 : le clic droit FINIT (segments deja cliques poses) */
         if (g_ppActive) {
             ppCancel();                 /* restaure la piece */
@@ -3553,6 +3816,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_arcMode) { arcTakePoint(w); return; }         /* B2.4 : clic depart, clic fin, clic bombement pose */
         if (g_polyMode) { polyTakePoint(w); return; }       /* B2.6 : chaque clic pose un sommet ; clic sur le depart = ferme */
         if (g_splMode) { splTakePoint(w); return; }       /* B2.7 : chaque clic pose un point ; clic sur le depart = boucle */
+        if (g_editMode) { editClick(w); return; }   /* B2.7e : poignee = drag ; sinon clic sur la courbe = ajouter un point */
         if (g_ppActive) { ppCommit(); return; }   /* second clic gauche : pose la face */
         if (g_rotActive) { rotCommit(); return; }  /* clic gauche : pose la rotation */
         if (g_ppMode) {
@@ -3646,6 +3910,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         glfwGetCursorPos(w, &g_prevX, &g_prevY);
     } else {
         if (g_mode == M_Drag) { g_lockAxis = -1; g_dragMulti.clear(); }
+        g_editGrab = -1;                            /* B2.7e : fin du drag de poignee */
         g_mode = M_None;
     }
 }
@@ -3960,6 +4225,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             /* Echelle Echap : d'abord sortir de l'etat en cours (mode P/R en attente,
                puis deselection) ; Echap ne ferme JAMAIS l'application (rebonds de
                clavier) : fermeture volontaire par Fichier > Quitter uniquement. */
+            if (g_editMode) { editExit(); return; }   /* B2.7e : Echap = quitter l'edition */
             if (g_lineMode) { lineCancel("dessin annule"); return; }   /* B2.1 */
             if (g_rectMode) { rectCancel("dessin annule"); return; }   /* B2.2 */
             if (g_cercleMode) { cercleCancel("dessin annule"); return; }   /* B2.3 */
@@ -3968,6 +4234,20 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); return; }
             if (selectedCount() > 0) { clearSelection(); std::printf("\nselection annulee\n"); return; }
         }
+        if (g_editMode) {   /* B2.7e : edition d'un trace - bascules a chaud, le reste est avale */
+            if (g_editObj < 0 || g_editObj >= (int)g_objs.size()) { editExit(); return; }   /* defense : scene videe */
+            if ((mods & GLFW_MOD_SHIFT) && keyIsLetter(key, scancode, 'S')) { traceSetVariante(g_objs[(size_t)g_editObj], false); return; }
+            if ((mods & GLFW_MOD_SHIFT) && keyIsLetter(key, scancode, 'B')) { traceSetVariante(g_objs[(size_t)g_editObj], true); return; }
+            if (keyIsLetter(key, scancode, 'O')) { traceToggleFerme(g_objs[(size_t)g_editObj]); return; }
+            if (key == GLFW_KEY_DELETE) {   /* poignee + Suppr = supprimer le point */
+                if (g_editSel < 0) std::printf("edition : cliquez d'abord une poignee (Suppr = supprimer le point saisi)\n");
+                else traceDelPoint(g_objs[(size_t)g_editObj], g_editSel);
+                return;
+            }
+            if (keyIsLetter(key, scancode, 'E')) { runToolCommand(IDM_TOOL_EDIT); return; }   /* E = quitter */
+            return;   /* mode exclusif : les autres touches sont ignorees */
+        }
+        if (keyIsLetter(key, scancode, 'E') && !(mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending) runToolCommand(IDM_TOOL_EDIT);   /* B2.7e : E = editer le trace selectionne */
         if (keyIsLetter(key, scancode, 'P') && g_mode == M_None && !g_dupPending && !g_lineMode) runToolCommand(IDM_TOOL_PP);
         if (keyIsLetter(key, scancode, 'R') && !(mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineMode) runToolCommand(IDM_TOOL_ROT);
         if (keyIsLetter(key, scancode, 'R') && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_rectActive)
@@ -4026,7 +4306,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
 static void runToolCommand(int id) {
     switch (id) {
     case IDM_TOOL_SELECT:      /* = Echap, sans jamais fermer l'application */
-        if (g_lineMode) { lineCancel("dessin annule"); }
+        if (g_editMode) { editExit(); }   /* B2.7e */
+        else if (g_lineMode) { lineCancel("dessin annule"); }
         else if (g_ppActive) { ppCancel(); g_ppMode = false; std::printf("\nmode selection\n"); }
         else if (g_rotActive) { rotCancel(); g_rotMode = false; std::printf("\nmode selection\n"); }
         else if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); }
@@ -4151,6 +4432,26 @@ static void runToolCommand(int id) {
             std::printf("mode Spline (points de passage) : clic = point ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler\n");
         } else {
             std::printf("spline : terminez d'abord le mode en cours (Echap)\n");
+        }
+        return;
+    case IDM_TOOL_EDIT:        /* = E (B2.7e) : edition du trace selectionne */
+        if (g_editMode) {
+            editExit();
+        } else if (g_mode == M_None && !g_dupPending && !g_lineMode && !g_rectMode
+                   && !g_cercleMode && !g_arcMode && !g_polyMode && !g_splMode
+                   && !g_ppMode && !g_rotMode) {
+            const int idx = (selectedCount() == 1 && g_selected >= 0) ? g_selected : -1;
+            if (idx < 0 || g_objs[(size_t)idx].traceType == 0) {
+                flashBand("Editer : selectionnez d'abord UNE ligne ou une spline (E)");
+                std::printf("editer : selectionnez d'abord UNE ligne ou une spline (E)\n");
+            } else {
+                g_editMode = true;
+                g_editObj = idx;
+                g_editGrab = -1;
+                g_editSel = -1;
+                std::printf("mode Edition : %s (%zu points) - glissez une poignee ; clic sur la courbe = ajouter un point ; poignee + Suppr = supprimer ; Maj+S/Maj+B = variante spline ; O = ouvert/ferme ; Echap ou clic droit = quitter\n",
+                            g_objs[(size_t)idx].name.c_str(), g_objs[(size_t)idx].tracePts.size());
+            }
         }
         return;
     case IDM_TOOL_SPLC:        /* = Maj+B (B2.7b) */
@@ -4304,6 +4605,8 @@ static std::string statusPrompt() {
         if (glfwGetTime() < g_bandFlashUntil) return g_bandFlash;
         g_bandFlash.clear();
     }
+    if (g_editMode)
+        return "Edition du trace : glissez une poignee | clic sur la courbe = ajouter un point | poignee + Suppr = supprimer | Maj+S/Maj+B = variante spline | O = ouvert/ferme | Echap ou clic droit = quitter";
     if (g_lineActive)
         return "Ligne : clic = prolonger | clic droit = fin | chiffres + Entree = longueur exacte | Echap = tout annuler";
     if (g_rectActive)
@@ -4495,7 +4798,7 @@ int main() {
     /* entete console : court, groupe par theme (retour utilisateur : trop de
        verbiage noie les informations importantes) */
     std::printf("Sketch3D - build %s\n", BUILD_VERSION);
-    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart, clic droit ou Entree = ferme) | Maj+S spline (passage) | Maj+B spline (controle, clic depart = boucle) | Ctrl+C/V | Suppr\n");
+    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart, clic droit ou Entree = ferme) | Maj+S spline (passage) | Maj+B spline (controle, clic depart = boucle) | E editer un trace | Ctrl+C/V | Suppr\n");
     std::printf("Vue     : orbite = clic gauche dans le vide | zoom = molette | panoramique = molette-clic ou Shift+glisser | C centrer | F cadrer | H origine\n");
     std::printf("Projets : Ctrl+S enregistrer | clic droit = infos objet + duplication | I importer\n");
     std::printf("Formats : export scene/selection = menu Fichier, format defini dans Preferences\n");
@@ -4542,6 +4845,8 @@ int main() {
             g_prevX = x; g_prevY = y;
         } else if (g_mode == M_Drag) {
             updateDrag(win);
+        } else if (g_editGrab >= 0) {
+            editDrag(win);           /* B2.7e : poignee saisie = drag + recalcul continu */
         } else if (g_ppActive) {
             updatePP(win);
         } else if (g_rotActive) {
@@ -4569,6 +4874,7 @@ int main() {
         drawArcPreview();
         drawPolyPreview();
         drawSplinePreview();
+        drawEditHandles();       /* B2.7e : poignees du trace en edition */
         drawStatusBand();
         glfwSwapBuffers(win);
         glfwPollEvents();

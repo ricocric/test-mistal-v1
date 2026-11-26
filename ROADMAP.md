@@ -161,7 +161,20 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   VALIDATION UTILISATEUR B1.8b : barre horizontale et verticale
   redimensionnables ; NOTES.md cree a la racine du depot (bloc-notes
   versionne : formats/dimensions des icones boutons + regles permanentes) ;
-- B2.7e EDITION DES TRACES APRES COUP (conception AVANT code, PR dediee) :
+- B2.7e EDITION DES TRACES APRES COUP - E1 FAIT (ligne + spline) :
+  TraceData dans Object (type, ferme, surface, points LOCAUX), rempli a
+  la pose (linePose/lineCloseLoop/splPose) ; traceRegen = MEMES fonctions
+  que le trace (splSample en tampon g_splPts, fan de lineCloseLoop) ;
+  mode edition E (bouton 15e "Editer", menu Outils groupe Selection) :
+  poignees carres au sol, drag = recalcul continu (editDrag), clic sur
+  la courbe = ajout a l'intervalle le plus proche (traceAddPoint),
+  poignee + Suppr = suppression (garde 2 ouvert / 3 ferme), O =
+  ouvert/ferme a chaud, Maj+S/Maj+B = variante spline a chaud, Echap/
+  clic droit = sortie, mode exclusif (autres touches avalees) ;
+  persistence : bloc optionnel "trace" dans .s3projet (peek ligne +
+  seekg = vieux projets relisibles) ; +25 verifications = 330, 0 echec ;
+  SUITE (arbitrages tranches par l'utilisateur : "comme propose") :
+  E2 = formes de base, E3 = extrusions ;
   remarques utilisateur : (1) le probleme est le MEME pour la ligne
   (segments droits) et la spline (courbe) - il faudra pouvoir les
   modifier toutes ; (2) GENERALISATION : l'edition doit etre possible
