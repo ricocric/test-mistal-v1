@@ -590,6 +590,263 @@ Variante : ouvrir simplement le dossier `desktop` dans Visual Studio (CMake inte
 build\Debug\sketch3d.exe
 ```
 
+## B2.1 : outil Ligne (fil multi-segments)
+
+Conception B2 validee (ROADMAP.md) avant tout code. L'outil Ligne pose un FIL
+de A vers B et au-dela : chaque clic gauche ajoute un sommet (les segments
+sont lies, l'objet est unique), **clic droit = fin** (exception assumee a la
+regle "clic droit = neutre" : ici il conclut), **Echap** = tout annuler,
+**Entree vide** = fin, **chiffres + Entree** = longueur exacte du segment
+courant dans la direction du curseur (pose + sortie du mode, meme contrat
+que le reste). Pose sur le plan du sol en v1.
+
+- l'objet pose est un fil tri-soup sans triangle : 3 sommets, aretes chaine ;
+  `computeObjectDerived` reconstruit la chaine quand un objet n'a aucun
+  triangle, donc la topologie survit au save/load, a la rotation, a la
+  duplication ;
+- le fil n'a pas de volume : pas de push/pull dessus (decide) ; il n'apparait
+  pas encore dans les exports OBJ/STL (ouvert pour B3 : chemins) ;
+- menu **Outils** cree (Selection/Echap, Extraire une face/P, Tourner/R,
+  Ligne/L, Cadrer/F, Origine/H, Copier/Ctrl+C, Coller/Ctrl+V) : les
+  raccourcis sont rappeles dans le menu qui les propose (regle B1.7c) ;
+- ordre des menus = Fichier, Preferences, Outils, Affichage (Preferences
+  reste a cote de Fichier, B1.4) ;
+- bouton "Ligne" ajoute a la barre flottante (8 boutons) ; apercu jaune du
+  fil vers le curseur pendant la saisie ;
+- moteur de tests : bloc 32 = 12 nouvelles verifications, total **229,
+  0 echec** ; stubs completes (GLFW_KEY_L, GL_LINE_STRIP).
+
+## B2.5 : fermeture de la ligne (fait avant B2.2-B2.4, sur demande)
+
+Un clic sur le point de DEPART alors que le fil compte au moins 3 sommets
+(tolerance `filPickTol`, la meme que la capture du fil) ferme la boucle. Le
+comportement est choisi par la COMMANDE qui arme l'outil (B2.5b, retour de
+test : rien n'est memorise, aucune preference, aucune cle dans le INI) :
+
+- **Outils > Ligne (fermee en surface) - L** : la boucle cree une feuille
+  FUSEE au fil en UN objet (fidele SketchUp) - fan triangulaire (0, i, i+1)
+  + aretes de bord ; la feuille est etirable au push/pull ;
+- **Outils > Ligne (fil ouvert) - Maj+L** : la boucle reste un fil - arete
+  de fermeture n-1 -> 0 ajoutee apres la derive de la chaine, aucun triangle.
+
+B2.5b corrige aussi un bug de relocalisation : la boucle fermee etait dessinee
+decalee du premier point (coordonnees monde stockees comme locales, le rendu
+ajoutant encore o.pos).
+- note v1 : `computeObjectDerived` derive les aretes de TOUS les triangles
+  du fan -> un carre ferme montre 5 aretes (4 bords + 1 diagonale). La
+  difference bord/diagonale sera naturelle avec le VRAI SOLIDE de B6 ;
+- moteur de tests : +7 verifications (armement L / Maj+L ; feuille = 2 tris /
+  5 aretes / volume plat nul / 4 sommets sans doublon ; fil ouvert = 4
+  aretes, 0 tri ; sortie du mode ; noms uniques), total **240, 0 echec**.
+
+## B2.2 : outil Rectangle
+
+Maj+R (bouton « Rectangle » de la barre, entree du menu Outils). Clic 1 =
+coin, souris = apercu du contour au sol, clic 2 = coin oppose pose. v1
+aligne aux axes (largeur en X, profondeur en Z), pose au sol y = 0.
+
+- objet pose = feuille pleine de 2 tris (normale +y) + aretes de bord, UN
+  objet, etirable au push/pull (coherent avec la ligne fermee B2.5) ;
+- chiffres + Entree = dimensions exactes « L;H » (largeur, profondeur ;
+  separateur point-virgule : la virgule est proscrite, confusion decimale
+  probable sur clavier FR) ;
+  le quadrant du curseur par rapport au premier coin oriente le rectangle
+  (fidele SketchUp : la diagonale dirige), puis pose + sortie du mode ;
+- clic droit ou Echap = annulation SANS objet pose (mecanique commune B2) ;
+- nommage uniqueName commun aux profils B2 (« Rectangle », « Rectangle (2) ») ;
+- stub corrige au passage : GL_LINE_LOOP valait 0x0003 (confusion avec
+  GL_LINE_STRIP), remis a la vraie valeur 0x0002 ;
+- B2.2c (retour de test, 2 bugs) :
+  - push/pull mort sur le rectangle trace a la souris : la garde d'entree de
+    makeExtrude (tri.size() < 9) refusait toute feuille de 2 tris ; relachee
+    a 1 tri complet - une feuille est une face valide, tout le reste (flip
+    camera, butees, recreation du volume) gerait deja les feuilles ;
+  - clavier FR : sur AZERTY le ';' est NON majuscule (rangee basse
+    , ; : !), donc Maj n'intervient pas ; la saisie utilise l'ETIQUETTE
+    REELLE de la touche (glfwGetKeyName) : ce qui est tape s'affiche (';',
+    ',' decimale, '.'), quelle que soit la disposition ; repli par code de
+    touche si le nom manque (SEMICOLON = ';', PERIOD/KP_DECIMAL = '.',
+    COMMA = ',' decimale) ; le parseur convertit ';' en separateur et ','
+    en '.' decimale ;
+  - convention generale : « ; » = separateur de champs, « , » et « . » =
+    decimales ;
+- REGLE GENERALISEE (B2.4f, retour de test Maj+A) : GLFW rapporte les
+  touches par POSITION QWERTY (codes US) - sur AZERTY la touche etiquetee
+  A arrive en GLFW_KEY_Q, le M en GLFW_KEY_SEMICOLON, etc. Toute
+  comparaison de touche LETTRE passe donc par keyIsLetter (etiquette
+  reelle via glfwGetKeyName, repli par code) : JAMAIS de comparaison
+  directe du code GLFW pour une lettre. Les touches de controle
+  (Entree, Echap, Suppr, Backspace, moins, KP_*) restent comparees par
+  code : positions universelles ;
+- REGLE DES VARIANTES (B2.5b, generalisee B2.7b - validation
+  utilisateur : « c'est la bonne facon de faire ») : tout choix de
+  conception a deux usages se traduit par des VARIANTES COMMUTABLES par
+  la COMMANDE d'armement (deux entrees de menu / deux raccourcis), RIEN
+  de memorise entre les traces (defaut a chaque lancement) ; la bascule
+  reste disponible A CHAUD pendant un trace quand les points survivent
+  au changement (ex. spline passage/controle, Maj+S/Maj+B) ;
+- moteur de tests : +7 verifications (B2.2c/d).
+
+## B2.3 : outil Cercle
+
+Maj+C (bouton « Cercle » de la barre, entree du menu Outils ; C seul =
+recentrage sur le point vise, Ctrl+C = copie : Maj+C rend la main AVANT le
+recentrage). Clic 1 = centre (au sol), souris = apercu (cercle jaune au
+rayon courant + segment centre-curseur), clic 2 = rayon pose. Echap/clic
+droit = annulation sans objet (mecanique commune B2).
+
+- objet pose = feuille fan de 24 tris (centre + boucle de 24 sommets =
+  25 sommets), normale +y (boucle en (cos, -sin)), UN objet, etirable au
+  push/pull ; 24 segments fixes en v1 ;
+- aretes derivees = 24 bords + 24 rayons du fan (comme la diagonale du
+  rectangle, se rattrapera avec le vrai solide de B6) ;
+- chiffres + Entree = rayon exact : UN seul nombre (pas de direction a
+  prendre, le cercle est invariant par rotation) ; decimales FR acceptees
+  (',' ; et '.' = decimale, convention B2.2b/B2.2d) ;
+- nommage uniqueName commun (« Cercle », « Cercle (2) ») ;
+- B2.3b (retour de test) : le pavé numerique n'affichait que des decimales
+  - la simplification de la saisie avait ecrase le mapping chiffres ;
+  retabli (chiffres = chiffres, separateur = decimale) ;
+- moteur de tests : +9 verifications, total execute **267, 0 echec**.
+  Nouveau : le CHECK compte ses executions (g_tot) et le resume affiche
+  le total execute - les totaux anterieurs comptaient des lignes de
+  sortie, sous-estimes (messages multi-lignes) ;
+
+## B2.4 : outil Arc (Arc 2 points de SketchUp)
+
+Maj+A (bouton « Arc » de la barre, entree du menu Outils). 3 clics :
+depart (P1), fin (P2 = la corde), bombement (clic 3 = pose, l'arc flechit
+a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
+
+- les 3 points (P1, B, P2) definissent LE cercle unique (mediatrices) ;
+  les 13 points poses sont recalcules EXACTS sur le cercle ; le bombement
+  clic ne sert qu'a definir ; B2.4d : limite des 180 deg LEVEE - toute
+  fleche > 0 est valide, au-dela de la moitie de la corde l'arc est
+  MAJEUR (> 180 deg, fleche 5-10x la corde = proche du cercle complet) ;
+- objet pose = FIL OUVERT (choix utilisateur) : 12 segments (defaut
+  SketchUp arc), sans triangle, chaine derivee comme la ligne (capture
+  filRayHit, hors exports OBJ/STL) ; completable apres coup par une ligne
+  de 2 points pour fermer une surface etirable (remarque utilisateur) ;
+- saisie exacte en deux temps : apres le depart, chiffres + Entree =
+  longueur de corde (direction = curseur) pose la fin ; apres la fin,
+  chiffres + Entree = fleche exacte (cote = curseur) pose l'arc ;
+  decimales FR (convention B2.2b/B2.2d) ;
+- nommage « Arc », « Arc (2) »... ; 11e bouton de la barre ;
+- moteur de tests : +9 verifications, total execute **276, 0 echec** ;
+- B2.4b (retour de test, grave) : le tableau des boutons de la barre
+  etait reste a 9 alors que la creation en compte 11 (Cercle, Arc) -
+  DEBORDEMENT de 2 pointeurs au demarrage = corruption memoire (boucle
+  folle constatee par l'utilisateur) ; g_toolBtn[11] + toolLayout derive
+  maintenant sa taille du tableau (synchro automatique, plus de
+  desynchronisation possible) ; lecon : les sections Windows ne sont
+  JAMAIS compilees en sandbox, seul le build MSVC les voit ;
+- B2.4e (retour de test : Maj+A mort alors que Maj+R/Maj+C fonctionnent) :
+  GLFW rapporte les touches par POSITION QWERTY (codes US) - sur AZERTY la
+  touche etiquetee A arrive en GLFW_KEY_Q (R, C, L, P... aux memes
+  positions, d'ou les autres raccourcis fonctionnels). Correctif :
+  comparateur keyIsLetter par ETIQUETTE reelle (glfwGetKeyName, regle
+  B2.2d de la saisie, repli par code) applique a TOUS les raccourcis
+  lettres (armements, Ctrl+C/V/S, F/H/I, recentrage C) ;
+- B2.4d (retour de test : "des formes ressemblent a un arc mais dont la
+  fleche fait 5 ou 10 fois la corde") : limite des 180 deg levee - la
+  construction par cercle unique (3 points) gere deja les grands arcs ;
+  gardes remplacees : fleche > 0 uniquement (arc majeur > 180 deg possible,
+  proche du cercle complet pour les tres grandes fleches) ; +2
+  verifications executees = **278, 0 echec** ;
+- B2.4c (retour de test, build B2.4b confirme) : Arc toujours absent de la
+  barre + Maj+A sans effet + fleche + Entree sans effet. Trois pieges
+  Windows corriges : (1) toolLayout dimensionnait la fenetre EXTERIEURE
+  avec la taille CLIENT necessaire - la barre de titre rognait la
+  derniere rangee (Rectangle, Cercle, Arc invisibles depuis B2.3) ;
+  correctif AdjustWindowRect ; (2) un clic sur un bouton Win32 vole le
+  focus clavier a la vue 3D (les touches mouraient jusqu'au clic suivant
+  dans la vue) ; SetFocus rendu apres chaque commande menu/bouton ;
+  (3) les gardes du dispatcher rejetaient en SILENCE : message desormais
+  affiche ("terminez d'abord le mode en cours").
+
+## B2.6 : outil Polygone quelconque
+
+- Maj+P (convention Maj + lettre des formes de base ; P seul = Push/Pull) ;
+- N clics = sommets au sol (y = 0), apercu : contour deja clique (ferme,
+  GL_LINE_LOOP) + rubber band vers le curseur ;
+- fermeture = clic sur le depart, clic droit ou Entree (>= 3 sommets,
+  tolerance filPickTol, meme mecanique que la ligne B2.5) ; SURFACE SEULE
+  (choix utilisateur - le fil ouvert est deja couvert par Ligne Maj+L) ;
+  pas de saisie numerique v1 ;
+- pose : feuille fan (0,i,i+1) en UN objet (n-2 triangles), ancre locale =
+  premier sommet (pos + v = monde), etirable au push/pull ; aretes derivees
+  = bords + diagonales du fan (v1, comme la ligne fermee) ;
+- Echap seul = sortie sans rien poser (mecanique B2) ; bandeau = etat
+  de la commande seule (regle B1.7c) ; nommage unique « Polygone » ;
+- v1 : eventail correct pour polygones CONVEXES (concaves = reprise avec le
+  vrai solide B6) ;
+- 12e bouton de la barre (g_toolBtn[12], taille toolLayout derivee du
+  tableau - lecon B2.4b respectee) ; menu Outils ; entete console ;
+- B2.6b (retour de test : « le fil disparait des que l'on sort par clic
+  D ») : clic droit ou Entree = VALIDER la surface (comme un clic sur le
+  depart, polyFinish), Echap SEUL sort sans poser ; message « au moins
+  3 sommets » si validation prematuree ; pave numerique inclus (KP_ENTER) ;
+- moteur de tests : +8 verifications (B2.6) puis +2 (B2.6b : validation
+  a 3 sommets = posee, refus a 2 sommets = mode conserve), total
+  **290, 0 echec**.
+
+## B2.7 : outil Spline (dernier trace de base)
+
+- Maj+S (Ctrl+S = enregistrer, aucune collision ; convention Maj + lettre) ;
+- points de PASSAGE (choix utilisateur, avec reserve de tester plus tard
+  les points de controle) : la courbe cubique C1 passe par chaque clic ;
+- parametrisation centripete (sqrt des cordes, tangentes Barry-Goldman) :
+  robuste aux espacements irreguliers (pas de boucle ni de pic) ;
+- entree unique : clic = point (doublon ignore) ; clic sur le depart
+  (>= 3 points, tolerance filPickTol) = boucle FERMEE lissee ; clic droit
+  ou Entree (pave inclus) = VALIDER la courbe ouverte (>= 2 points, regle
+  B2.6b) ; Echap = sortir sans rien poser ;
+- pose : fil discretise (16 sous-segments par intervalle, v1 fixe) en UN
+  objet sans triangle, ancre locale = premier point (pos + v = monde),
+  aretes = chaine derivee ; boucle fermee = sommet final = depart (arete
+  de cloture naturelle) ; etirable au deplacement (filRayHit) ;
+- apercu : courbe lisse a travers les points cliques + droite en rubber
+  band vers le curseur (prolongement droit en v1) ; pas de saisie
+  numerique v1 ; bandeau = etat de la commande seule (regle B1.7c) ;
+- 13e bouton de la barre (g_toolBtn[13], taille toolLayout derivee du
+  tableau) ; menu Outils ; entete console ;
+- moteur de tests : +9 verifications executees, total **299, 0 echec**.
+
+### B2.7b : variante points de controle (retour de test)
+- retour : « j'aurai du prendre tout de suite le choix points de
+  controle » → variante COMMUTABLE (regle B2.5b : choix par la commande,
+  rien de memorise) :
+  - Maj+S = Spline (passage) : la courbe passe par chaque clic ;
+  - Maj+B = Spline (points de controle) : les clics tracent le polygone
+    de controle, la courbe glisse a l'interieur (facon Rhino) ; noeuds
+    serres uniformes (Cox-de Boor) : depart et arrivee EXACTS si
+    ouverte, boucle periodique si fermee ; degre reduit (3, 2, 1)
+    automatiquement pour les petits nombres de points ;
+  - bascule Maj+S/Maj+B A CHAUD pendant un trace, points conserves ;
+  - polygone de controle visible (trait sombre) sous la courbe en
+    apercu ; bandeau et messages de pose/presence par variante ;
+  - 14e bouton « Spline ctrl » + 2e entree menu Outils ;
+- moteur de tests : +5 verifications (armement Maj+B, noeuds serres =
+  extremites exactes, courbe interieure au carre de controle, boucle
+  fermee), total **304, 0 echec**.
+
+### B2.7c/B2.7d : menu groupe + span corrige (retours de test)
+- B2.7c : menu Outils groupe par barres horizontales (les variantes
+  d'une meme fonction isolees) ;
+- B2.7d (retour : « tout ce que j'obtiens ce sont 2 segments de droite »)
+  : BUG du span - sur les noeuds SERRES (repetes aux extremites de la
+  courbe ouverte), le span se calcule par findSpan (NURBS Book A2.1),
+  PAS par floor(u) ; l'ancien code reduisait la courbe a du rectiligne ;
+  le ferme (noeuds uniformes) garde floor(u) ; check renforce = valeur
+  EXACTE de Bezier au milieu du carre de controle (aurait attrape le
+  bug) ; total **305, 0 echec** ;
+- MODE D'EMPLOI spline (controle) : chaque clic pose un COIN du
+  polygone de controle (trait sombre) ; la courbe jaune glisse a
+  l'interieur et ne touche que ses EXTREMITES ; pour serrer la courbe
+  vers une zone, ajoutez des points (les doubler au meme endroit la
+  plaque contre ce point) ; le polygone n'est PAS pose - seule la courbe
+  discretisee devient l'objet fil.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils

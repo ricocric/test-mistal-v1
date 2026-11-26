@@ -20,8 +20,9 @@
 #undef main
 
 static int g_fail = 0;
+static int g_tot = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { std::printf("ECHEC: %s\n", (msg)); ++g_fail; } \
-                              else { std::printf("ok : %s\n", (msg)); } } while (0)
+                              else { std::printf("ok : %s\n", (msg)); ++g_tot; } } while (0)
 
 static std::string testsDir() {
     static const std::string d = [] {
@@ -1259,7 +1260,7 @@ int main() {
        sauvegarde immediate a chaque changement de preference, dernier
        projet, round-trip complet fermeture -> lancement */
     {
-        const std::string path = "/tmp/sketch3d_test_setup.ini";
+        const std::string path = tmpPath("setup_test.ini");   /* portable : fs::temp_directory_path (le /tmp POSIX n existe pas sous Windows) */
         g_setupPath = path;
         g_setup = Setup{};
         std::remove(path.c_str());
@@ -1386,7 +1387,7 @@ int main() {
     /* 30 - B1.1 : preferences barre d'outils (section [outils] du INI) -
        round-trip visible/vertical/position, valeurs tolerees, ini editable */
     {
-        const std::string path = "/tmp/sketch3d_test_setup2.ini";
+        const std::string path = tmpPath("setup_test2.ini");
         g_setupPath = path;
         g_setup = Setup{};
         std::remove(path.c_str());
@@ -1437,6 +1438,494 @@ int main() {
               "export uni : .obj, sans extension, autre extension = pas STL (donc OBJ)");
     }
 
-    std::printf("resume : %d echec(s)\n", g_fail);
+
+    /* 32 - B2.1 : outil Ligne (fil multi-segments pose au sol) ; le chemin
+       rayon/souris (rayFromMouse) est deja couvert par les blocs drag et C
+       (meme stub), ici la logique de capture est testee en pur. */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_lineMode = true;
+
+        g_linePts.push_back(Vec3(0, 0, 0));
+        g_linePts.push_back(Vec3(2, 0, 0));
+        g_linePts.push_back(Vec3(2, 0, 2));
+        g_lineActive = true;
+        linePose();
+        CHECK(g_objs.size() == 1 && g_objs[0].name == "Ligne",
+              "ligne : la pose cree UN objet nomme Ligne (sommets partages)");
+        CHECK(g_objs[0].v.size() == 3 && g_objs[0].tri.empty() && g_objs[0].edges.size() == 2,
+              "ligne : fil = 3 sommets, 2 segments (aretes), aucun tri");
+        CHECK((g_objs[0].v[1] - g_objs[0].v[0]).norm() == 2.0
+              && (g_objs[0].v[2] - g_objs[0].v[1]).norm() == 2.0,
+              "ligne : longueurs des segments exactes");
+        CHECK(g_selected == 0 && !g_lineMode && !g_lineActive && g_linePts.empty()
+              && g_lineNumBuf.empty(),
+              "ligne : pose = selectionnee, mode quitte, dessin remis a zero");
+
+        g_lineMode = true;                        /* second fil : fin par clic droit/Entree */
+        g_linePts.push_back(Vec3(5, 0, 5));
+        g_linePts.push_back(Vec3(6, 0, 5));
+        g_lineActive = true;
+        lineFinish();
+        CHECK(g_objs.size() == 2 && g_objs[1].name == "Ligne (2)",
+              "ligne : second fil nomme Ligne (2) sans collision de nom");
+        CHECK(findObjectByName("Ligne (2)") == 1, "ligne : retrouve par nom");
+
+        g_lineMode = true;                        /* longueur tapee + Entree */
+        g_linePts.push_back(Vec3(0, 0, 0));
+        g_lineActive = true;
+        g_lineCursorOk = true;
+        g_lineCursor = Vec3(3, 0, 0);
+        linePoseByLength(1.5);
+        CHECK(g_objs.size() == 3 && (g_objs[2].v[1] - g_objs[2].v[0]).norm() == 1.5,
+              "ligne : chiffres+Entree 1.5 = point pose a 1.5 dans la direction curseur");
+        CHECK(!g_lineMode && g_linePts.empty(),
+              "ligne : pose par longueur = pose + sortie du mode (meme contrat)");
+
+        g_lineMode = true;                        /* Echap : tout annule */
+        g_linePts.push_back(Vec3(9, 0, 9));
+        g_lineActive = true;
+        lineCancel("dessin annule");
+        CHECK(g_objs.size() == 3 && !g_lineMode && !g_lineActive && g_linePts.empty(),
+              "ligne : Echap annule tout, rien de pose");
+
+        g_lineMode = true;                        /* moins de 2 points = rien */
+        g_linePts.push_back(Vec3(1, 0, 1));
+        g_lineActive = true;
+        lineFinish();
+        CHECK(g_objs.size() == 3 && !g_lineMode && g_linePts.empty(),
+              "ligne : fin avec un seul point = rien de pose");
+
+        runToolCommand(IDM_TOOL_LINE);            /* un seul chemin de code */
+        CHECK(g_lineMode && !g_lineActive,
+              "ligne : bouton/menu (runToolCommand) arme l'outil");
+        runToolCommand(IDM_TOOL_LINE);
+        CHECK(!g_lineMode && !g_lineActive,
+              "ligne : rappel du bouton = desarme (toggle)");
+
+        /* B2.1c : capture d'un fil par distance au rayon (tolerance explicite) */
+        {
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            Object fil;
+            fil.name = "F";
+            fil.pos = Vec3(0, 0, 0);
+            fil.v = { Vec3(0, 0, 0), Vec3(4, 0, 0) };
+            computeObjectDerived(fil);
+            g_objs.push_back(fil);
+            CHECK(fil.edges.size() == 1, "fil : la chaine d'aretes est derivee (1 segment)");
+            CHECK(filRayHit(Vec3(2, 0.3, 0), Vec3(0, -1, 0), g_objs[0], 0.5) > 0.0,
+                  "fil : rayon a 0.3 du segment = capture (tolerance 0.5)");
+            CHECK(filRayHit(Vec3(2, 0.3, 3), Vec3(0, -1, 0), g_objs[0], 0.5) < 0.0,
+                  "fil : rayon PARALLELE a 3 d'ecart = pas de capture (ne traverse jamais)");
+            CHECK(filRayHit(Vec3(5.5, 1.0, 0), Vec3(0, -1, 0), g_objs[0], 0.5) < 0.0,
+                  "fil : rayon au-dela de l'extremite (proche a 1.5) = pas de capture (tol 0.5)");
+        }
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_lineMode = false;
+        lineReset();
+    }
+
+    { /* B2.5b : fermeture de la ligne - deux commandes (L = surface, Maj+L = fil), rien de memorise */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        runToolCommand(IDM_TOOL_LINE);
+        CHECK(g_lineMode && g_lineFerme,
+              "ligne : L arme le mode, fermeture en surface (choix par la commande, rien de memorise)");
+        runToolCommand(IDM_TOOL_LINE);               /* rappel = desarme */
+        runToolCommand(IDM_TOOL_LIGNE_FIL);
+        CHECK(g_lineMode && !g_lineFerme,
+              "ligne : Maj+L arme le mode, fil ouvert (meme outil, autre commande)");
+        lineCancel("fin du test d'armement");
+        g_lineMode = false;
+        g_lineFerme = true;                          /* defaut : surface fermee */
+        g_linePts = { Vec3(0, 0, 0), Vec3(2, 0, 0), Vec3(2, 0, 2), Vec3(0, 0, 2) };
+        g_lineActive = true;
+        g_lineMode = true;
+        lineCloseLoop();
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.size() == 6 && g_objs[0].edges.size() == 5,
+              "ligne : fermeture en surface = feuille FUSEE au fil (2 tris) ; aretes derivees = 4 bords + 1 diagonale du fan (v1)");
+        CHECK(std::fabs(signedVolume(g_objs[0])) < 1e-12 && g_objs[0].v.size() == 4,
+              "ligne : feuille fermee = 4 sommets (pas de doublon du depart), volume plat nul");
+        CHECK(!g_lineMode && !g_lineActive && g_linePts.empty(),
+              "ligne : fermeture = pose + sortie du mode");
+
+        g_lineFerme = false;                         /* option : fil ouvert */
+        g_linePts = { Vec3(0, 0, 0), Vec3(2, 0, 0), Vec3(2, 0, 2), Vec3(0, 0, 2) };
+        g_lineActive = true;
+        g_lineMode = true;
+        lineCloseLoop();
+        CHECK(g_objs.size() == 2 && g_objs[1].tri.empty() && g_objs[1].edges.size() == 4,
+              "ligne : fil ouvert = boucle fermee sans surface (4 aretes, 0 tri)");
+        CHECK(g_objs[1].name != g_objs[0].name, "ligne : noms uniques aux deux poses");
+        g_lineFerme = true;                          /* retour au defaut */
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_lineMode = false;
+        lineReset();
+    }
+
+    { /* B2.2 : outil Rectangle - feuille pleine posee au sol (Maj+R) */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        runToolCommand(IDM_TOOL_RECT);
+        CHECK(g_rectMode && !g_rectActive,
+              "rectangle : Maj+R arme le mode (aucun coin encore pose)");
+        runToolCommand(IDM_TOOL_RECT);               /* rappel = desarme */
+        CHECK(!g_rectMode, "rectangle : rappel de la commande = desarme");
+
+        rectPose(Vec3(0, 0, 0), Vec3(2, 0, 3));
+        CHECK(g_objs.size() == 1 && g_objs[0].name == "Rectangle"
+              && g_objs[0].tri.size() == 6 && g_objs[0].v.size() == 4 && g_objs[0].edges.size() == 5,
+              "rectangle : feuille pleine = 1 objet, 2 tris, 4 sommets, 5 aretes (4 bords + diagonale du fan)");
+        CHECK(std::fabs(signedVolume(g_objs[0])) < 1e-12 && g_objs[0].n[0].y > 0.99
+              && g_objs[0].bmin.x == 0.0 && g_objs[0].bmax.x == 2.0 && g_objs[0].bmax.z == 3.0,
+              "rectangle : normale +y, volume plat nul, etendue 2 x 3");
+
+        g_rectActive = true; g_rectCorner = Vec3(0, 0, 0); g_rectNumBuf.clear();
+        g_rectCursor = Vec3(1, 0, 1); g_rectCursorOk = true;
+        rectPoseByDims("2;3");
+        CHECK(g_objs.size() == 2 && g_objs[1].name == "Rectangle (2)"
+              && g_objs[1].bmax.x == 2.0 && g_objs[1].bmax.z == 3.0 && g_objs[1].v.size() == 4,
+              "rectangle : L;H + Entree = dimensions exactes (quadrant curseur SE = +x,+z), nom unique");
+
+        g_rectActive = true; g_rectCorner = Vec3(5, 0, 5);
+        g_rectCursor = Vec3(4, 0, 4); g_rectCursorOk = true;
+        rectPoseByDims("2;3");
+        CHECK(g_objs.size() == 3 && g_objs[2].pos.x == 3.0 && g_objs[2].pos.z == 2.0
+              && g_objs[2].bmax.x == 2.0 && g_objs[2].bmax.z == 3.0,
+              "rectangle : quadrant curseur NO = -x,-z (le rectangle s etend vers l arriere-plan)");
+
+        g_rectActive = true; g_rectCorner = Vec3(0, 0, 0);
+        const size_t avant = g_objs.size();
+        rectPoseByDims("abc");
+        CHECK(g_objs.size() == avant, "rectangle : saisie invalide = rien pose");
+        g_rectActive = false;
+        g_rectMode = false;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    { /* B2.2c : Push/Pull sur feuille rectangle + clavier FR (point-virgule) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        rectPose(Vec3(0, 0, 0), Vec3(2, 0, 3));
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.size() == 6,
+              "B2.2c : feuille rectangle posee avant tirage (2 tris)");
+        Extrude dd;
+        CHECK(makeExtrude(g_objs[0], 0, dd),
+              "B2.2c : Push/Pull disponible sur la feuille rectangle (garde makeExtrude = 1 tri)");
+        applyExtrude(g_objs[0], dd, 2.0);
+        double ymax = -1e300;
+        for (const Vec3& p : g_objs[0].v) if (p.y > ymax) ymax = p.y;
+        CHECK(ymax > 2.0 - 1e-9 && ymax < 2.0 + 1e-9 && g_objs[0].tri.size() > 6,
+              "B2.2c : tirage de la feuille = volume recree (couche a +2, jupe + fond)");
+        /* clavier FR : le ';' (Maj + touche a cote de M) arrive en GLFW_KEY_COMMA + SHIFT */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_rectActive = true; g_rectNumBuf.clear();
+        onKey(W, GLFW_KEY_SEMICOLON, 0, GLFW_PRESS, 0);
+        CHECK(g_rectNumBuf == ";",
+              "B2.2c : touche ';' directe (sans Maj) tape un point-virgule");
+        g_rectNumBuf.clear();
+        onKey(W, GLFW_KEY_COMMA, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_rectNumBuf == ";",
+              "B2.2c : Maj + touche virgule tape un POINT-VIRGULE (quirk clavier FR)");
+        onKey(W, GLFW_KEY_COMMA, 0, GLFW_PRESS, 0);
+        CHECK(g_rectNumBuf == ";,",
+              "B2.2c : virgule non majusculee = decimale FR acceptee dans la saisie");
+        g_rectActive = true; g_rectCorner = Vec3(0, 0, 0);
+        g_rectCursor = Vec3(1, 0, 1); g_rectCursorOk = true;
+        rectPoseByDims("2,5;3");
+        CHECK(g_objs.size() == 1 && g_objs[0].bmax.x == 2.5 && g_objs[0].bmax.z == 3.0,
+              "B2.2c : L;H avec decimales FR (2,5;3) = rectangle 2.5 x 3");
+        g_rectActive = false;
+        g_rectMode = false;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    { /* B2.3 : outil Cercle (Maj+C, fan 24 tris, rayon exact) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        onKey(W, GLFW_KEY_C, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_cercleMode && !g_cercleActive,
+              "cercle : Maj+C arme l outil (C seul = centrer, Ctrl+C = copie, non touches)");
+        onKey(W, GLFW_KEY_C, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(!g_cercleMode, "cercle : rappel de Maj+C = desarme (toggle)");
+        g_cercleMode = true; cercleReset();
+        cerclePose(Vec3(0, 0, 0), 2.0);
+        CHECK(g_objs.size() == 1 && g_objs[0].v.size() == 25 && g_objs[0].tri.size() == 72,
+              "cercle : feuille fan = 25 sommets (centre + boucle de 24), 72 indices de tri");
+        CHECK(g_objs[0].edges.size() == 48,
+              "cercle : aretes derivees = 24 bords + 24 rayons du fan (v1, cf. diagonale B2.5)");
+        const double ny = g_objs[0].v[1].z * g_objs[0].v[2].x - g_objs[0].v[1].x * g_objs[0].v[2].z;
+        CHECK(ny > 0.0 && g_objs[0].bmax.x == 2.0 && g_objs[0].bmax.z == 2.0
+              && g_objs[0].bmin.x == -2.0 && g_objs[0].bmin.z == -2.0,
+              "cercle : normale +y, etendue = centre +/- rayon (bmin/bmax LOCAUX)");
+        CHECK(std::fabs(signedVolume(g_objs[0])) < 1e-12,
+              "cercle : volume plat nul (feuille, comme la ligne fermee B2.5)");
+        Extrude dd;
+        CHECK(makeExtrude(g_objs[0], 0, dd),
+              "cercle : Push/Pull disponible sur la feuille fan (garde = 1 tri)");
+        applyExtrude(g_objs[0], dd, 2.0);
+        double ymax = -1e300;
+        for (const Vec3& p : g_objs[0].v) if (p.y > ymax) ymax = p.y;
+        CHECK(ymax > 2.0 - 1e-9 && ymax < 2.0 + 1e-9 && g_objs[0].tri.size() > 72,
+              "cercle : tirage de la feuille = volume recree (couche a +2, jupe + fond)");
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_cercleMode = true; cercleReset();
+        cerclePoseByRayon("2,5");
+        CHECK(g_objs.size() == 1 && g_objs[0].bmax.x == 2.5 && g_objs[0].bmin.x == -2.5,
+              "cercle : rayon tape avec decimale FR (2,5) = rayon 2.5");
+        /* pavé numerique : les CHIFFRES s'affichent (bug B2.3b : tout etait
+           remplace par la decimale) */
+        g_cercleMode = true; cercleReset(); g_cercleActive = true; g_cercleCentre = Vec3(0, 0, 0);
+        onKey(W, GLFW_KEY_KP_2, 0, GLFW_PRESS, 0);
+        onKey(W, GLFW_KEY_KP_DECIMAL, 0, GLFW_PRESS, 0);
+        onKey(W, GLFW_KEY_KP_5, 0, GLFW_PRESS, 0);
+        CHECK(g_cercleNumBuf == "2.5",
+              "cercle : pave numerique = chiffres tapes, KP_DECIMAL = decimale");
+        g_cercleMode = true; cercleReset();
+        const size_t avant = g_objs.size();
+        g_cercleMode = true; cercleReset();
+        cerclePoseByRayon("abc");
+        CHECK(g_objs.size() == avant, "cercle : saisie invalide = rien pose");
+        g_cercleMode = false; cercleReset();
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    { /* B2.4 : outil Arc (Maj+A, fil ouvert 12 segments) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        onKey(W, GLFW_KEY_A, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_arcMode && g_arcState == 0, "arc : Maj+A arme l outil");
+        onKey(W, GLFW_KEY_A, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(!g_arcMode, "arc : rappel de Maj+A = desarme (toggle)");
+        /* B2.4e : AZERTY - la touche etiquetee A arrive en GLFW_KEY_Q (position
+           QWERTY) ; le raccourci suit l'ETIQUETTE (keyIsLetter via le nom de touche) */
+        onKey(W, GLFW_KEY_Q, 0x10, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_arcMode && g_arcState == 0,
+              "arc : AZERTY - Maj + touche etiquetee A (code GLFW_KEY_Q) arme l'outil");
+        onKey(W, GLFW_KEY_Q, 0x10, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(!g_arcMode, "arc : AZERTY - rappel = desarme (toggle)");
+        /* pose par 3 points : P1(0,0,0), P2(4,0,0), B(2,0,1) -> cercle centre (2,-1.5), r = 2.5 */
+        g_arcMode = true; arcReset();
+        arcPose(Vec3(0, 0, 0), Vec3(2, 0, 1), Vec3(4, 0, 0));
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.empty() && g_objs[0].v.size() == 13,
+              "arc : fil ouvert = 13 points (12 segments), SANS triangle");
+        CHECK(g_objs[0].edges.size() == 12,
+              "arc : aretes derivees = chaine de 12 segments (comme la ligne)");
+        bool surCercle = true;
+        for (const Vec3& p : g_objs[0].v) {
+            const double dx = g_objs[0].pos.x + p.x - 2.0;
+            const double dz = g_objs[0].pos.z + p.z + 1.5;
+            if (std::fabs(std::sqrt(dx * dx + dz * dz) - 2.5) > 1e-9) surCercle = false;
+        }
+        const Vec3 e0 = g_objs[0].pos + g_objs[0].v[0];
+        const Vec3 e1 = g_objs[0].pos + g_objs[0].v[12];
+        CHECK(surCercle && std::fabs(e0.x) < 1e-9 && std::fabs(e0.z) < 1e-9
+              && std::fabs(e1.x - 4.0) < 1e-9 && std::fabs(e1.z) < 1e-9,
+              "arc : points EXACTS sur le cercle, extremites = depart et fin (pos + v = monde)");
+        const size_t avant = g_objs.size();
+        g_arcMode = true; arcReset();
+        arcPose(Vec3(0, 0, 0), Vec3(2, 0, 0), Vec3(4, 0, 0));
+        CHECK(g_objs.size() == avant, "arc : bombement aligne avec la corde = rien pose");
+        /* saisie : corde puis fleche, cote du bombement = curseur */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_arcMode = true; arcReset();
+        g_arcP1 = Vec3(0, 0, 0); g_arcState = 1;
+        g_arcCursor = Vec3(3, 0, 0); g_arcCursorOk = true;
+        arcPoseByCorde(4.0);
+        CHECK(g_arcState == 2 && std::fabs(g_arcP2.x - 4.0) < 1e-12 && std::fabs(g_arcP2.z) < 1e-12,
+              "arc : corde tapee = fin posee dans la direction du curseur");
+        g_arcCursor = Vec3(2, 0, 1);
+        arcPoseByFleche(1.0);
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.empty() && g_objs[0].v.size() == 13,
+              "arc : fleche tapee = arc pose (fil ouvert, cote curseur)");
+        /* B2.4d : la limite des 180 deg est LEVEE - toute fleche > 0 est
+           valide ; au-dela de la moitie de la corde l'arc est MAJEUR */
+        const size_t avant2 = g_objs.size();
+        g_arcMode = true; arcReset();
+        g_arcP1 = Vec3(0, 0, 0); g_arcP2 = Vec3(4, 0, 0); g_arcState = 2;
+        g_arcCursor = Vec3(2, 0, -3); g_arcCursorOk = true;
+        arcPoseByFleche(3.0);   /* fleche 3 > moitie de la corde (2) = arc majeur */
+        CHECK(g_objs.size() == avant2 + 1 && g_objs.back().tri.empty()
+              && g_objs.back().v.size() == 13,
+              "arc : fleche > moitie de la corde = arc MAJEUR pose (B2.4d, > 180 deg)");
+        {
+            const Vec3 m = g_objs.back().pos + g_objs.back().v[6];   /* milieu de l'arc = sommet du bombement */
+            CHECK(std::fabs(m.x - 2.0) < 1e-9 && std::fabs(m.z + 3.0) < 1e-9,
+                  "arc majeur : le milieu de l'arc passe par la fleche tapee (3 pour une corde de 4)");
+        }
+        const size_t avant3 = g_objs.size();
+        g_arcMode = true; arcReset();
+        g_arcP1 = Vec3(0, 0, 0); g_arcP2 = Vec3(4, 0, 0); g_arcState = 2;
+        g_arcCursor = Vec3(2, 0, -20); g_arcCursorOk = true;
+        arcPoseByFleche(20.0);  /* fleche 5x la corde = proche du cercle complet */
+        {
+            const Vec3 m = g_objs.size() == avant3 + 1 ? g_objs.back().pos + g_objs.back().v[6] : Vec3(0, 0, 0);
+            CHECK(g_objs.size() == avant3 + 1 && std::fabs(m.x - 2.0) < 1e-9 && std::fabs(m.z + 20.0) < 1e-9,
+                  "arc : fleche 5x la corde = posee, milieu de l'arc au sommet du bombement");
+        }
+        g_arcMode = false; arcReset();
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    { /* B2.6 : outil Polygone (Maj+P, surface fan, fermeture sur le depart) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        onKey(W, GLFW_KEY_P, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_polyMode && !g_polyActive, "polygone : Maj+P arme l outil");
+        onKey(W, GLFW_KEY_P, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(!g_polyMode, "polygone : rappel de Maj+P = desarme (toggle)");
+        /* quad pose en 4 sommets -> fan de 2 triangles, etirable */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyMode = true; polyReset();
+        g_polyPts.push_back(Vec3(0, 0, 0));
+        g_polyPts.push_back(Vec3(4, 0, 0));
+        g_polyPts.push_back(Vec3(4, 0, 3));
+        g_polyPts.push_back(Vec3(0, 0, 3));
+        polyPose();
+        CHECK(g_objs.size() == 1 && !g_objs[0].tri.empty() && g_objs[0].v.size() == 4
+              && g_objs[0].tri.size() == 6,
+              "polygone : quad pose = 1 objet, 4 sommets, fan de 2 tris (6 indices)");
+        CHECK(g_objs[0].edges.size() == 5,
+              "polygone : aretes derivees = 4 bords + 1 diagonale du fan (v1)");
+        CHECK(std::fabs(signedVolume(g_objs[0])) < 1e-12,
+              "polygone : feuille plane = volume nul");
+        CHECK(std::fabs(g_objs[0].pos.x) < 1e-12 && std::fabs(g_objs[0].pos.z) < 1e-12
+              && std::fabs(g_objs[0].pos.y + g_objs[0].v[0].y) < 1e-12,
+              "polygone : ancre locale = premier sommet (pos + v = monde)");
+        /* makeExtrude : la feuille du polygone est une face push/pull valide */
+        {
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[0], 0, dd), "polygone : feuille = face push/pull valide");
+        }
+        /* noms uniques : Polygone, Polygone (2) */
+        g_polyMode = true; polyReset();
+        g_polyPts.push_back(Vec3(1, 0, 1));
+        g_polyPts.push_back(Vec3(2, 0, 1));
+        g_polyPts.push_back(Vec3(2, 0, 2));
+        polyPose();
+        CHECK(g_objs.size() == 2 && g_objs[1].name != g_objs[0].name,
+              "polygone : noms uniques (Polygone, Polygone (2))");
+        /* B2.6b : clic droit / Entree = VALIDE (ferme la surface) ; Echap seul annule */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyMode = true; polyReset();
+        g_polyPts.push_back(Vec3(0, 0, 0));
+        g_polyPts.push_back(Vec3(3, 0, 0));
+        g_polyPts.push_back(Vec3(0, 0, 3));
+        polyFinish();
+        CHECK(g_objs.size() == 1 && !g_objs[0].tri.empty() && !g_polyMode,
+              "polygone : validation (clic droit/Entree) a 3 sommets = surface posee");
+        const size_t avantF = g_objs.size();
+        g_polyMode = true; polyReset();
+        g_polyPts.push_back(Vec3(0, 0, 0));
+        g_polyPts.push_back(Vec3(3, 0, 0));
+        polyFinish();
+        CHECK(g_objs.size() == avantF && g_polyMode && g_polyPts.size() == 2,
+              "polygone : validation a 2 sommets = refusee, mode conserve (Echap pour sortir)");
+        g_polyMode = false; polyReset();
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    { /* B2.7 : outil Spline (Maj+S, points de passage, fil discretise) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        onKey(W, GLFW_KEY_S, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_splMode && !g_splActive, "spline : Maj+S arme l outil");
+        onKey(W, GLFW_KEY_S, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(!g_splMode, "spline : rappel de Maj+S = desarme (toggle)");
+        /* courbe ouverte posee = fil en UN objet, sans triangle */
+        const std::vector<Vec3> passage = { Vec3(0, 0, 0), Vec3(2, 0, 1), Vec3(4, 0, 0), Vec3(6, 0, 2) };
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_splMode = true; splReset();
+        for (const Vec3& q : passage) g_splPts.push_back(q);
+        splFinish();
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.empty() && !g_splMode,
+              "spline : posee ouverte = fil en UN objet sans triangle, mode quitte");
+        { /* la discretisation PASSE PAR chaque point de passage */
+            bool passe = true;
+            const Object& o = g_objs[0];
+            for (const Vec3& q : passage) {
+                double dmin = 1e300;
+                for (const Vec3& loc : o.v) {
+                    const double d = (q - (o.pos + loc)).norm();
+                    if (d < dmin) dmin = d;
+                }
+                if (dmin > 1e-9) passe = false;
+            }
+            CHECK(passe, "spline ouverte : la courbe passe par chaque point de passage");
+        }
+        CHECK(g_objs[0].edges.size() == g_objs[0].v.size() - 1,
+              "spline ouverte : aretes = chaine continue (nv - 1)");
+        /* boucle fermee (clic sur le depart) : dernier sommet = premier */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_splMode = true; splReset();
+        for (const Vec3& q : passage) g_splPts.push_back(q);
+        splPose(true);
+        CHECK(g_objs.size() == 1
+              && (g_objs[0].v.front() - g_objs[0].v.back()).norm() < 1e-12,
+              "spline fermee : boucle = dernier sommet = premier (arete de cloture)");
+        CHECK(g_objs[0].edges.size() == g_objs[0].v.size() - 1,
+              "spline fermee : aretes = chaine fermee (nv - 1 avec cloture)");
+        /* validation prematuree : 1 point = refuse, mode conserve */
+        const size_t avantS = g_objs.size();
+        g_splMode = true; splReset();
+        g_splPts.push_back(Vec3(1, 0, 1));
+        splFinish();
+        CHECK(g_objs.size() == avantS && g_splMode,
+              "spline : validation a 1 point = refusee, mode conserve (Echap pour sortir)");
+        /* noms uniques */
+        g_splPts.push_back(Vec3(2, 0, 1));
+        splFinish();
+        CHECK(g_objs.size() == avantS + 1 && g_objs.back().name != g_objs[g_objs.size() - 2].name,
+              "spline : noms uniques (Spline, Spline (2))");
+        g_splMode = false; splReset();
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    { /* B2.7b : variante POINTS DE CONTROLE (Maj+B, bascule a chaud) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        onKey(W, GLFW_KEY_B, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_splMode && g_splCtrl, "spline : Maj+B arme la variante points de controle");
+        /* carre en polygone de controle : la courbe glisse a l'interieur */
+        const std::vector<Vec3> carre = { Vec3(0, 0, 0), Vec3(4, 0, 0), Vec3(4, 0, 4), Vec3(0, 0, 4) };
+        g_splMode = true; g_splCtrl = true; splReset();
+        for (const Vec3& q : carre) g_splPts.push_back(q);
+        splFinish();                             /* ouverte : noeuds serres */
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.empty(),
+              "spline (controle) : posee = fil en UN objet sans triangle");
+        {
+            const Object& o = g_objs[0];
+            const Vec3 w0 = o.pos + o.v.front(), w1 = o.pos + o.v.back();
+            CHECK((w0 - Vec3(0, 0, 0)).norm() < 1e-9 && (w1 - Vec3(0, 0, 4)).norm() < 1e-9,
+                  "spline (controle) : noeuds serres = depart et arrivee EXACTS");
+            double dmin = 1e300;
+            for (const Vec3& loc : o.v) {
+                const double d = (Vec3(4, 0, 0) - (o.pos + loc)).norm();
+                if (d < dmin) dmin = d;
+            }
+            CHECK(dmin > 0.1, "spline (controle) : la courbe glisse a l'interieur (coin non touche)");
+            /* B2.7d : valeur EXACTE de Bezier au milieu - le carre de controle
+               (4 clics, noeuds serres) donne un segment de Bezier cubique :
+               C(0.5) = (P0 + 3 P1 + 3 P2 + P3) / 8 = (3, 0, 2). Ce check
+               aurait attrape le bug du span (floor(u) faux sur noeuds serres). */
+            double dmil = 1e300;
+            for (const Vec3& loc : o.v) {
+                const double d = (Vec3(3, 0, 2) - (o.pos + loc)).norm();
+                if (d < dmil) dmil = d;
+            }
+            CHECK(dmil < 0.2, "spline (controle) : Bezier cubique exacte au milieu (span des noeuds serres)");
+        }
+        /* boucle fermee : dernier sommet = premier */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_splMode = true; g_splCtrl = true; splReset();
+        for (const Vec3& q : carre) g_splPts.push_back(q);
+        splPose(true);
+        CHECK(g_objs.size() == 1 && (g_objs[0].v.front() - g_objs[0].v.back()).norm() < 1e-12,
+              "spline (controle) fermee : boucle = dernier sommet = premier");
+        g_splMode = false; g_splCtrl = false; splReset();
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    std::printf("resume : %d echec(s), %d verifications\n", g_fail, g_tot);
     return g_fail ? 1 : 0;
 }
