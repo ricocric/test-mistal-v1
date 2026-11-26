@@ -647,7 +647,9 @@ aligne aux axes (largeur en X, profondeur en Z), pose au sol y = 0.
 
 - objet pose = feuille pleine de 2 tris (normale +y) + aretes de bord, UN
   objet, etirable au push/pull (coherent avec la ligne fermee B2.5) ;
-- chiffres + Entree = dimensions exactes « L,H » (largeur, profondeur) ;
+- chiffres + Entree = dimensions exactes « L;H » (largeur, profondeur ;
+  separateur point-virgule : la virgule est proscrite, confusion decimale
+  probable sur clavier FR) ;
   le quadrant du curseur par rapport au premier coin oriente le rectangle
   (fidele SketchUp : la diagonale dirige), puis pose + sortie du mode ;
 - clic droit ou Echap = annulation SANS objet pose (mecanique commune B2) ;

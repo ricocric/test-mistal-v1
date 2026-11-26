@@ -1581,10 +1581,10 @@ int main() {
 
         g_rectActive = true; g_rectCorner = Vec3(0, 0, 0); g_rectNumBuf.clear();
         g_rectCursor = Vec3(1, 0, 1); g_rectCursorOk = true;
-        rectPoseByDims("2,3");
+        rectPoseByDims("2;3");
         CHECK(g_objs.size() == 2 && g_objs[1].name == "Rectangle (2)"
               && g_objs[1].bmax.x == 2.0 && g_objs[1].bmax.z == 3.0 && g_objs[1].v.size() == 4,
-              "rectangle : L,H + Entree = dimensions exactes (quadrant curseur SE = +x,+z), nom unique");
+              "rectangle : L;H + Entree = dimensions exactes (quadrant curseur SE = +x,+z), nom unique");
 
         g_rectActive = true; g_rectCorner = Vec3(5, 0, 5);
         g_rectCursor = Vec3(4, 0, 4); g_rectCursorOk = true;

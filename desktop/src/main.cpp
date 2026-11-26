@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.2";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.2b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -2692,7 +2692,7 @@ static void drawLinePreview() {
 static bool g_rectMode = false;         /* outil arme */
 static bool g_rectActive = false;       /* premier coin pose */
 static Vec3 g_rectCorner(0, 0, 0);      /* premier coin (monde, y = 0) */
-static std::string g_rectNumBuf;        /* dimensions tapees "L,H" */
+static std::string g_rectNumBuf;        /* dimensions tapees "L;H" */
 static Vec3 g_rectCursor(0, 0, 0);      /* point sol sous le curseur (apercu) */
 static bool g_rectCursorOk = false;
 
@@ -2705,7 +2705,7 @@ static void rectCancel(const char* pourquoi) {
     g_rectMode = false;
     std::printf("\nrectangle : %s\n", pourquoi);
 }
-/* suivi du curseur chaque tour (apercu + orientation de la saisie L,H) */
+/* suivi du curseur chaque tour (apercu + orientation de la saisie L;H) */
 static void rectTrackCursor(GLFWwindow* w) {
     Vec3 p;
     bool ok;
@@ -2743,7 +2743,7 @@ static void rectTakePoint(GLFWwindow* w) {
         g_rectCorner = p;
         g_rectActive = true;
         g_rectNumBuf.clear();
-        std::printf("rectangle : premier coin (%.3f, %.3f) - clic = coin oppose ; chiffres L,H + Entree = dimensions exactes\n", p.x, p.z);
+        std::printf("rectangle : premier coin (%.3f, %.3f) - clic = coin oppose ; chiffres L;H + Entree = dimensions exactes\n", p.x, p.z);
         return;
     }
     if (std::fabs(p.x - g_rectCorner.x) < 1e-9 || std::fabs(p.z - g_rectCorner.z) < 1e-9) {
@@ -2752,7 +2752,7 @@ static void rectTakePoint(GLFWwindow* w) {
     }
     rectPose(g_rectCorner, p);
 }
-/* chiffres + Entree : "L,H" ; le quadrant du curseur par rapport au
+/* chiffres + Entree : "L;H" ; le quadrant du curseur par rapport au
    premier coin oriente le rectangle (fidele SketchUp : la diagonale
    dirige), puis pose + sortie du mode (meme contrat que la ligne) */
 static void rectPoseByDims(const std::string& txt) {
@@ -2761,11 +2761,11 @@ static void rectPoseByDims(const std::string& txt) {
         return;
     }
     std::string t = txt;
-    for (char& c : t) if (c == ',' || c == ';') c = ' ';
+    for (char& c : t) if (c == ';') c = ' ';   /* separateur = point-virgule (virgule proscrite : confusion decimale) */
     double L = 0.0, H = 0.0;
     if (std::sscanf(t.c_str(), "%lf %lf", &L, &H) != 2
         || !std::isfinite(L) || !std::isfinite(H) || L <= 0.0 || H <= 0.0) {
-        std::printf("\nDimensions invalides - tapez L,H (deux nombres positifs) puis Entree.\n");
+        std::printf("\nDimensions invalides - tapez L;H (deux nombres positifs) puis Entree.\n");
         return;
     }
     const double sx = (g_rectCursor.x >= g_rectCorner.x) ? 1.0 : -1.0;
@@ -3087,7 +3087,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         }
         return;
     }
-    if (g_rectActive) {   /* B2.2 : saisie des dimensions exactes "L,H" (meme contrat) */
+    if (g_rectActive) {   /* B2.2 : saisie des dimensions exactes "L;H" (meme contrat) */
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
         const bool topRowR = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
         const bool padRowR = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
@@ -3101,7 +3101,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             if (!g_rectNumBuf.empty()) g_rectNumBuf.pop_back();
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
             if (g_rectNumBuf.empty()) {
-                std::printf("\nDimensions vides - tapez L,H puis Entree (clic = coin oppose, Echap = tout annuler).\n");
+                std::printf("\nDimensions vides - tapez L;H puis Entree (clic = coin oppose, Echap = tout annuler).\n");
             } else {
                 rectPoseByDims(g_rectNumBuf);
             }
@@ -3233,7 +3233,7 @@ static void runToolCommand(int id) {
             rectReset();
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("mode Rectangle : clic = premier coin ; clic = coin oppose pose ; chiffres L,H + Entree = dimensions exactes ; Echap = tout annuler\n");
+            std::printf("mode Rectangle : clic = premier coin ; clic = coin oppose pose ; chiffres L;H + Entree = dimensions exactes ; Echap = tout annuler\n");
         }
         return;
 #ifdef _WIN32
@@ -3372,7 +3372,7 @@ static std::string statusPrompt() {
     if (g_lineActive)
         return "Ligne : clic = prolonger | clic droit = fin | chiffres + Entree = longueur exacte | Echap = tout annuler";
     if (g_rectActive)
-        return "Rectangle : clic = coin oppose (pose) | chiffres L,H + Entree = dimensions exactes | Echap = tout annuler";
+        return "Rectangle : clic = coin oppose (pose) | chiffres L;H + Entree = dimensions exactes | Echap = tout annuler";
     if (g_dupPending)
         return "Dupliquer : tapez le nombre d instances puis Entree (vide = 1, negatif = retrait, Echap pour annuler)";
     else if (g_ppActive)
@@ -3399,7 +3399,7 @@ static std::string statusPrompt() {
    chaque cas qui accepte une valeur clavier (duplication, extrusion, rotation) */
 static bool inputZoneState(const char** label, const std::string** buf) {
     if (g_lineActive) { *label = "longueur";  *buf = &g_lineNumBuf; return true; }
-    if (g_rectActive) { *label = "L,H";       *buf = &g_rectNumBuf; return true; }
+    if (g_rectActive) { *label = "L;H";       *buf = &g_rectNumBuf; return true; }
     if (g_dupPending) { *label = "nombre";    *buf = &g_dupNumBuf; return true; }
     if (g_ppActive)   { *label = "dimension"; *buf = &g_pp.numBuf; return true; }
     if (g_rotActive)  { *label = "angle";     *buf = &g_rotNumBuf; return true; }
@@ -3545,7 +3545,7 @@ int main() {
     /* entete console : court, groupe par theme (retour utilisateur : trop de
        verbiage noie les informations importantes) */
     std::printf("Sketch3D - build %s\n", BUILD_VERSION);
-    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L,H = exact) | Ctrl+C/V | Suppr\n");
+    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Ctrl+C/V | Suppr\n");
     std::printf("Vue     : orbite = clic gauche dans le vide | zoom = molette | panoramique = molette-clic ou Shift+glisser | C centrer | F cadrer | H origine\n");
     std::printf("Projets : Ctrl+S enregistrer | clic droit = infos objet + duplication | I importer\n");
     std::printf("Formats : export scene/selection = menu Fichier, format defini dans Preferences\n");

@@ -46,7 +46,8 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   (computeObjectDerived) ; menu Outils cree (regle B1.7c) ;
 - B2.2 RECTANGLE fait : Maj+R, clic coin/clic coin oppose, feuille pleine
   de 2 tris normale +y (coherente avec la ligne fermee B2.5), UN objet
-  etirable au push/pull ; chiffres L,H + Entree = dimensions exactes
+  etirable au push/pull ; chiffres L;H + Entree = dimensions exactes (B2.2b : separateur
+  point-virgule, la virgule proscrite - confusion decimale)
   orientees par le quadrant du curseur ; clic droit/Echap = annule ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
@@ -64,7 +65,7 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
     l'angle libre attendra l'inference de pose de B5 ;
   - objet pose = feuille pleine de 2 tris + aretes de bord, UN objet
     (coherent avec la ligne fermee B2.5), etirable au push/pull ;
-  - saisie exacte : chiffres + Entree = "L,H" (largeur, profondeur) ;
+  - saisie exacte : chiffres + Entree = "L;H" (largeur, profondeur) ;
     le quadrant du curseur par rapport au premier coin oriente le rectangle
     (fidele SketchUp : la diagonale dirige) ;
   - nommage "Rectangle", "Rectangle (2)"... ; bouton + entree menu Outils ;
