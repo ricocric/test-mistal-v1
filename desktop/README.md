@@ -299,6 +299,20 @@ build\Debug\sketch3d.exe
   defauts, ini edite a la main relu, round-trip fermeture -> lancement,
   valeurs non numeriques tolerees).
 
+## Menu Preferences B1.4 (choix au vol)
+
+- **menu `Preferences`** (a cote de Fichier, apres Affichage) :
+  `Export de la scene` -> **OBJ / STL** (coche sur le choix courant) ;
+  `Export de la selection` -> **OBJ / STL** ;
+- **un seul chemin de code** : les radios passent par `noteExportFormat`, le
+  meme mecanisme que les exports reels - memoire `[exports]` gravee
+  immediatement dans `sketch3d.ini`, impossible de diverger ;
+- conforme a l'usage : les sous-menus `Fichier > Exporter...` gardent leur
+  format explicite (zero regression) ; le format memorise sera le consommateur
+  de la future commande d'export rapide (bouton/raccourci) ;
+- le menu s'etoilera au fil des B (unites, preferences d'outils...), le
+  mecanisme B0 est pret a chaque fois.
+
 ## Fichier de setup B0 (sketch3d.ini)
 
 - **INI editable a la main** pose a cote de l'exe (`sketch3d.ini`, sans

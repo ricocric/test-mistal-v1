@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1.3";
+static const char* BUILD_VERSION = "B1.4";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1317,6 +1317,10 @@ enum {
     IDM_TOOL_PASTE,
     IDM_VIEW_TOOLBAR,
     IDM_VIEW_TOOLBAR_VERT,
+    IDM_PREF_SCENE_OBJ,
+    IDM_PREF_SCENE_STL,
+    IDM_PREF_SEL_OBJ,
+    IDM_PREF_SEL_STL,
 };
 
 static GLFWwindow* g_mainWin = nullptr;
@@ -1330,6 +1334,8 @@ static void toolbarSetVisible(bool vis);
 static void toolbarSetVertical(bool vert);
 /* B1.3 : la barre suit les mouvements de la fenetre principale */
 static void toolFollow();
+/* B1.4 : menu Preferences - formats d'export editables au vol */
+static void prefSetExportFormat(bool scene, bool stl);
 #endif
 
 static void handleMenuAction(int id) {
@@ -1404,6 +1410,19 @@ static void handleMenuAction(int id) {
         return;
     case IDM_VIEW_TOOLBAR_VERT:
         toolbarSetVertical(g_setup.toolVertical == 0);
+        return;
+    /* B1.4 : Preferences, formats d'export au vol */
+    case IDM_PREF_SCENE_OBJ:
+        prefSetExportFormat(true, false);
+        return;
+    case IDM_PREF_SCENE_STL:
+        prefSetExportFormat(true, true);
+        return;
+    case IDM_PREF_SEL_OBJ:
+        prefSetExportFormat(false, false);
+        return;
+    case IDM_PREF_SEL_STL:
+        prefSetExportFormat(false, true);
         return;
 #endif
     case IDM_QUIT:
@@ -1513,6 +1532,8 @@ static HWND g_toolWin = nullptr;
 static HWND g_mainHwnd = nullptr;    /* fenetre principale : suivi + aimantation */
 static HWND g_toolBtn[8];
 static HMENU g_viewMenu = nullptr;   /* menu Affichage : coches tenus a jour */
+static HMENU g_prefSceneMenu = nullptr;  /* menu Preferences : export scene */
+static HMENU g_prefSelMenu = nullptr;    /* menu Preferences : export selection */
 
 /* replace la barre a mainHwnd + decalage persiste (appelee au WM_MOVE et
    WM_SIZE de la fenetre principale) */
@@ -1624,6 +1645,21 @@ static void toolbarSetVertical(bool vert) {
                                   vert ? MF_CHECKED : MF_UNCHECKED);
     std::printf("barre d'outils : %s\n", vert ? "verticale" : "horizontale");
 }
+
+/* B1.4 : menu Preferences - formats d'export editables au vol. UN SEUL
+   CHEMIN DE CODE : passe par noteExportFormat (le meme que les exports
+   reels) -> memoire gravee immediatement, impossible de diverger. */
+static void prefSetExportFormat(bool scene, bool stl) {
+    noteExportFormat(scene, stl);
+    HMENU m = scene ? g_prefSceneMenu : g_prefSelMenu;
+    if (m) {
+        CheckMenuItem(m, scene ? IDM_PREF_SCENE_OBJ : IDM_PREF_SEL_OBJ,
+                      !stl ? MF_CHECKED : MF_UNCHECKED);
+        CheckMenuItem(m, scene ? IDM_PREF_SCENE_STL : IDM_PREF_SEL_STL,
+                      stl ? MF_CHECKED : MF_UNCHECKED);
+    }
+    std::printf("preferences : export %s en %s\n", scene ? "scene" : "selection", stl ? "STL" : "OBJ");
+}
 #endif
 
 static void attachMenus(GLFWwindow* win) {
@@ -1662,6 +1698,26 @@ static void attachMenus(GLFWwindow* win) {
                 IDM_VIEW_TOOLBAR_VERT, "Barre &verticale");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)aff, "&Affichage");
     g_viewMenu = aff;
+    /* menu Preferences (B1.4) : les choix persistes de B0, editables au vol ;
+       il ira en s'etoilant (formats, unites, preferences d'outils...) */
+    HMENU pref = CreatePopupMenu();
+    g_prefSceneMenu = CreatePopupMenu();
+    AppendMenuA(g_prefSceneMenu,
+                MF_STRING | (g_setup.formatScene != "stl" ? MF_CHECKED : MF_UNCHECKED),
+                IDM_PREF_SCENE_OBJ, "&OBJ");
+    AppendMenuA(g_prefSceneMenu,
+                MF_STRING | (g_setup.formatScene == "stl" ? MF_CHECKED : MF_UNCHECKED),
+                IDM_PREF_SCENE_STL, "S&TL");
+    g_prefSelMenu = CreatePopupMenu();
+    AppendMenuA(g_prefSelMenu,
+                MF_STRING | (g_setup.formatSelection != "stl" ? MF_CHECKED : MF_UNCHECKED),
+                IDM_PREF_SEL_OBJ, "&OBJ");
+    AppendMenuA(g_prefSelMenu,
+                MF_STRING | (g_setup.formatSelection == "stl" ? MF_CHECKED : MF_UNCHECKED),
+                IDM_PREF_SEL_STL, "S&TL");
+    AppendMenuA(pref, MF_POPUP, (UINT_PTR)g_prefSceneMenu, "Export de la &scene");
+    AppendMenuA(pref, MF_POPUP, (UINT_PTR)g_prefSelMenu, "Export de la se&lection");
+    AppendMenuA(bar, MF_POPUP, (UINT_PTR)pref, "&Preferences");
     SetMenu(hwnd, bar);
     g_baseWndProc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)menuWndProc);
     attachToolbar(hwnd);
@@ -2996,7 +3052,7 @@ static void updateWindowTitle(GLFWwindow* w) {
 
 int main() {
     std::printf("Sketch3D natif — build %s (outillages T1 : duplication multi-instances, rotation autour des axes + menus du lot N5)\n", BUILD_VERSION);
-    std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer, exporter OBJ/STL, quitter ; menu Affichage : barre d'outils (rappel, verticale) ; menu contextuel (clic droit) : infos objet, duplication\n");
+    std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer, exporter OBJ/STL, quitter ; menu Affichage : barre d'outils (rappel, verticale) ; menu Preferences : formats d'export scene/selection ; menu contextuel (clic droit) : infos objet, duplication\n");
     std::printf("P : mode Push/Pull ; R : mode Rotation (X/Y/Z = axe, souris ou chiffres+Entree) ; I : import ; F : cadrage ; H : origine ; molette-clic ou Shift+glisser : deplacer la vue ; C : centrer sur le point vise\n");
     g_setupPath = setupFilePath();
     loadSetup();                     /* B0 : preferences de la derniere session */
