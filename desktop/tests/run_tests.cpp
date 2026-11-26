@@ -1437,6 +1437,76 @@ int main() {
               "export uni : .obj, sans extension, autre extension = pas STL (donc OBJ)");
     }
 
+
+    /* 32 - B2.1 : outil Ligne (fil multi-segments pose au sol) ; le chemin
+       rayon/souris (rayFromMouse) est deja couvert par les blocs drag et C
+       (meme stub), ici la logique de capture est testee en pur. */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_lineMode = true;
+
+        g_linePts.push_back(Vec3(0, 0, 0));
+        g_linePts.push_back(Vec3(2, 0, 0));
+        g_linePts.push_back(Vec3(2, 0, 2));
+        g_lineActive = true;
+        linePose();
+        CHECK(g_objs.size() == 1 && g_objs[0].name == "Ligne",
+              "ligne : la pose cree UN objet nomme Ligne (sommets partages)");
+        CHECK(g_objs[0].v.size() == 3 && g_objs[0].tri.empty() && g_objs[0].edges.size() == 2,
+              "ligne : fil = 3 sommets, 2 segments (aretes), aucun tri");
+        CHECK((g_objs[0].v[1] - g_objs[0].v[0]).norm() == 2.0
+              && (g_objs[0].v[2] - g_objs[0].v[1]).norm() == 2.0,
+              "ligne : longueurs des segments exactes");
+        CHECK(g_selected == 0 && !g_lineMode && !g_lineActive && g_linePts.empty()
+              && g_lineNumBuf.empty(),
+              "ligne : pose = selectionnee, mode quitte, dessin remis a zero");
+
+        g_lineMode = true;                        /* second fil : fin par clic droit/Entree */
+        g_linePts.push_back(Vec3(5, 0, 5));
+        g_linePts.push_back(Vec3(6, 0, 5));
+        g_lineActive = true;
+        lineFinish();
+        CHECK(g_objs.size() == 2 && g_objs[1].name == "Ligne (2)",
+              "ligne : second fil nomme Ligne (2) sans collision de nom");
+        CHECK(findObjectByName("Ligne (2)") == 1, "ligne : retrouve par nom");
+
+        g_lineMode = true;                        /* longueur tapee + Entree */
+        g_linePts.push_back(Vec3(0, 0, 0));
+        g_lineActive = true;
+        g_lineCursorOk = true;
+        g_lineCursor = Vec3(3, 0, 0);
+        linePoseByLength(1.5);
+        CHECK(g_objs.size() == 3 && (g_objs[2].v[1] - g_objs[2].v[0]).norm() == 1.5,
+              "ligne : chiffres+Entree 1.5 = point pose a 1.5 dans la direction curseur");
+        CHECK(!g_lineMode && g_linePts.empty(),
+              "ligne : pose par longueur = pose + sortie du mode (meme contrat)");
+
+        g_lineMode = true;                        /* Echap : tout annule */
+        g_linePts.push_back(Vec3(9, 0, 9));
+        g_lineActive = true;
+        lineCancel("dessin annule");
+        CHECK(g_objs.size() == 3 && !g_lineMode && !g_lineActive && g_linePts.empty(),
+              "ligne : Echap annule tout, rien de pose");
+
+        g_lineMode = true;                        /* moins de 2 points = rien */
+        g_linePts.push_back(Vec3(1, 0, 1));
+        g_lineActive = true;
+        lineFinish();
+        CHECK(g_objs.size() == 3 && !g_lineMode && g_linePts.empty(),
+              "ligne : fin avec un seul point = rien de pose");
+
+        runToolCommand(IDM_TOOL_LINE);            /* un seul chemin de code */
+        CHECK(g_lineMode && !g_lineActive,
+              "ligne : bouton/menu (runToolCommand) arme l'outil");
+        runToolCommand(IDM_TOOL_LINE);
+        CHECK(!g_lineMode && !g_lineActive,
+              "ligne : rappel du bouton = desarme (toggle)");
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_lineMode = false;
+        lineReset();
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }

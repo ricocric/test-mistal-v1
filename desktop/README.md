@@ -590,6 +590,32 @@ Variante : ouvrir simplement le dossier `desktop` dans Visual Studio (CMake inte
 build\Debug\sketch3d.exe
 ```
 
+## B2.1 : outil Ligne (fil multi-segments)
+
+Conception B2 validee (ROADMAP.md) avant tout code. L'outil Ligne pose un FIL
+de A vers B et au-dela : chaque clic gauche ajoute un sommet (les segments
+sont lies, l'objet est unique), **clic droit = fin** (exception assumee a la
+regle "clic droit = neutre" : ici il conclut), **Echap** = tout annuler,
+**Entree vide** = fin, **chiffres + Entree** = longueur exacte du segment
+courant dans la direction du curseur (pose + sortie du mode, meme contrat
+que le reste). Pose sur le plan du sol en v1.
+
+- l'objet pose est un fil tri-soup sans triangle : 3 sommets, aretes chaine ;
+  `computeObjectDerived` reconstruit la chaine quand un objet n'a aucun
+  triangle, donc la topologie survit au save/load, a la rotation, a la
+  duplication ;
+- le fil n'a pas de volume : pas de push/pull dessus (decide) ; il n'apparait
+  pas encore dans les exports OBJ/STL (ouvert pour B3 : chemins) ;
+- menu **Outils** cree (Selection/Echap, Extraire une face/P, Tourner/R,
+  Ligne/L, Cadrer/F, Origine/H, Copier/Ctrl+C, Coller/Ctrl+V) : les
+  raccourcis sont rappeles dans le menu qui les propose (regle B1.7c) ;
+- ordre des menus = Fichier, Preferences, Outils, Affichage (Preferences
+  reste a cote de Fichier, B1.4) ;
+- bouton "Ligne" ajoute a la barre flottante (8 boutons) ; apercu jaune du
+  fil vers le curseur pendant la saisie ;
+- moteur de tests : bloc 32 = 12 nouvelles verifications, total **229,
+  0 echec** ; stubs completes (GLFW_KEY_L, GL_LINE_STRIP).
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils

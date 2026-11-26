@@ -37,6 +37,7 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_KEY_V 86
 #define GLFW_KEY_H 72
 #define GLFW_KEY_I 73
+#define GLFW_KEY_L 76
 #define GLFW_KEY_O 79
 #define GLFW_KEY_P 80
 #define GLFW_KEY_R 82
@@ -45,6 +46,7 @@ typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_KEY_DELETE 261
 #define GLFW_KEY_Y 89
 #define GLFW_KEY_Z 90
+#define GL_LINE_STRIP 0x0003
 #define GLFW_MOUSE_BUTTON_LEFT  0
 #define GLFW_MOUSE_BUTTON_RIGHT 1
 #define GLFW_MOUSE_BUTTON_MIDDLE 2

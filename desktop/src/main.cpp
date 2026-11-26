@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1.7c";
+static const char* BUILD_VERSION = "B2.1";   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -221,6 +221,14 @@ static void computeObjectDerived(Object& o) {
         o.n.push_back(normalized(cross(b - a, c - a)));
     }
     o.edges.clear();
+    if (o.tri.empty()) {
+        /* B2.1 : fil sans triangle (outil Ligne) = chaine 0-1, 1-2, ... ;
+           topologie derivable des sommets, donc reconstruite ici a l'identique
+           apres un save/load, une rotation, une duplication... */
+        for (size_t i = 0; i + 1 < o.v.size(); ++i)
+            o.edges.emplace_back((int)i, (int)(i + 1));
+        return;
+    }
     std::unordered_set<unsigned long long> seen;
     for (size_t i = 0; i < o.tri.size(); i += 3) {
         for (int k = 0; k < 3; ++k) {
@@ -1324,6 +1332,7 @@ enum {
     IDM_TOOL_HOME,
     IDM_TOOL_COPY,
     IDM_TOOL_PASTE,
+    IDM_TOOL_LINE,
     IDM_VIEW_TOOLBAR,
     IDM_VIEW_TOOLBAR_VERT,
     IDM_PREF_SCENE_OBJ,
@@ -1541,7 +1550,7 @@ static void drawText2D(float x, float y, const char* s) {
    Tout est persiste dans la section [outils] du sketch3d.ini. */
 static HWND g_toolWin = nullptr;
 static HWND g_mainHwnd = nullptr;    /* fenetre principale : suivi + aimantation */
-static HWND g_toolBtn[8];
+static HWND g_toolBtn[9];
 static HMENU g_viewMenu = nullptr;   /* menu Affichage : coches tenus a jour */
 static HMENU g_prefSceneMenu = nullptr;  /* menu Preferences : export scene */
 static HMENU g_prefSelMenu = nullptr;    /* menu Preferences : export selection */
@@ -1557,7 +1566,7 @@ static void toolFollow() {
 }
 
 static void toolLayout(HWND tw) {
-    const int n = 7;
+    const int n = 8;
     const int bw = 86, bh = 26, pad = 6;
     const int cols = g_setup.toolVertical ? 1 : 4;
     const int rows = (n + cols - 1) / cols;
@@ -1625,9 +1634,9 @@ static void attachToolbar(HWND mainHwnd) {
     const HWND tw = CreateWindowExA(WS_EX_TOOLWINDOW, cls, "Outils",
         WS_POPUP | WS_CAPTION | WS_SYSMENU, o.x + g_setup.toolX, o.y + g_setup.toolY, 0, 0,
         mainHwnd, nullptr, GetModuleHandleA(nullptr), nullptr);
-    static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller" };
+    static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller", "Ligne" };
     static const int ids[] = { IDM_TOOL_SELECT, IDM_TOOL_PP, IDM_TOOL_ROT, IDM_TOOL_FRAME,
-                               IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE };
+                               IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE, IDM_TOOL_LINE };
     for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); ++i) {
         g_toolBtn[i] = CreateWindowExA(0, "BUTTON", labels[i],
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -1721,7 +1730,6 @@ static void attachMenus(GLFWwindow* win) {
                 IDM_VIEW_TOOLBAR_HOR, "Barre &horizontale");
     AppendMenuA(aff, MF_STRING | (g_setup.toolVertical ? MF_CHECKED : MF_UNCHECKED),
                 IDM_VIEW_TOOLBAR_VERT, "Barre &verticale");
-    AppendMenuA(bar, MF_POPUP, (UINT_PTR)aff, "&Affichage");
     g_viewMenu = aff;
     /* menu Preferences (B1.4) : les choix persistes de B0, editables au vol ;
        il ira en s'etoilant (formats, unites, preferences d'outils...) */
@@ -1743,6 +1751,22 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(pref, MF_POPUP, (UINT_PTR)g_prefSceneMenu, "Export de la &scene");
     AppendMenuA(pref, MF_POPUP, (UINT_PTR)g_prefSelMenu, "Export de la se&lection");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)pref, "&Preferences");
+    /* B2.1 : menu Outils - les commandes raccourcies rappelees dans le menu
+       qui les propose (regle B1.7c) ; les 5 profils B2 y entreront au fil
+       des lots ; delegation automatique : id >= kIdCommandStart */
+    HMENU outils = CreatePopupMenu();
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_SELECT, "&Selection\tEchap");
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_PP, "&Extraire une face\tP");
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_ROT, "&Tourner\tR");
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_LINE, "&Ligne (fil multi-segments)\tL");
+    AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_FRAME, "&Cadrer la selection\tF");
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_HOME, "Vue d'&origine\tH");
+    AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_COPY, "&Copier\tCtrl+C");
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_PASTE, "Co&ller\tCtrl+V");
+    AppendMenuA(bar, MF_POPUP, (UINT_PTR)outils, "&Outils");
+    AppendMenuA(bar, MF_POPUP, (UINT_PTR)aff, "&Affichage");
     SetMenu(hwnd, bar);
     g_baseWndProc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)menuWndProc);
     attachToolbar(hwnd);
@@ -2450,6 +2474,126 @@ static void updateRot(GLFWwindow* w) {
 }
 
 /* ------------------------------------------------------------------ */
+/* B2.1 : outil Ligne - fil multi-segments pose au sol                 */
+/* ------------------------------------------------------------------ */
+/* Conception B2 validee utilisateur : clics successifs = sommets lies
+   (un SEUL objet fil a la pose, les segments partagent les sommets :
+   indispensable pour que B3 suive le chemin entier) ; fin = clic droit
+   ou Entree (moins de 2 points = rien de pose) ; Echap = tout annuler ;
+   chiffres + Entree = longueur exacte du dernier segment (direction du
+   dernier point vers le curseur), puis pose et sortie du mode.
+   Exception assumee a la regle "clic droit = neutre" : ICI le clic droit
+   FINIT (les segments deja cliques restent poses). */
+static bool g_lineMode = false;         /* outil arme */
+static bool g_lineActive = false;       /* au moins un point clique */
+static std::vector<Vec3> g_linePts;     /* points cliques, monde (y = 0) */
+static std::string g_lineNumBuf;        /* longueur tapee du segment courant */
+static Vec3 g_lineCursor(0, 0, 0);      /* point sol sous le curseur (apercu) */
+static bool g_lineCursorOk = false;
+
+static void lineReset() {
+    g_lineActive = false;
+    g_linePts.clear();
+    g_lineNumBuf.clear();
+}
+static void lineCancel(const char* pourquoi) {
+    lineReset();
+    g_lineMode = false;
+    std::printf("\nligne : %s\n", pourquoi);
+}
+/* point d'impact du rayon sur le plan du sol (y = 0 monde), v1 */
+static void lineGroundPoint(GLFWwindow* w, bool& ok, Vec3& p) {
+    ok = false;
+    Vec3 org, dir;
+    if (!rayFromMouse(w, org, dir)) return;
+    if (std::fabs(dir.y) < 1e-12) return;
+    const double t = -org.y / dir.y;
+    if (t <= 1e-9) return;
+    p = org + dir * t;
+    ok = true;
+}
+/* suivi du curseur chaque tour (apercu + direction de la longueur tapee) */
+static void lineTrackCursor(GLFWwindow* w) {
+    Vec3 p;
+    bool ok;
+    lineGroundPoint(w, ok, p);
+    g_lineCursor = p;
+    g_lineCursorOk = ok;
+}
+static void lineTakePoint(GLFWwindow* w) {
+    bool ok;
+    Vec3 p;
+    lineGroundPoint(w, ok, p);
+    if (!ok) return;                                /* pointe le ciel : rien */
+    if (!g_linePts.empty() && (p - g_linePts.back()).norm() < 1e-9)
+        return;                                     /* meme point : rien */
+    g_linePts.push_back(p);
+    g_lineActive = true;
+    g_lineNumBuf.clear();
+    std::printf("ligne : %zu point(s) (clic = prolonger ; clic droit = fin ; Echap = tout annuler)\n", g_linePts.size());
+}
+static std::string lineNewName() {
+    if (findObjectByName("Ligne") < 0) return "Ligne";
+    for (int k = 2; ; ++k) {
+        const std::string n = "Ligne (" + std::to_string(k) + ")";
+        if (findObjectByName(n) < 0) return n;
+    }
+}
+/* pose : fil multi-segments en UN objet (sommets partages) ; ancre locale =
+   premier point (convention o.pos, meme base que la rotation) ; aucun tri */
+static void linePose() {
+    Object o;
+    o.name = lineNewName();
+    o.pos = g_linePts[0];
+    o.scl = 1.0;
+    o.v.resize(g_linePts.size());
+    for (size_t i = 0; i < g_linePts.size(); ++i) o.v[i] = g_linePts[i] - o.pos;
+    o.tri.clear();
+    o.n.clear();
+    /* B2.1 : les aretes (chaine du fil) sont DERIVEES par computeObjectDerived
+       (objet sans triangle = chaine 0-1, ...), donc survives au save/load */
+    computeObjectDerived(o);
+    const size_t nseg = o.edges.size();     /* capture AVANT le move (o move-assigne) */
+    g_objs.push_back(std::move(o));
+    const int idx = (int)g_objs.size() - 1;
+    selectOnly(idx);
+    std::printf("ligne posee : %s, %zu segment(s)\n", g_objs.back().name.c_str(), nseg);
+    lineReset();
+    g_lineMode = false;
+    std::printf("mode selection\n");
+}
+static void lineFinish() {           /* clic droit ou Entree vide : FIN */
+    if (g_linePts.size() >= 2) linePose();
+    else lineCancel("rien a poser : moins de 2 points");
+}
+/* longueur tapee + Entree : pose un point a la distance demandee dans la
+   direction du dernier point vers le curseur, puis pose et sortie */
+static void linePoseByLength(double len) {
+    if (!g_lineActive || g_linePts.empty()) return;
+    if (!g_lineCursorOk || (g_lineCursor - g_linePts.back()).norm() < 1e-9) {
+        std::printf("longueur tapee : pointez d'abord une direction (curseur sur le sol)\n");
+        return;
+    }
+    const Vec3 toCur = g_lineCursor - g_linePts.back();
+    g_linePts.push_back(g_linePts.back() + toCur * (len / toCur.norm()));
+    linePose();
+}
+/* apercu du fil : chainon deja clique + rubber band vers le curseur */
+static void drawLinePreview() {
+    if (!g_lineMode || !g_lineCursorOk || g_linePts.empty()) return;
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    glColor3d(0.92, 0.75, 0.1);
+    glLineWidth(2.0);
+    glBegin(GL_LINE_STRIP);
+    for (const Vec3& pt : g_linePts) glVertex3d(pt.x, pt.y, pt.z);
+    glVertex3d(g_lineCursor.x, g_lineCursor.y, g_lineCursor.z);
+    glEnd();
+    glLineWidth(1.0);
+    glEnable(GL_DEPTH_TEST);
+}
+
+/* ------------------------------------------------------------------ */
 /* Callbacks                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -2478,6 +2622,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
            Le deplacement en vol ne peut pas etre annule ainsi (le clic droit
            exige de relacher le bouton gauche, donc l'objet est deja pose). */
         if (action != GLFW_PRESS) return;
+        if (g_lineMode) { lineFinish(); return; }   /* B2.1 : le clic droit FINIT (segments deja cliques poses) */
         if (g_ppActive) {
             ppCancel();                 /* restaure la piece */
             g_ppMode = false;
@@ -2500,6 +2645,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
+        if (g_lineMode) { lineTakePoint(w); return; }   /* B2.1 : chaque clic pose un sommet */
         if (g_ppActive) { ppCommit(); return; }   /* second clic gauche : pose la face */
         if (g_rotActive) { rotCommit(); return; }  /* clic gauche : pose la rotation */
         if (g_ppMode) {
@@ -2714,6 +2860,35 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         }
         return;
     }
+    if (g_lineActive) {   /* B2.1 : saisie de la longueur exacte (meme contrat) */
+        if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
+        const bool topRowL = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
+        const bool padRowL = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
+        if (topRowL || padRowL || isSeparatorKey(key, scancode)) {
+            if (g_lineNumBuf.size() < 16)
+                g_lineNumBuf += (padRowL ? char('0' + (key - GLFW_KEY_KP_0))
+                              : (topRowL ? char(key) : char('.')));
+        } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+            if (g_lineNumBuf.size() < 16) g_lineNumBuf.insert(g_lineNumBuf.begin(), '-');
+        } else if (key == GLFW_KEY_BACKSPACE) {
+            if (!g_lineNumBuf.empty()) g_lineNumBuf.pop_back();
+        } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+            if (g_lineNumBuf.empty()) {
+                lineFinish();          /* Entree vide = fin, comme le clic droit */
+            } else {
+                const double len = std::atof(g_lineNumBuf.c_str());
+                if (!std::isfinite(len) || len <= 0.0)
+                    std::printf("\nLongueur invalide - tapez un nombre strictement positif puis Entree.\n");
+                else
+                    linePoseByLength(len);
+            }
+        } else if (key == GLFW_KEY_ESCAPE) {
+            lineCancel("dessin annule");   /* Echap : tout annule et quitte le mode */
+        } else if (key == GLFW_KEY_L) {
+            runToolCommand(IDM_TOOL_LINE); /* L disponible a tout moment */
+        }
+        return;
+    }
     if (action == GLFW_PRESS) {
         /* Ctrl+S = enregistrer le projet (retour utilisateur) ; position : avant les exports scene par O/S */
         if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_S) {
@@ -2728,11 +2903,13 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             /* Echelle Echap : d'abord sortir de l'etat en cours (mode P/R en attente,
                puis deselection) ; Echap ne ferme JAMAIS l'application (rebonds de
                clavier) : fermeture volontaire par Fichier > Quitter uniquement. */
+            if (g_lineMode) { lineCancel("dessin annule"); return; }   /* B2.1 */
             if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); return; }
             if (selectedCount() > 0) { clearSelection(); std::printf("\nselection annulee\n"); return; }
         }
-        if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending) runToolCommand(IDM_TOOL_PP);
-        if (key == GLFW_KEY_R && g_mode == M_None && !g_dupPending) runToolCommand(IDM_TOOL_ROT);
+        if (key == GLFW_KEY_P && g_mode == M_None && !g_dupPending && !g_lineMode) runToolCommand(IDM_TOOL_PP);
+        if (key == GLFW_KEY_R && g_mode == M_None && !g_dupPending && !g_lineMode) runToolCommand(IDM_TOOL_ROT);
+        if (key == GLFW_KEY_L && g_mode == M_None && !g_dupPending && !g_lineActive) runToolCommand(IDM_TOOL_LINE);
         if (g_rotMode && !g_rotActive) {
             const char c = axisLetterFromScancode(scancode);
             if (c) { rotBegin(w, c - 'x'); return; }
@@ -2765,7 +2942,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
 static void runToolCommand(int id) {
     switch (id) {
     case IDM_TOOL_SELECT:      /* = Echap, sans jamais fermer l'application */
-        if (g_ppActive) { ppCancel(); g_ppMode = false; std::printf("\nmode selection\n"); }
+        if (g_lineMode) { lineCancel("dessin annule"); }
+        else if (g_ppActive) { ppCancel(); g_ppMode = false; std::printf("\nmode selection\n"); }
         else if (g_rotActive) { rotCancel(); g_rotMode = false; std::printf("\nmode selection\n"); }
         else if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); }
         else if (selectedCount() > 0) { clearSelection(); std::printf("\nselection annulee\n"); }
@@ -2775,7 +2953,7 @@ static void runToolCommand(int id) {
             ppCancel();          /* annule la face en suspens si active, sans effet sinon */
             g_ppMode = false;
             std::printf("\nmode selection\n");
-        } else if (g_mode == M_None && !g_dupPending) {
+        } else if (g_mode == M_None && !g_dupPending && !g_lineMode) {
             g_ppMode = true;
             g_rotMode = false;
             std::printf("mode Push/Pull : cliquez une face (dessus ou cote), deplacez, puis re-cliquez pour poser\n");
@@ -2786,7 +2964,7 @@ static void runToolCommand(int id) {
             rotCancel();         /* annule la rotation en suspens si active */
             g_rotMode = false;
             std::printf("\nmode selection\n");
-        } else if (g_mode == M_None && !g_dupPending) {
+        } else if (g_mode == M_None && !g_dupPending && !g_lineMode) {
             g_rotMode = true;
             g_ppMode = false;
             std::printf("mode Rotation : selectionnez un objet (Ctrl+clic pour en selectionner plusieurs), puis X, Y ou Z (lettre) pour fixer l'axe\n");
@@ -2804,6 +2982,17 @@ static void runToolCommand(int id) {
         return;
     case IDM_TOOL_PASTE:      /* = Ctrl+V */
         pasteClipboard();
+        return;
+    case IDM_TOOL_LINE:        /* = touche L (B2.1) */
+        if (g_lineMode) {
+            lineCancel("mode ligne quitte");
+        } else if (g_mode == M_None && !g_dupPending && !g_lineActive) {
+            g_lineMode = true;
+            lineReset();
+            g_ppMode = false;
+            g_rotMode = false;
+            std::printf("mode Ligne : cliquez les points du fil (clic = prolonger) ; clic droit = fin ; Echap = tout annuler\n");
+        }
         return;
 #ifdef _WIN32
     /* B1.5 : commandes Affichage / Preferences, a present dans le dispatcher */
@@ -2937,6 +3126,8 @@ static std::string statusPrompt() {
         if (glfwGetTime() < g_bandFlashUntil) return g_bandFlash;
         g_bandFlash.clear();
     }
+    if (g_lineActive)
+        return "Ligne : clic = prolonger | clic droit = fin | chiffres + Entree = longueur exacte | Echap = tout annuler";
     if (g_dupPending)
         return "Dupliquer : tapez le nombre d instances puis Entree (vide = 1, negatif = retrait, Echap pour annuler)";
     else if (g_ppActive)
@@ -2962,6 +3153,7 @@ static std::string statusPrompt() {
 /* zone de saisie du bandeau : (libelle, buffer tape) - la meme boite pour
    chaque cas qui accepte une valeur clavier (duplication, extrusion, rotation) */
 static bool inputZoneState(const char** label, const std::string** buf) {
+    if (g_lineActive) { *label = "longueur";  *buf = &g_lineNumBuf; return true; }
     if (g_dupPending) { *label = "nombre";    *buf = &g_dupNumBuf; return true; }
     if (g_ppActive)   { *label = "dimension"; *buf = &g_pp.numBuf; return true; }
     if (g_rotActive)  { *label = "angle";     *buf = &g_rotNumBuf; return true; }
@@ -3107,7 +3299,7 @@ int main() {
     /* entete console : court, groupe par theme (retour utilisateur : trop de
        verbiage noie les informations importantes) */
     std::printf("Sketch3D - build %s\n", BUILD_VERSION);
-    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | Ctrl+C/V | Suppr\n");
+    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clics = points, clic droit = fin) | Ctrl+C/V | Suppr\n");
     std::printf("Vue     : orbite = clic gauche dans le vide | zoom = molette | panoramique = molette-clic ou Shift+glisser | C centrer | F cadrer | H origine\n");
     std::printf("Projets : Ctrl+S enregistrer | clic droit = infos objet + duplication | I importer\n");
     std::printf("Formats : export scene/selection = menu Fichier, format defini dans Preferences\n");
@@ -3156,12 +3348,13 @@ int main() {
             updateDrag(win);
         } else if (g_ppActive) {
             updatePP(win);
-        } else if (g_rotActive) {
-            updateRot(win);
+        } else if (g_lineMode) {
+            lineTrackCursor(win);     /* B2.1 : apercu du fil vers le curseur */
         }
         updateWindowTitle(win);
         render();
         drawAxisGuide();
+        drawLinePreview();
         drawStatusBand();
         glfwSwapBuffers(win);
         glfwPollEvents();
