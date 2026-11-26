@@ -670,7 +670,29 @@ aligne aux axes (largeur en X, profondeur en Z), pose au sol y = 0.
     en '.' decimale ;
   - convention generale : « ; » = separateur de champs, « , » et « . » =
     decimales ;
-- moteur de tests : +7 verifications, total **254, 0 echec** (compte reel mesure : le total 247 anterieur etait sous-compte d une unite).
+- moteur de tests : +7 verifications (B2.2c/d).
+
+## B2.3 : outil Cercle
+
+Maj+C (bouton « Cercle » de la barre, entree du menu Outils ; C seul =
+recentrage sur le point vise, Ctrl+C = copie : Maj+C rend la main AVANT le
+recentrage). Clic 1 = centre (au sol), souris = apercu (cercle jaune au
+rayon courant + segment centre-curseur), clic 2 = rayon pose. Echap/clic
+droit = annulation sans objet (mecanique commune B2).
+
+- objet pose = feuille fan de 24 tris (centre + boucle de 24 sommets =
+  25 sommets), normale +y (boucle en (cos, -sin)), UN objet, etirable au
+  push/pull ; 24 segments fixes en v1 ;
+- aretes derivees = 24 bords + 24 rayons du fan (comme la diagonale du
+  rectangle, se rattrapera avec le vrai solide de B6) ;
+- chiffres + Entree = rayon exact : UN seul nombre (pas de direction a
+  prendre, le cercle est invariant par rotation) ; decimales FR acceptees
+  (',' ; et '.' = decimale, convention B2.2b/B2.2d) ;
+- nommage uniqueName commun (« Cercle », « Cercle (2) ») ;
+- moteur de tests : +8 verifications, total execute **266, 0 echec**.
+  Nouveau : le CHECK compte ses executions (g_tot) et le resume affiche
+  le total execute - les totaux anterieurs comptaient des lignes de
+  sortie, sous-estimes (messages multi-lignes) ;
 
 ## Organiseur des prochains lots
 

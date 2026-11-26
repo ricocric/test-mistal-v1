@@ -54,6 +54,12 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   ';' NON majuscule sur AZERTY -> la saisie utilise l'etiquette reelle de
   la touche (glfwGetKeyName), ce qui est tape s'affiche ; convention
   « ; » = separateur, « , »/« . » = decimales ;
+- B2.3 CERCLE fait : Maj+C, clic centre + clic rayon (apercu cercle +
+  segment de rayon), feuille fan 24 tris normale +y etirable au push/pull,
+  chiffres + Entree = rayon exact (un seul nombre, decimales FR) ; note :
+  le moteur de tests compte desormais ses CHECKs executes (resume :
+  "N echec(s), M verifications") - les totaux anterieurs etaient des
+  comptages de lignes, sous-estimes ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil

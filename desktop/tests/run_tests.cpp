@@ -20,8 +20,9 @@
 #undef main
 
 static int g_fail = 0;
+static int g_tot = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { std::printf("ECHEC: %s\n", (msg)); ++g_fail; } \
-                              else { std::printf("ok : %s\n", (msg)); } } while (0)
+                              else { std::printf("ok : %s\n", (msg)); ++g_tot; } } while (0)
 
 static std::string testsDir() {
     static const std::string d = [] {
@@ -1639,6 +1640,47 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
     }
 
-    std::printf("resume : %d echec(s)\n", g_fail);
+    { /* B2.3 : outil Cercle (Maj+C, fan 24 tris, rayon exact) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        onKey(W, GLFW_KEY_C, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_cercleMode && !g_cercleActive,
+              "cercle : Maj+C arme l outil (C seul = centrer, Ctrl+C = copie, non touches)");
+        onKey(W, GLFW_KEY_C, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(!g_cercleMode, "cercle : rappel de Maj+C = desarme (toggle)");
+        g_cercleMode = true; cercleReset();
+        cerclePose(Vec3(0, 0, 0), 2.0);
+        CHECK(g_objs.size() == 1 && g_objs[0].v.size() == 25 && g_objs[0].tri.size() == 72,
+              "cercle : feuille fan = 25 sommets (centre + boucle de 24), 72 indices de tri");
+        CHECK(g_objs[0].edges.size() == 48,
+              "cercle : aretes derivees = 24 bords + 24 rayons du fan (v1, cf. diagonale B2.5)");
+        const double ny = g_objs[0].v[1].z * g_objs[0].v[2].x - g_objs[0].v[1].x * g_objs[0].v[2].z;
+        CHECK(ny > 0.0 && g_objs[0].bmax.x == 2.0 && g_objs[0].bmax.z == 2.0
+              && g_objs[0].bmin.x == -2.0 && g_objs[0].bmin.z == -2.0,
+              "cercle : normale +y, etendue = centre +/- rayon (bmin/bmax LOCAUX)");
+        CHECK(std::fabs(signedVolume(g_objs[0])) < 1e-12,
+              "cercle : volume plat nul (feuille, comme la ligne fermee B2.5)");
+        Extrude dd;
+        CHECK(makeExtrude(g_objs[0], 0, dd),
+              "cercle : Push/Pull disponible sur la feuille fan (garde = 1 tri)");
+        applyExtrude(g_objs[0], dd, 2.0);
+        double ymax = -1e300;
+        for (const Vec3& p : g_objs[0].v) if (p.y > ymax) ymax = p.y;
+        CHECK(ymax > 2.0 - 1e-9 && ymax < 2.0 + 1e-9 && g_objs[0].tri.size() > 72,
+              "cercle : tirage de la feuille = volume recree (couche a +2, jupe + fond)");
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_cercleMode = true; cercleReset();
+        cerclePoseByRayon("2,5");
+        CHECK(g_objs.size() == 1 && g_objs[0].bmax.x == 2.5 && g_objs[0].bmin.x == -2.5,
+              "cercle : rayon tape avec decimale FR (2,5) = rayon 2.5");
+        const size_t avant = g_objs.size();
+        g_cercleMode = true; cercleReset();
+        cerclePoseByRayon("abc");
+        CHECK(g_objs.size() == avant, "cercle : saisie invalide = rien pose");
+        g_cercleMode = false; cercleReset();
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    std::printf("resume : %d echec(s), %d verifications\n", g_fail, g_tot);
     return g_fail ? 1 : 0;
 }
