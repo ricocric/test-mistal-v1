@@ -1563,6 +1563,45 @@ int main() {
         lineReset();
     }
 
+    { /* B2.2 : outil Rectangle - feuille pleine posee au sol (Maj+R) */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        runToolCommand(IDM_TOOL_RECT);
+        CHECK(g_rectMode && !g_rectActive,
+              "rectangle : Maj+R arme le mode (aucun coin encore pose)");
+        runToolCommand(IDM_TOOL_RECT);               /* rappel = desarme */
+        CHECK(!g_rectMode, "rectangle : rappel de la commande = desarme");
+
+        rectPose(Vec3(0, 0, 0), Vec3(2, 0, 3));
+        CHECK(g_objs.size() == 1 && g_objs[0].name == "Rectangle"
+              && g_objs[0].tri.size() == 6 && g_objs[0].v.size() == 4 && g_objs[0].edges.size() == 5,
+              "rectangle : feuille pleine = 1 objet, 2 tris, 4 sommets, 5 aretes (4 bords + diagonale du fan)");
+        CHECK(std::fabs(signedVolume(g_objs[0])) < 1e-12 && g_objs[0].n[0].y > 0.99
+              && g_objs[0].bmin.x == 0.0 && g_objs[0].bmax.x == 2.0 && g_objs[0].bmax.z == 3.0,
+              "rectangle : normale +y, volume plat nul, etendue 2 x 3");
+
+        g_rectActive = true; g_rectCorner = Vec3(0, 0, 0); g_rectNumBuf.clear();
+        g_rectCursor = Vec3(1, 0, 1); g_rectCursorOk = true;
+        rectPoseByDims("2,3");
+        CHECK(g_objs.size() == 2 && g_objs[1].name == "Rectangle (2)"
+              && g_objs[1].bmax.x == 2.0 && g_objs[1].bmax.z == 3.0 && g_objs[1].v.size() == 4,
+              "rectangle : L,H + Entree = dimensions exactes (quadrant curseur SE = +x,+z), nom unique");
+
+        g_rectActive = true; g_rectCorner = Vec3(5, 0, 5);
+        g_rectCursor = Vec3(4, 0, 4); g_rectCursorOk = true;
+        rectPoseByDims("2;3");
+        CHECK(g_objs.size() == 3 && g_objs[2].pos.x == 3.0 && g_objs[2].pos.z == 2.0
+              && g_objs[2].bmax.x == 2.0 && g_objs[2].bmax.z == 3.0,
+              "rectangle : quadrant curseur NO = -x,-z (le rectangle s etend vers l arriere-plan)");
+
+        g_rectActive = true; g_rectCorner = Vec3(0, 0, 0);
+        const size_t avant = g_objs.size();
+        rectPoseByDims("abc");
+        CHECK(g_objs.size() == avant, "rectangle : saisie invalide = rien pose");
+        g_rectActive = false;
+        g_rectMode = false;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }
