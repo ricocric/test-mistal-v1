@@ -23,6 +23,32 @@ backlog est revu a chaque franchissement d'etape importante.
 - B2 dessin de profils : ligne / rectangle / cercle / arc / polygone sur une
   face ou le sol
 - B3 extrusion chemin / revolution / follow-me
+
+### B2 - conception (posee AVANT code, revue au premier lot)
+
+Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
+"validation = pose + sortie du mode", saisie chiffres dans le bandeau) :
+
+- clic 1 = depart, souris = aperçu portable en continu, clic 2 (ou chiffres
+  + Entree = dimension exacte) = pose ; clic droit ou Echap = annulation
+  SANS objet pose ;
+- v1 : pose sur le plan du sol (y = 0 monde) ; poser sur une face viendra
+  apres (depends du picking face-a-face de B5) ;
+- chaque profil pose un objet INDEPENDANT en tri-soup, coherent avec le
+  push/pull et l'extrusion existants (stock brut exploite par B3) ;
+- petits lots dans l'ordre : B2.1 ligne, B2.2 rectangle, B2.3 cercle,
+  B2.4 arc, B2.5 polygone ; boutons ajoutes a la barre flottante ;
+
+Questions ouvertes a trancher avec l'utilisateur :
+- ligne : objet "fil" (2 sommets, GL_LINES, pas de volume -> pas de
+  push/pull) OU feuille fine ? (retenu : fil de la v1, c'est le chemin que
+  B3 multipliera) ;
+- arc : 3 clics SketchUp (centre, debut, fin) retenus ;
+- cercle : 24 segments fixes en v1 (preferences/INI plus tard) ;
+- polygone : N clics, Entree ou double-clic ferme, triangulation en eventail,
+  refuse en dessous de 3 sommets ;
+- menu Outils : cree avec B2 (les 5 nouveaux outils justifient un menu
+  propre, raccourcis rappeles dans le menu - regle B1.7c) ;
 - B4 offset + chanfrein
 - B5 edition directe : sommets / aretes / faces, scinder, pont
 - B6 booleens (union / intersection / soustraction)
