@@ -1904,6 +1904,16 @@ int main() {
                 if (d < dmin) dmin = d;
             }
             CHECK(dmin > 0.1, "spline (controle) : la courbe glisse a l'interieur (coin non touche)");
+            /* B2.7d : valeur EXACTE de Bezier au milieu - le carre de controle
+               (4 clics, noeuds serres) donne un segment de Bezier cubique :
+               C(0.5) = (P0 + 3 P1 + 3 P2 + P3) / 8 = (3, 0, 2). Ce check
+               aurait attrape le bug du span (floor(u) faux sur noeuds serres). */
+            double dmil = 1e300;
+            for (const Vec3& loc : o.v) {
+                const double d = (Vec3(3, 0, 2) - (o.pos + loc)).norm();
+                if (d < dmil) dmil = d;
+            }
+            CHECK(dmil < 0.2, "spline (controle) : Bezier cubique exacte au milieu (span des noeuds serres)");
         }
         /* boucle fermee : dernier sommet = premier */
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;

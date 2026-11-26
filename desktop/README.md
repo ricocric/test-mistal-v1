@@ -830,6 +830,23 @@ a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
   extremites exactes, courbe interieure au carre de controle, boucle
   fermee), total **304, 0 echec**.
 
+### B2.7c/B2.7d : menu groupe + span corrige (retours de test)
+- B2.7c : menu Outils groupe par barres horizontales (les variantes
+  d'une meme fonction isolees) ;
+- B2.7d (retour : « tout ce que j'obtiens ce sont 2 segments de droite »)
+  : BUG du span - sur les noeuds SERRES (repetes aux extremites de la
+  courbe ouverte), le span se calcule par findSpan (NURBS Book A2.1),
+  PAS par floor(u) ; l'ancien code reduisait la courbe a du rectiligne ;
+  le ferme (noeuds uniformes) garde floor(u) ; check renforce = valeur
+  EXACTE de Bezier au milieu du carre de controle (aurait attrape le
+  bug) ; total **305, 0 echec** ;
+- MODE D'EMPLOI spline (controle) : chaque clic pose un COIN du
+  polygone de controle (trait sombre) ; la courbe jaune glisse a
+  l'interieur et ne touche que ses EXTREMITES ; pour serrer la courbe
+  vers une zone, ajoutez des points (les doubler au meme endroit la
+  plaque contre ce point) ; le polygone n'est PAS pose - seule la courbe
+  discretisee devient l'objet fil.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils

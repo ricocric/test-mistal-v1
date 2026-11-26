@@ -135,6 +135,16 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   A CHAUD pendant un trace, points conserves ; polygone de controle
   visible en apercu ; 14e bouton + 2e entree menu Outils ; +5
   verifications = 304, 0 echec ;
+  B2.7c : menu Outils groupe par barres horizontales (variantes isolees,
+  demande utilisateur) ;
+  B2.7d (retour de test : « 2 segments de droite » en points de
+  controle) : BUG du span - floor(u) est FAUX sur les noeuds serres
+  (repetes aux extremites), la courbe ouverte se reduisait a du
+  rectiligne ; correctif = findSpan (NURBS Book A2.1) pour l'ouvert,
+  floor(u) garde pour le ferme (noeuds uniformes) ; check renforce
+  (valeur EXACTE de Bezier au milieu du carre de controle, aurait
+  attrape le bug) ; mode d'emploi enrichi (message d'armement +
+  bandeau) ; +1 verification = 305, 0 echec ;
 - B2.2 RECTANGLE (conception avant code, mecanique commune B2) :
   - clic 1 = coin, souris = apercu du rectangle au sol, clic 2 = pose ;
     clic droit ou Echap = annulation SANS objet pose ; Entree vide = rien ;

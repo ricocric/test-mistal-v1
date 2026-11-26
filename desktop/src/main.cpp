@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.7c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.7d";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -3280,16 +3280,35 @@ static std::vector<double> splKnotsOpen(int m, int p) {
     for (int j = 1; j <= n - p; ++j) U[j + p] = (double)j;
     return U;
 }
+/* span du noeud (NURBS Book A2.1) : dernier k tel que U[k] <= u.
+   OBLIGATOIRE pour les noeuds serres (repetes aux extremites) : un simple
+   floor(u) y est FAUX et reduisait la courbe a des segments droits (bug
+   B2.7d, retour de test). Les noeuds uniformes (ferme) s'y pretent : k = floor(u). */
+static int splFindSpan(int n, int p, const std::vector<double>& U, double u) {
+    if (u >= U[n + 1]) return n;                /* fin exacte */
+    int lo = p, hi = n + 1;
+    int k = (lo + hi) / 2;
+    while (u < U[k] || u >= U[k + 1]) {
+        if (u < U[k]) hi = k; else lo = k;
+        k = (lo + hi) / 2;
+    }
+    return k;
+}
 /* evaluation de la courbe (controle) au parametre u ; fermee = indices modulo */
 static Vec3 splEvalCtrl(const std::vector<Vec3>& P, int p, const std::vector<double>& U,
                         double u, bool fermee) {
     const int m = (int)P.size();
-    const int k = (int)std::floor(u);
     Vec3 c;
-    for (int j = k - p; j <= k; ++j) {
-        if (!fermee && j < 0) continue;
-        const int i = fermee ? (((j % m) + m) % m) : j;
-        c += P[i] * splBasisV(j, p, U, u);
+    if (fermee) {
+        const int k = (int)std::floor(u);       /* noeuds uniformes distincts */
+        for (int j = k - p; j <= k; ++j) {
+            const int i = ((j % m) + m) % m;
+            c += P[i] * splBasisV(j, p, U, u);
+        }
+    } else {
+        const int k = splFindSpan(m - 1, p, U, u);   /* noeuds serres : k >= p */
+        for (int j = k - p; j <= k; ++j)
+            c += P[j] * splBasisV(j, p, U, u);
     }
     return c;
 }
@@ -3408,7 +3427,7 @@ static void drawSplinePreview() {
     glColor3d(0.92, 0.75, 0.1);
     glLineWidth(2.0);
     if (g_splCtrl && g_splPts.size() >= 2) {        /* B2.7b : polygone de controle visible */
-        glColor3d(0.45, 0.45, 0.2);
+        glColor3d(0.55, 0.55, 0.35);
         glBegin(GL_LINE_STRIP);
         for (const Vec3& pt : g_splPts) glVertex3d(pt.x, pt.y, pt.z);
         glEnd();
@@ -4097,7 +4116,7 @@ static void runToolCommand(int id) {
             splCancel("mode spline quitte");
         } else if (g_splMode) {
             g_splCtrl = true;                /* B2.7b : bascule variante, points conserves */
-            std::printf("mode Spline (points de controle) : les clics tracent le polygone de controle, la courbe glisse a l'interieur ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide ; Echap = tout annuler\n");
+            std::printf("mode Spline (points de controle) : chaque clic = un COIN du polygone de controle ; la courbe jaune glisse a l'interieur et ne touche que ses extremites ; ajoutez des points pour serrer la courbe ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide ; Echap = tout annuler\n");
         } else if (g_mode == M_None && !g_dupPending && !g_lineActive && !g_lineMode
                    && !g_rectActive && !g_cercleActive && !g_arcMode && !g_polyMode) {
             g_splMode = true;
@@ -4105,7 +4124,7 @@ static void runToolCommand(int id) {
             splReset();
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("mode Spline (points de controle) : les clics tracent le polygone de controle, la courbe glisse a l'interieur ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler\n");
+            std::printf("mode Spline (points de controle) : chaque clic = un COIN du polygone de controle ; la courbe jaune glisse a l'interieur et ne touche que ses extremites ; ajoutez des points pour serrer la courbe ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler\n");
         } else {
             std::printf("spline : terminez d'abord le mode en cours (Echap)\n");
         }
@@ -4253,7 +4272,7 @@ static std::string statusPrompt() {
         return "Polygone : clic = sommet suivant | clic sur le depart, clic droit ou Entree = fermer (surface) | Echap = tout annuler";
     if (g_splActive)
         return g_splCtrl
-            ? "Spline (controle) : clic = point du polygone | clic sur le depart = boucle fermee | clic droit ou Entree = valider | Echap = tout annuler"
+            ? "Spline (controle) : clic = coin du polygone | la courbe glisse a l'interieur | clic droit ou Entree = valider | Echap = tout annuler"
             : "Spline : clic = point suivant | clic sur le depart = boucle fermee | clic droit ou Entree = valider | Echap = tout annuler";
     if (g_arcMode && g_arcState == 1)
         return "Arc : clic = fin de la corde | chiffres + Entree = longueur de corde | Echap = tout annuler";
