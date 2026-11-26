@@ -34,8 +34,14 @@ if ($LASTEXITCODE -ne 0) { Write-Host "== BUILD ECHEC" -ForegroundColor Red; exi
 Write-Host "== moteur de tests"
 & $exeTests
 if ($LASTEXITCODE -ne 0) { Write-Host "== TESTS ECHEC" -ForegroundColor Red; exit 1 }
+Write-Host "== moteur de tests : OK (la ligne resume ci-dessus doit dire 0 echec)"
 
 if (-not $Tests) {
-    Write-Host "== lancement de sketch3d (fermer la fenetre pour revenir ici)"
+    Write-Host ""
+    Write-Host "==============================================================="
+    Write-Host "== LANCEMENT DE L'APPLICATION - CE N'EST PAS UN BLOCAGE       =="
+    Write-Host "== la console attendra la FERMETURE de la fenetre Sketch3D   =="
+    Write-Host "== (le titre de la fenetre doit montrer le build du jour)    =="
+    Write-Host "==============================================================="
     & $exeApp
 }
