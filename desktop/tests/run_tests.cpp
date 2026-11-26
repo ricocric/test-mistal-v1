@@ -1428,6 +1428,15 @@ int main() {
         g_setup = Setup{};
     }
 
+    /* 31 - B1.7 : export uni (un seul lieu de choix du format = Preferences) -
+       le format reel applique = extension du fichier choisi */
+    {
+        CHECK(exportPathIsStl("scene.stl") && exportPathIsStl("C:\\proj\\piece.STL"),
+              "export uni : .stl (min/maj) = export STL");
+        CHECK(!exportPathIsStl("piece.obj") && !exportPathIsStl("piece") && !exportPathIsStl("piece.vtt"),
+              "export uni : .obj, sans extension, autre extension = pas STL (donc OBJ)");
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }
