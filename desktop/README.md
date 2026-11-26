@@ -283,8 +283,9 @@ build\Debug\sketch3d.exe
   et `Barre verticale` (coche = verticale) ; **rappel facile** : la croix
   cache la barre ET decoche la ligne du menu (et grave la preference),
   le menu la fait revenir ;
-- **orientation** : horizontale (2 rangees de 4) ou verticale (1 colonne),
-  bascule a chaud, les coches suivent ;
+- **orientation (B1.5 : radios)** : `Barre horizontale` / `Barre verticale`
+  en PAIRE RADIO (coche = etat reel, plus de libelle ambigu) ; bascule a
+  chaud ; horizontale = 2 rangees de 4, verticale = 1 colonne ;
 - **B1.3 : la barre suit la fenetre principale** - sa position est un
   decalage par rapport au coin de la fenetre (plus par rapport a l'ecran) :
   bouger / maximiser / redimensionner la fenetre emporte la barre,
@@ -312,6 +313,17 @@ build\Debug\sketch3d.exe
   de la future commande d'export rapide (bouton/raccourci) ;
 - le menu s'etoilera au fil des B (unites, preferences d'outils...), le
   mecanisme B0 est pret a chaque fois.
+
+## Homogeneite des commandes B1.5 (regle systematique)
+
+- tous les identifiants de COMMANDE (outils, Affichage, Preferences) sont
+  derniers et contigus dans l'enum (`kIdCommandStart`) ;
+- tout producteur (menu Fichier, clic droit, boutons de la barre, clavier)
+  emet ses commandes via le dispatcher `runToolCommand` exclusivement ;
+- les FUTURS producteurs - mode persistance, mode macro - emettront leurs
+  commandes au meme endroit (persistance = liste de commandes rejouee,
+  macro = script traduit en commandes) : l'homogeneite est un prerequis,
+  pas un style.
 
 ## Fichier de setup B0 (sketch3d.ini)
 

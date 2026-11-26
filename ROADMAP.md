@@ -48,6 +48,10 @@ backlog est revu a chaque franchissement d'etape importante.
 ## Lignes ouvertes (a replacer dans un lot)
 
 - Ctrl+X (couper) et collage au point clique (lie au sujet pivot B8)
+- Mode persistance (rejeu des commandes effectuees) et mode macro (script ->
+  commandes), plus tard : ce sont des PRODUCTEURS DE COMMANDES qui passeront
+  par le dispatcher runToolCommand - prerequis d'homogeneite pose en B1.5
+  (identifiants de commande contigus, un seul chemin de code) ;
 - Menu Preferences a cote de Fichier : editer les choix au vol (formats
   d'export, preferences d'outils, unites...) - le mecanisme B0 ([outils] et
   [exports] sauvegardes a chaque changement) est deja pret pour l'accueillir ;

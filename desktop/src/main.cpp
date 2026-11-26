@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1.4";
+static const char* BUILD_VERSION = "B1.5";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1321,7 +1321,14 @@ enum {
     IDM_PREF_SCENE_STL,
     IDM_PREF_SEL_OBJ,
     IDM_PREF_SEL_STL,
+    IDM_VIEW_TOOLBAR_HOR,
 };
+
+/* Homogeneite ("UN SEUL CHEMIN DE CODE", regle systematique) : tous les
+   identifiants de COMMANDE (outils, Affichage, Preferences) sont derniers et
+   contigus dans l'enum ; tout producteur (menu, bouton, clavier, et plus tard
+   persistance ou macro) les emet via runToolCommand exclusivement. */
+static const int kIdCommandStart = IDM_TOOL_SELECT;
 
 static GLFWwindow* g_mainWin = nullptr;
 
@@ -1339,6 +1346,8 @@ static void prefSetExportFormat(bool scene, bool stl);
 #endif
 
 static void handleMenuAction(int id) {
+    /* commandes (outils/affichage/preferences) : deleguees au dispatcher */
+    if (id >= kIdCommandStart) { runToolCommand(id); return; }
     switch (id) {
     case IDM_NEW_PROJECT:
         g_objs.clear();
@@ -1404,27 +1413,6 @@ static void handleMenuAction(int id) {
     case IDM_DELETE_OBJECT:
         deleteSelectedSet();
         return;
-#ifdef _WIN32
-    case IDM_VIEW_TOOLBAR:
-        toolbarSetVisible(g_setup.toolVisible == 0);
-        return;
-    case IDM_VIEW_TOOLBAR_VERT:
-        toolbarSetVertical(g_setup.toolVertical == 0);
-        return;
-    /* B1.4 : Preferences, formats d'export au vol */
-    case IDM_PREF_SCENE_OBJ:
-        prefSetExportFormat(true, false);
-        return;
-    case IDM_PREF_SCENE_STL:
-        prefSetExportFormat(true, true);
-        return;
-    case IDM_PREF_SEL_OBJ:
-        prefSetExportFormat(false, false);
-        return;
-    case IDM_PREF_SEL_STL:
-        prefSetExportFormat(false, true);
-        return;
-#endif
     case IDM_QUIT:
         if (g_mainWin) glfwSetWindowShouldClose(g_mainWin, GLFW_TRUE);
         return;
@@ -1694,6 +1682,9 @@ static void attachMenus(GLFWwindow* win) {
     HMENU aff = CreatePopupMenu();
     AppendMenuA(aff, MF_STRING | (g_setup.toolVisible ? MF_CHECKED : MF_UNCHECKED),
                 IDM_VIEW_TOOLBAR, "&Barre d'outils");
+    AppendMenuA(aff, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(aff, MF_STRING | (g_setup.toolVertical ? MF_UNCHECKED : MF_CHECKED),
+                IDM_VIEW_TOOLBAR_HOR, "Barre &horizontale");
     AppendMenuA(aff, MF_STRING | (g_setup.toolVertical ? MF_CHECKED : MF_UNCHECKED),
                 IDM_VIEW_TOOLBAR_VERT, "Barre &verticale");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)aff, "&Affichage");
@@ -2780,6 +2771,30 @@ static void runToolCommand(int id) {
     case IDM_TOOL_PASTE:      /* = Ctrl+V */
         pasteClipboard();
         return;
+#ifdef _WIN32
+    /* B1.5 : commandes Affichage / Preferences, a present dans le dispatcher */
+    case IDM_VIEW_TOOLBAR:
+        toolbarSetVisible(g_setup.toolVisible == 0);
+        return;
+    case IDM_VIEW_TOOLBAR_HOR:
+        toolbarSetVertical(false);
+        return;
+    case IDM_VIEW_TOOLBAR_VERT:
+        toolbarSetVertical(true);
+        return;
+    case IDM_PREF_SCENE_OBJ:
+        prefSetExportFormat(true, false);
+        return;
+    case IDM_PREF_SCENE_STL:
+        prefSetExportFormat(true, true);
+        return;
+    case IDM_PREF_SEL_OBJ:
+        prefSetExportFormat(false, false);
+        return;
+    case IDM_PREF_SEL_STL:
+        prefSetExportFormat(false, true);
+        return;
+#endif
     default:
         return;
     }
