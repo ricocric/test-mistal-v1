@@ -1619,6 +1619,10 @@ int main() {
         /* clavier FR : le ';' (Maj + touche a cote de M) arrive en GLFW_KEY_COMMA + SHIFT */
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_rectActive = true; g_rectNumBuf.clear();
+        onKey(W, GLFW_KEY_SEMICOLON, 0, GLFW_PRESS, 0);
+        CHECK(g_rectNumBuf == ";",
+              "B2.2c : touche ';' directe (sans Maj) tape un point-virgule");
+        g_rectNumBuf.clear();
         onKey(W, GLFW_KEY_COMMA, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
         CHECK(g_rectNumBuf == ";",
               "B2.2c : Maj + touche virgule tape un POINT-VIRGULE (quirk clavier FR)");

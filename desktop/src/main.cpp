@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.2c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.2d";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -3098,16 +3098,25 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         const bool topRowR = key >= GLFW_KEY_0 && key <= GLFW_KEY_9;
         const bool padRowR = key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
         if (topRowR || padRowR || isSeparatorKey(key, scancode)) {
-            /* mapping explicite (bug retour de test, clavier FR) : ';' = Maj +
-               la touche a cote de M, et Windows la signale comme
-               GLFW_KEY_COMMA + Maj -> char(key) brut affichait une virgule */
+            /* caractere = ETIQUETTE REELLE de la touche (bug retour de test,
+               clavier FR : sur AZERTY le ';' est NON majuscule - rangee basse
+               , ; : ! - donc pas de Maj dans l'evenement). glfwGetKeyName
+               renvoie ';', ',' ou '.' selon la disposition : ce qui est tape
+               s'affiche. Repli par code de touche si le nom manque. */
             char c;
             if (padRowR) c = char('0' + (key - GLFW_KEY_KP_0));
             else if (topRowR) c = char(key);
-            else if (key == GLFW_KEY_PERIOD || key == GLFW_KEY_KP_DECIMAL) c = '.';
-            else if (key == GLFW_KEY_SEMICOLON
-                     || (key == GLFW_KEY_COMMA && (mods & GLFW_MOD_SHIFT))) c = ';';
-            else c = ',';                    /* ',' non majusculee = decimale FR */
+            else {
+                const char* nm = glfwGetKeyName(key, scancode);
+                if (nm && nm[0] && nm[1] == '\0'
+                    && (nm[0] == ';' || nm[0] == ',' || nm[0] == '.'))
+                    c = nm[0];               /* etiquette de la disposition (FR : ';' sur la touche) */
+                else if (key == GLFW_KEY_SEMICOLON) c = ';';
+                else if (key == GLFW_KEY_KP_DECIMAL) c = '.';
+                else if (key == GLFW_KEY_PERIOD) c = '.';
+                else if (key == GLFW_KEY_COMMA) c = (mods & GLFW_MOD_SHIFT) ? ';' : ',';
+                else c = '.';
+            }
             if (g_rectNumBuf.size() < 16) g_rectNumBuf += c;
         } else if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
             if (g_rectNumBuf.size() < 16) g_rectNumBuf.insert(g_rectNumBuf.begin(), '-');

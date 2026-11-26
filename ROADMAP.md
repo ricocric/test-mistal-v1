@@ -50,9 +50,10 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   point-virgule, la virgule proscrite - confusion decimale)
   orientees par le quadrant du curseur ; clic droit/Echap = annule ;
 - B2.2c fait (retour de test) : garde makeExtrude relachee a 1 tri complet
-  (une feuille de 2 tris est une face push/pull valide) ; clavier FR : ';'
-  (Maj + COMMA) mapping explicite, ',' non majusculee = decimale convertie
-  en '.' par le parseur ; convention « ; » = separateur, « , »/« . » = decimales ;
+  (une feuille de 2 tris est une face push/pull valide) ; clavier FR :
+  ';' NON majuscule sur AZERTY -> la saisie utilise l'etiquette reelle de
+  la touche (glfwGetKeyName), ce qui est tape s'affiche ; convention
+  « ; » = separateur, « , »/« . » = decimales ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil

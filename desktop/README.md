@@ -661,14 +661,16 @@ aligne aux axes (largeur en X, profondeur en Z), pose au sol y = 0.
     makeExtrude (tri.size() < 9) refusait toute feuille de 2 tris ; relachee
     a 1 tri complet - une feuille est une face valide, tout le reste (flip
     camera, butees, recreation du volume) gerait deja les feuilles ;
-  - clavier FR : le point-virgule (Maj + touche a cote de M) arrive en
-    GLFW_KEY_COMMA + Maj ; l'affichage brut char(key) montrait une virgule.
-    Mapping explicite des ponctuations dans la saisie : PERIOD/KP_DECIMAL =
-    '.', SEMICOLON ou COMMA+Maj = ';', COMMA seule = ',' decimale FR ;
-    le parseur convertit ';' en separateur et ',' en '.' decimale ;
+  - clavier FR : sur AZERTY le ';' est NON majuscule (rangee basse
+    , ; : !), donc Maj n'intervient pas ; la saisie utilise l'ETIQUETTE
+    REELLE de la touche (glfwGetKeyName) : ce qui est tape s'affiche (';',
+    ',' decimale, '.'), quelle que soit la disposition ; repli par code de
+    touche si le nom manque (SEMICOLON = ';', PERIOD/KP_DECIMAL = '.',
+    COMMA = ',' decimale) ; le parseur convertit ';' en separateur et ','
+    en '.' decimale ;
   - convention generale : « ; » = separateur de champs, « , » et « . » =
     decimales ;
-- moteur de tests : +5 verifications, total **252, 0 echec**.
+- moteur de tests : +7 verifications, total **254, 0 echec** (compte reel mesure : le total 247 anterieur etait sous-compte d une unite).
 
 ## Organiseur des prochains lots
 
