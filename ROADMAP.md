@@ -53,6 +53,18 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   correction au passage d'un bug de relocalisation (v locales, pos + v =
   monde) ; la derive du fan compte la diagonale (5 aretes pour un carre) -
   se rattrapera avec le vrai solide de B6 ;
+- B2.2 RECTANGLE (conception avant code, mecanique commune B2) :
+  - clic 1 = coin, souris = apercu du rectangle au sol, clic 2 = pose ;
+    clic droit ou Echap = annulation SANS objet pose ; Entree vide = rien ;
+  - v1 aligne aux axes (largeur en X, profondeur en Z), pose au sol y = 0 ;
+    l'angle libre attendra l'inference de pose de B5 ;
+  - objet pose = feuille pleine de 2 tris + aretes de bord, UN objet
+    (coherent avec la ligne fermee B2.5), etirable au push/pull ;
+  - saisie exacte : chiffres + Entree = "L,H" (largeur, profondeur) ;
+    le quadrant du curseur par rapport au premier coin oriente le rectangle
+    (fidele SketchUp : la diagonale dirige) ;
+  - nommage "Rectangle", "Rectangle (2)"... ; bouton + entree menu Outils ;
+  - touche : R est pris (Tourner) -> Maj+R propose ;
 
 Questions ouvertes a trancher avec l'utilisateur :
 - ligne : objet "fil" (2 sommets, GL_LINES, pas de volume -> pas de
