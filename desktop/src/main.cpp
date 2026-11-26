@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.7b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.7c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1817,14 +1817,18 @@ static void attachMenus(GLFWwindow* win) {
        des lots ; delegation automatique : id >= kIdCommandStart */
     HMENU outils = CreatePopupMenu();
     AppendMenuA(outils, MF_STRING, IDM_TOOL_SELECT, "&Selection\tEchap");
+    AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);   /* B2.7c : groupes de variantes separes */
     AppendMenuA(outils, MF_STRING, IDM_TOOL_PP, "&Extraire une face\tP");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_ROT, "&Tourner\tR");
+    AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(outils, MF_STRING, IDM_TOOL_LINE, "&Ligne (fermee en surface)\tL");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_LIGNE_FIL, "Ligne (&fil ouvert)\tMaj+L");
+    AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(outils, MF_STRING, IDM_TOOL_RECT, "&Rectangle\tMaj+R");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_CERCLE, "&Cercle\tMaj+C");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_ARC, "&Arc\tMaj+A");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_POLY, "&Polygone\tMaj+P");
+    AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(outils, MF_STRING, IDM_TOOL_SPL, "&Spline (passage)\tMaj+S");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_SPLC, "Spline (points de &controle)\tMaj+B");
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
