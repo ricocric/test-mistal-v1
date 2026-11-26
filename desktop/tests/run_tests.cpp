@@ -1383,6 +1383,51 @@ int main() {
         g_rotMulti.clear(); g_rotPivotKind = 0;
     }
 
+    /* 30 - B1.1 : preferences barre d'outils (section [outils] du INI) -
+       round-trip visible/vertical/position, valeurs tolerees, ini editable */
+    {
+        const std::string path = "/tmp/sketch3d_test_setup2.ini";
+        g_setupPath = path;
+        g_setup = Setup{};
+        std::remove(path.c_str());
+        loadSetup();
+        CHECK(g_setup.toolVisible == 1 && g_setup.toolVertical == 0
+              && g_setup.toolX == 140 && g_setup.toolY == 140,
+              "setup outils : fichier absent = barre visible, horizontale, position defaut");
+
+        {
+            std::ofstream f(path.c_str());
+            f << "[outils]\nvisible = 0\nvertical = 1\nx = 1900\ny = 800\nclef_inconnue = 3\n"
+              << "\n[fenetre]\nw = 1200\n";
+        }
+        loadSetup();
+        CHECK(g_setup.toolVisible == 0 && g_setup.toolVertical == 1
+              && g_setup.toolX == 1900 && g_setup.toolY == 800,
+              "setup outils : ini edite a la main = toute la section [outils] relue");
+
+        /* round-trip : un relancement doit retrouver chaque preference */
+        saveSetup();
+        g_setup = Setup{};
+        loadSetup();
+        CHECK(g_setup.toolVisible == 0 && g_setup.toolVertical == 1
+              && g_setup.toolX == 1900 && g_setup.toolY == 800,
+              "setup outils : round-trip complet (fermeture -> lancement suivant)");
+
+        /* valeurs non numeriques : parse tolerant, rien ne plante */
+        {
+            std::ofstream f(path.c_str());
+            f << "[outils]\nvisible = oui\nvertical = 0\nx = pas_un_nombre\ny = -50\n";
+        }
+        loadSetup();
+        CHECK(g_setup.toolVisible == 0 && g_setup.toolVertical == 0
+              && g_setup.toolX == 0 && g_setup.toolY == -50,
+              "setup outils : valeurs non numeriques tolerees (atoi = 0, y negatif garde)");
+
+        std::remove(path.c_str());
+        g_setupPath = "sketch3d.ini";
+        g_setup = Setup{};
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }

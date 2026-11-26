@@ -277,6 +277,23 @@ build\Debug\sketch3d.exe
   raccourcis, exclusivite P/R, annulation via bouton, copier/coller boutons,
   cadrer/origine boutons).
 
+## Barre d'outils B1.1 : menu Affichage, verticale, aimantation
+
+- **menu Affichage** (a cote de Fichier) : `Barre d'outils` (coche = visible)
+  et `Barre verticale` (coche = verticale) ; **rappel facile** : la croix
+  cache la barre, le menu la fait revenir ;
+- **orientation** : horizontale (2 rangees de 4) ou verticale (1 colonne),
+  bascule a chaud, les coches suivent ;
+- **aimantation** : en fin de deplacement de la barre, elle se colle au bord
+  du bureau si elle passe a 24 px ou moins (gauche, droite, haut, bas) ;
+- **persistance** : visibilite, orientation et position gravees dans la
+  section `[outils]` du `sketch3d.ini` (visible, vertical, x, y) a chaque
+  changement - la barre revient exactement OU elle etait au lancement ;
+  valeurs non numeriques tolerees (parse = atoi, fichier toujours lisible) ;
+- batterie : **215 verifications, 0 echec** (+4 : section [outils] absente =
+  defauts, ini edite a la main relu, round-trip fermeture -> lancement,
+  valeurs non numeriques tolerees).
+
 ## Fichier de setup B0 (sketch3d.ini)
 
 - **INI editable a la main** pose a cote de l'exe (`sketch3d.ini`, sans

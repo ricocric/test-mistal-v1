@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1";
+static const char* BUILD_VERSION = "B1.1";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -955,6 +955,9 @@ struct Setup {
     std::string dernierProjet;
     std::string formatScene = "obj";
     std::string formatSelection = "obj";
+    int toolVisible = 1;         /* B1.1 : barre d'outils flottante */
+    int toolVertical = 0;
+    int toolX = 140, toolY = 140;
 };
 static Setup g_setup;
 static std::string g_setupPath = "sketch3d.ini";
@@ -991,7 +994,12 @@ static void saveSetup() {
       << "dernier = " << g_setup.dernierProjet << "\n"
       << "\n[exports]\n"
       << "format_scene = " << g_setup.formatScene << "\n"
-      << "format_selection = " << g_setup.formatSelection << "\n";
+      << "format_selection = " << g_setup.formatSelection << "\n"
+      << "\n[outils]\n"
+      << "visible = " << g_setup.toolVisible << "\n"
+      << "vertical = " << g_setup.toolVertical << "\n"
+      << "x = " << g_setup.toolX << "\n"
+      << "y = " << g_setup.toolY << "\n";
 }
 
 static void loadSetup() {
@@ -1018,6 +1026,11 @@ static void loadSetup() {
         } else if (section == "exports") {
             if (k == "format_scene" && (v == "obj" || v == "stl")) g_setup.formatScene = v;
             else if (k == "format_selection" && (v == "obj" || v == "stl")) g_setup.formatSelection = v;
+        } else if (section == "outils") {
+            if (k == "visible") g_setup.toolVisible = (std::atoi(v.c_str()) != 0) ? 1 : 0;
+            else if (k == "vertical") g_setup.toolVertical = (std::atoi(v.c_str()) != 0) ? 1 : 0;
+            else if (k == "x") g_setup.toolX = std::atoi(v.c_str());
+            else if (k == "y") g_setup.toolY = std::atoi(v.c_str());
         }
     }
 }
@@ -1302,6 +1315,8 @@ enum {
     IDM_TOOL_HOME,
     IDM_TOOL_COPY,
     IDM_TOOL_PASTE,
+    IDM_VIEW_TOOLBAR,
+    IDM_VIEW_TOOLBAR_VERT,
 };
 
 static GLFWwindow* g_mainWin = nullptr;
@@ -1309,6 +1324,11 @@ static GLFWwindow* g_mainWin = nullptr;
 /* B1 : dispatcher des boutons de la barre d'outils flottante - un seul
    chemin de code : bouton = EXACTEMENT le raccourci (modes exclusifs). */
 static void runToolCommand(int id);
+#ifdef _WIN32
+/* B1.1 : toggles du menu Affichage (definis avec la barre d'outils) */
+static void toolbarSetVisible(bool vis);
+static void toolbarSetVertical(bool vert);
+#endif
 
 static void handleMenuAction(int id) {
     switch (id) {
@@ -1376,6 +1396,14 @@ static void handleMenuAction(int id) {
     case IDM_DELETE_OBJECT:
         deleteSelectedSet();
         return;
+#ifdef _WIN32
+    case IDM_VIEW_TOOLBAR:
+        toolbarSetVisible(g_setup.toolVisible == 0);
+        return;
+    case IDM_VIEW_TOOLBAR_VERT:
+        toolbarSetVertical(g_setup.toolVertical == 0);
+        return;
+#endif
     case IDM_QUIT:
         if (g_mainWin) glfwSetWindowShouldClose(g_mainWin, GLFW_TRUE);
         return;
@@ -1470,16 +1498,51 @@ static void drawText2D(float x, float y, const char* s) {
 }
 
 #ifdef _WIN32
-/* B1 : barre d'outils flottante v1 - fenetre outil (WS_EX_TOOLWINDOW,
+/* B1.1 : barre d'outils flottante - fenetre outil (WS_EX_TOOLWINDOW,
    deplacable par la barre de titre = 2 ecrans inclus), boutons = modes
    exclusifs identiques aux raccourcis, via runToolCommand. La croix cache
-   la barre (rien n'est detruit, elle revient au lancement suivant). */
+   la barre : menu Affichage > Barre d'outils la rappelle. Orientation
+   verticale ou horizontale, aimantation sur les 4 bords du bureau (24 px),
+   tout est persiste dans la section [outils] du sketch3d.ini. */
+static HWND g_toolWin = nullptr;
+static HWND g_toolBtn[8];
+static HMENU g_viewMenu = nullptr;   /* menu Affichage : coches tenus a jour */
+
+static void toolLayout(HWND tw) {
+    const int n = 7;
+    const int bw = 86, bh = 26, pad = 6;
+    const int cols = g_setup.toolVertical ? 1 : 4;
+    const int rows = (n + cols - 1) / cols;
+    for (int i = 0; i < n; ++i)
+        SetWindowPos(g_toolBtn[i], nullptr, pad + (i % cols) * (bw + pad),
+                     pad + (i / cols) * (bh + pad), bw, bh, SWP_NOZORDER);
+    const int mx = pad + cols * (bw + pad);
+    const int my = pad + rows * (bh + pad);
+    SetWindowPos(tw, nullptr, 0, 0, mx, my, SWP_NOMOVE | SWP_NOZORDER);
+}
+
 static LRESULT CALLBACK toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_COMMAND && HIWORD(wp) == BN_CLICKED) {
         runToolCommand((int)LOWORD(wp));
         return 0;
     }
     if (msg == WM_CLOSE) { ShowWindow(h, SW_HIDE); return 0; }
+    if (msg == WM_EXITSIZEMOVE) {
+        /* fin de deplacement : aimantation sur un bord du bureau si proche */
+        RECT r, wa;
+        GetWindowRect(h, &r);
+        SystemParametersInfoA(SPI_GETWORKAREA, 0, &wa, 0);
+        const int kMagnet = 24;
+        int x = r.left, y = r.top, changed = 0;
+        if (r.left <= wa.left + kMagnet) { x = wa.left; changed = 1; }
+        else if (wa.right - r.right <= kMagnet) { x = wa.right - (r.right - r.left); changed = 1; }
+        if (r.top <= wa.top + kMagnet) { y = wa.top; changed = 1; }
+        else if (wa.bottom - r.bottom <= kMagnet) { y = wa.bottom - (r.bottom - r.top); changed = 1; }
+        if (changed) SetWindowPos(h, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+        g_setup.toolX = x; g_setup.toolY = y;
+        saveSetup();
+        return 0;
+    }
     return DefWindowProcA(h, msg, wp, lp);
 }
 
@@ -1498,25 +1561,38 @@ static void attachToolbar(HWND mainHwnd) {
         clsDone = true;
     }
     const HWND tw = CreateWindowExA(WS_EX_TOOLWINDOW, cls, "Outils",
-        WS_POPUP | WS_CAPTION | WS_SYSMENU, 140, 140, 0, 0,
+        WS_POPUP | WS_CAPTION | WS_SYSMENU, g_setup.toolX, g_setup.toolY, 0, 0,
         mainHwnd, nullptr, GetModuleHandleA(nullptr), nullptr);
-    const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller" };
-    const int ids[] = { IDM_TOOL_SELECT, IDM_TOOL_PP, IDM_TOOL_ROT, IDM_TOOL_FRAME,
-                        IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE };
-    const int bw = 86, bh = 26, pad = 6;
-    const int cols = 4;
-    const int rows = (int)(sizeof(ids) / sizeof(ids[0]) + cols - 1) / cols;
+    static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller" };
+    static const int ids[] = { IDM_TOOL_SELECT, IDM_TOOL_PP, IDM_TOOL_ROT, IDM_TOOL_FRAME,
+                               IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE };
     for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); ++i) {
-        const HWND btn = CreateWindowExA(0, "BUTTON", labels[i],
+        g_toolBtn[i] = CreateWindowExA(0, "BUTTON", labels[i],
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            pad + (i % cols) * (bw + pad), pad + (i / cols) * (bh + pad),
-            bw, bh, tw, (HMENU)(INT_PTR)ids[i], GetModuleHandleA(nullptr), nullptr);
-        SendMessageA(btn, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
+            0, 0, 10, 10, tw, (HMENU)(INT_PTR)ids[i], GetModuleHandleA(nullptr), nullptr);
+        SendMessageA(g_toolBtn[i], WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
     }
-    const int mx = pad + cols * (bw + pad);
-    const int my = pad + rows * (bh + pad);
-    SetWindowPos(tw, HWND_TOPMOST, 0, 0, mx, my, SWP_NOMOVE | SWP_NOZORDER);
-    ShowWindow(tw, SW_SHOW);
+    toolLayout(tw);              /* position boutons + taille selon orientation */
+    g_toolWin = tw;
+    if (g_setup.toolVisible) ShowWindow(tw, SW_SHOW);
+}
+
+/* toggles du menu Affichage : etat + coche + sauvegarde immediate */
+static void toolbarSetVisible(bool vis) {
+    g_setup.toolVisible = vis ? 1 : 0;
+    saveSetup();
+    if (g_toolWin) ShowWindow(g_toolWin, vis ? SW_SHOW : SW_HIDE);
+    if (g_viewMenu) CheckMenuItem(g_viewMenu, IDM_VIEW_TOOLBAR,
+                                  vis ? MF_CHECKED : MF_UNCHECKED);
+    std::printf("barre d'outils : %s\n", vis ? "visible" : "cachee (Affichage pour la rappeler)");
+}
+static void toolbarSetVertical(bool vert) {
+    g_setup.toolVertical = vert ? 1 : 0;
+    saveSetup();
+    if (g_toolWin) toolLayout(g_toolWin);
+    if (g_viewMenu) CheckMenuItem(g_viewMenu, IDM_VIEW_TOOLBAR_VERT,
+                                  vert ? MF_CHECKED : MF_UNCHECKED);
+    std::printf("barre d'outils : %s\n", vert ? "verticale" : "horizontale");
 }
 #endif
 
@@ -1547,6 +1623,15 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(file, MF_STRING, IDM_QUIT, "&Quitter");
     HMENU bar = CreateMenu();
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)file, "&Fichier");
+    /* menu Affichage : rappel + orientation de la barre d'outils (B1.1) ;
+       le menu Preferences reprendra ce role pour tous les choix au vol */
+    HMENU aff = CreatePopupMenu();
+    AppendMenuA(aff, MF_STRING | (g_setup.toolVisible ? MF_CHECKED : MF_UNCHECKED),
+                IDM_VIEW_TOOLBAR, "&Barre d'outils");
+    AppendMenuA(aff, MF_STRING | (g_setup.toolVertical ? MF_CHECKED : MF_UNCHECKED),
+                IDM_VIEW_TOOLBAR_VERT, "Barre &verticale");
+    AppendMenuA(bar, MF_POPUP, (UINT_PTR)aff, "&Affichage");
+    g_viewMenu = aff;
     SetMenu(hwnd, bar);
     g_baseWndProc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)menuWndProc);
     attachToolbar(hwnd);
@@ -2881,7 +2966,7 @@ static void updateWindowTitle(GLFWwindow* w) {
 
 int main() {
     std::printf("Sketch3D natif — build %s (outillages T1 : duplication multi-instances, rotation autour des axes + menus du lot N5)\n", BUILD_VERSION);
-    std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer, exporter OBJ/STL, quitter ; menu contextuel (clic droit) : infos objet, duplication\n");
+    std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer, exporter OBJ/STL, quitter ; menu Affichage : barre d'outils (rappel, verticale) ; menu contextuel (clic droit) : infos objet, duplication\n");
     std::printf("P : mode Push/Pull ; R : mode Rotation (X/Y/Z = axe, souris ou chiffres+Entree) ; I : import ; F : cadrage ; H : origine ; molette-clic ou Shift+glisser : deplacer la vue ; C : centrer sur le point vise\n");
     g_setupPath = setupFilePath();
     loadSetup();                     /* B0 : preferences de la derniere session */
