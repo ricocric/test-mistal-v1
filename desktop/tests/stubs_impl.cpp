@@ -10,6 +10,13 @@ int glfwWindowShouldClose(GLFWwindow*){return 1;}
 void glfwSetWindowShouldClose(GLFWwindow*,int){}
 void glfwSwapBuffers(GLFWwindow*){}
 void glfwSetWindowTitle(GLFWwindow*, const char*){UNUSED(0);}
+/* B0 : position/taille de fenetre scriptables (remontees a la fermeture) */
+int g_stubWinX = 100, g_stubWinY = 60, g_stubWinW2 = 1280, g_stubWinH2 = 800, g_stubWinMax = 0;
+void glfwSetWindowPos(GLFWwindow*, int x, int y){g_stubWinX=x; g_stubWinY=y;}
+void glfwGetWindowPos(GLFWwindow*, int* x, int* y){*x=g_stubWinX; *y=g_stubWinY;}
+void glfwGetWindowSize(GLFWwindow*, int* w, int* h){*w=g_stubWinW2; *h=g_stubWinH2;}
+void glfwMaximizeWindow(GLFWwindow*){g_stubWinMax=1;}
+int glfwGetWindowAttrib(GLFWwindow*, int){return g_stubWinMax;}
 void glfwPollEvents(){}
 void glfwSwapInterval(int){}
 /* curseur scriptable : position vue par l'application (le harnais et le

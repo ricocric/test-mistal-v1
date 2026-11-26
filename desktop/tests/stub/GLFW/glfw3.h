@@ -9,6 +9,7 @@ typedef void (*GLFWmousebuttonfun)(GLFWwindow*, int, int, int);
 typedef void (*GLFWkeyfun)(GLFWwindow*, int, int, int, int);
 typedef void (*GLFWframebuffersizefun)(GLFWwindow*, int, int);
 #define GLFW_TRUE  1
+#define GLFW_MAXIMIZED 0x00020004
 #define GLFW_FALSE 0
 #define GLFW_PRESS    1
 #define GLFW_RELEASE  0
@@ -61,6 +62,12 @@ int glfwWindowShouldClose(GLFWwindow*);
 void glfwSetWindowShouldClose(GLFWwindow*, int);
 void glfwSwapBuffers(GLFWwindow*);
 void glfwSetWindowTitle(GLFWwindow*, const char*);
+/* B0 : fonctions fenetre */
+void glfwSetWindowPos(GLFWwindow*, int, int);
+void glfwGetWindowPos(GLFWwindow*, int*, int*);
+void glfwGetWindowSize(GLFWwindow*, int*, int*);
+void glfwMaximizeWindow(GLFWwindow*);
+int glfwGetWindowAttrib(GLFWwindow*, int);
 void glfwPollEvents(void);
 void glfwSwapInterval(int);
 void glfwGetCursorPos(GLFWwindow*, double*, double*);
