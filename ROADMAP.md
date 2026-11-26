@@ -37,12 +37,21 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
 - chaque profil pose un objet INDEPENDANT en tri-soup, coherent avec le
   push/pull et l'extrusion existants (stock brut exploite par B3) ;
 - petits lots dans l'ordre : B2.1 ligne, B2.2 rectangle, B2.3 cercle,
-  B2.4 arc, B2.5 polygone ; boutons ajoutes a la barre flottante ;
+  B2.4 arc, polygone (numero a revoir a la revue du backlog) ; boutons
+  ajoutes a la barre flottante ;
 - B2.1 LIGNE fait : fil multi-segments en UN objet (clics = sommets lies,
   clic droit = fin - exception validee a la regle "clic droit = neutre",
   Entree vide = fin, chiffres+Entree = longueur exacte puis pose, Echap =
   tout annule) ; chaine d'aretes derivee pour objets sans triangle
   (computeObjectDerived) ; menu Outils cree (regle B1.7c) ;
+- B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
+  clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
+  fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil
+  ouvert en boucle (arete n-1 -> 0 ajoutee apres la derive) ; paire radio
+  du menu Outils (Fermer en surface / Fil ouvert), preference de SESSION
+  NON persistee (defaut surface a chaque lancement) ; la derive du fan
+  compte la diagonale (5 aretes pour un carre) - se rattrapera avec le
+  vrai solide de B6 ;
 
 Questions ouvertes a trancher avec l'utilisateur :
 - ligne : objet "fil" (2 sommets, GL_LINES, pas de volume -> pas de

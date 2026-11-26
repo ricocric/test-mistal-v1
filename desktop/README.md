@@ -616,6 +616,28 @@ que le reste). Pose sur le plan du sol en v1.
 - moteur de tests : bloc 32 = 12 nouvelles verifications, total **229,
   0 echec** ; stubs completes (GLFW_KEY_L, GL_LINE_STRIP).
 
+## B2.5 : fermeture de la ligne (fait avant B2.2-B2.4, sur demande)
+
+Un clic sur le point de DEPART alors que le fil compte au moins 3 sommets
+(tolerance `filPickTol`, la meme que la capture du fil) ferme la boucle. Le
+comportement est choisi par une **paire radio du menu Outils** :
+
+- **"Fermer en surface" (defaut)** : la boucle cree une feuille FUSEE au fil
+  en UN objet (fidele SketchUp) - fan triangulaire (0, i, i+1) + aretes de
+  bord ; la feuille est etirable au push/pull ;
+- **"Fil ouvert (sans surface)"** : la boucle reste un fil - arete de
+  fermeture n-1 -> 0 ajoutee apres la derive de la chaine, aucun triangle.
+
+- preference de **SESSION, NON persistee** : aucune cle dans le
+  sketch3d.ini (pas de section [ligne]) ; a chaque lancement, le defaut est
+  "Fermer en surface" (le cas surface represente la majorite des usages) ;
+- note v1 : `computeObjectDerived` derive les aretes de TOUS les triangles
+  du fan -> un carre ferme montre 5 aretes (4 bords + 1 diagonale). La
+  difference bord/diagonale sera naturelle avec le VRAI SOLIDE de B6 ;
+- moteur de tests : +5 verifications (feuille = 2 tris / 5 aretes / volume
+  plat nul / 4 sommets sans doublon ; fil ouvert = 4 aretes, 0 tri ; sortie
+  du mode ; noms uniques), total **238, 0 echec**.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils
