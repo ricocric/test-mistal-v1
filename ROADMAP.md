@@ -144,7 +144,16 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   floor(u) garde pour le ferme (noeuds uniformes) ; check renforce
   (valeur EXACTE de Bezier au milieu du carre de controle, aurait
   attrape le bug) ; mode d'emploi enrichi (message d'armement +
-  bandeau) ; +1 verification = 305, 0 echec ;
+  bandeau) ; +1 verification = 305, 0 echec ; VALIDATION UTILISATEUR :
+  « la seconde version est plus proche de ce que j'avais en tete » (les
+  deux variantes restent, regle des variantes) ;
+- BACKLOG B2.7e (demande utilisateur) : EDITION DE SPLINE APRES COUP -
+  l'objet pose ne conserve aujourd'hui que la courbe discretisee (points
+  de controle perdus) ; prevoir de stocker dans l'objet : points de
+  controle + variante (passage/controle) + ouvert/ferme, pour
+  re-editer la courbe (deplacer/ajouter/supprimer des points) apres la
+  pose ; conception AVANT code (lien avec le vrai solide B6 et avec
+  l'edition libre de maillage) ;
 - B2.2 RECTANGLE (conception avant code, mecanique commune B2) :
   - clic 1 = coin, souris = apercu du rectangle au sol, clic 2 = pose ;
     clic droit ou Echap = annulation SANS objet pose ; Entree vide = rien ;
