@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1.7b";   /* B1.7b : correctif prototype prefSyncCoches (erreur MSVC C3861) */
+static const char* BUILD_VERSION = "B1.7c";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1461,7 +1461,7 @@ static void showContextMenu(GLFWwindow* w) {
     HMENU m = CreatePopupMenu();
     AppendMenuA(m, MF_STRING, IDM_INFO_OBJECT, "&Infos objet");
     AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuA(m, MF_STRING, IDM_DELETE_OBJECT, "Suppri&mer");
+    AppendMenuA(m, MF_STRING, IDM_DELETE_OBJECT, "Suppri&mer\tSuppr");
     AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(m, MF_STRING, IDM_DUPLICATE, "&Dupliquer...");
     POINT pt;
@@ -1652,8 +1652,14 @@ static void toolbarSetVertical(bool vert) {
     g_setup.toolVertical = vert ? 1 : 0;
     saveSetup();
     if (g_toolWin) toolLayout(g_toolWin);
-    if (g_viewMenu) CheckMenuItem(g_viewMenu, IDM_VIEW_TOOLBAR_VERT,
-                                  vert ? MF_CHECKED : MF_UNCHECKED);
+    /* B1.7c (retour test) : la coche horizontale aussi (sinon elle ne
+       revient jamais une fois decochee) */
+    if (g_viewMenu) {
+        CheckMenuItem(g_viewMenu, IDM_VIEW_TOOLBAR_HOR,
+                      vert ? MF_UNCHECKED : MF_CHECKED);
+        CheckMenuItem(g_viewMenu, IDM_VIEW_TOOLBAR_VERT,
+                      vert ? MF_CHECKED : MF_UNCHECKED);
+    }
     std::printf("barre d'outils : %s\n", vert ? "verticale" : "horizontale");
 }
 
@@ -1692,12 +1698,12 @@ static void attachMenus(GLFWwindow* win) {
     HMENU file = CreatePopupMenu();
     AppendMenuA(file, MF_STRING, IDM_NEW_PROJECT, "&Nouveau projet");
     AppendMenuA(file, MF_STRING, IDM_OPEN_PROJECT, "&Ouvrir un projet...");
-    AppendMenuA(file, MF_STRING, IDM_SAVE_PROJECT, "&Enregistrer le projet...");
+    AppendMenuA(file, MF_STRING, IDM_SAVE_PROJECT, "&Enregistrer le projet...\tCtrl+S");
     AppendMenuA(file, MF_STRING, IDM_CLOSE_PROJECT, "&Fermer le projet");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
     /* B1.7 : export SANS choix de format dans Fichier (un seul lieu = menu
        Preferences) : le format prefere pre-filtre le dialogue */
-    AppendMenuA(file, MF_STRING, IDM_IMPORT_OBJECT, "&Importer un objet...");
+    AppendMenuA(file, MF_STRING, IDM_IMPORT_OBJECT, "&Importer un objet...\tI");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(file, MF_STRING, IDM_EXPORT_SCENE, "Exporter la &scene...");
     AppendMenuA(file, MF_STRING, IDM_EXPORT_SEL, "Exporter la selec&tion...");
@@ -2944,7 +2950,11 @@ static std::string statusPrompt() {
     } else if (g_rotMode) {
         return "Rotation : selectionnez un objet, puis la lettre de l'axe (X, Y ou Z)";
     } else {
-        return "P : Push/Pull   R : Rotation   clic gauche : selection/deplacement (X/Y/Z tenus = axe)   molette-clic/Shift+glisser : deplacer la vue   C : centrer sur le point vise   clic droit : menu   F : cadrer   H : origine   Ctrl+C/Ctrl+V : copier/coller   roulette : zoom";
+        /* B1.7c (retour utilisateur) : le pied de page ne rappelle PLUS les
+           commandes (il y en aura trop). Idle = vide ; il n'affiche que les
+           options / infos de la commande en cours. Les raccourcis sont
+           rappelles dans les menus qui les proposent et dans l'entete console. */
+        return "";
     }
     return buf;
 }

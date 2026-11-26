@@ -56,6 +56,11 @@ backlog est revu a chaque franchissement d'etape importante.
   d'export, preferences d'outils, unites...) - le mecanisme B0 ([outils] et
   [exports] sauvegardes a chaque changement) est deja pret pour l'accueillir ;
   en attente : demande utilisateur (phase B)
+- Pied de page = infos de la COMMANDE EN COURS uniquement (regle B1.7c) :
+  chaque raccourci est rappele dans le menu qui le propose (ex. Enregistrer
+  Ctrl+S) ; reste a faire : un menu outils (P extraire, R tourner, C centrer,
+  F cadrer, H origine) qui portera leurs raccourcis, aujourd'hui rappeles
+  seulement dans l'entete console et les boutons de la barre flottante ;
 - STL ASCII editable (informationnel), export fiable par fichier
 - Deplacements aimantes / collisions (T2), groupes d'objets (T3)
 - Points de pivot choisis, mesures / cotes magnetees
