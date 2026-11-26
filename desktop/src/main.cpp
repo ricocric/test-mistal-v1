@@ -2768,7 +2768,8 @@ static void rectPoseByDims(const std::string& txt) {
        (convention B2.2b : jamais de virgule comme separateur) */
     for (char& c : t) { if (c == ';') c = ' '; else if (c == ',') c = '.'; }
     double L = 0.0, H = 0.0;
-    if (std::sscanf(t.c_str(), "%lf %lf", &L, &H) != 2
+    std::istringstream is(t);
+    if (!(is >> L >> H)
         || !std::isfinite(L) || !std::isfinite(H) || L <= 0.0 || H <= 0.0) {
         std::printf("\nDimensions invalides - tapez L;H (deux nombres positifs) puis Entree.\n");
         return;
