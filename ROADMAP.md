@@ -87,12 +87,16 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   stub : disposition AZERTY simulee pour (GLFW_KEY_Q, sc 0x10) = "A",
   +2 verifications executees = 280, 0 echec ;
 - B2.6 POLYGONE QUELCONQUE fait (conception avant code, choix utilisateur :
-  Maj+P, surface seule, fermeture au clic sur le depart uniquement) :
-  N clics = sommets au sol, fermeture = clic sur le depart (>= 3 sommets,
-  tolerance filPickTol), feuille fan (0,i,i+1) en UN objet etirable au
-  push/pull, aretes = bords + diagonales (v1) ; Echap/clic droit = annule ;
+  Maj+P, surface seule) : N clics = sommets au sol, fermeture = clic sur
+  le depart (>= 3 sommets, tolerance filPickTol), feuille fan (0,i,i+1)
+  en UN objet etirable au push/pull, aretes = bords + diagonales (v1) ;
   pas de saisie numerique v1 ; 12e bouton + menu Outils ; +8 verifications
-  = 288, 0 echec ; PHASE B2 (profils de ligne) COMPLETE ;
+  = 288, 0 echec ;
+  B2.6b (retour de test : « disparait des que l'on sort par clic D ») :
+  clic droit ou Entree = VALIDER la surface (comme le clic sur le depart,
+  polyFinish), Echap SEUL sort sans rien poser ; message « au moins
+  3 sommets » si validation prematuree ; +2 verifications = 290, 0 echec ;
+  PHASE B2 (profils de ligne) COMPLETE ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil
@@ -102,6 +106,11 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   correction au passage d'un bug de relocalisation (v locales, pos + v =
   monde) ; la derive du fan compte la diagonale (5 aretes pour un carre) -
   se rattrapera avec le vrai solide de B6 ;
+- BACKLOG profils (demande utilisateur) : B-SPLINES - cas d'importance
+  majeure restant a traiter apres les lignes ouvertes/fermees, l'arc et
+  le polygone ; conception AVANT code (etude : degre, points de controle
+  vs points de passage, parametrage, pose au sol, etirabilite de la
+  surface generee) ;
 - B2.2 RECTANGLE (conception avant code, mecanique commune B2) :
   - clic 1 = coin, souris = apercu du rectangle au sol, clic 2 = pose ;
     clic droit ou Echap = annulation SANS objet pose ; Entree vide = rien ;

@@ -1805,6 +1805,22 @@ int main() {
         polyPose();
         CHECK(g_objs.size() == 2 && g_objs[1].name != g_objs[0].name,
               "polygone : noms uniques (Polygone, Polygone (2))");
+        /* B2.6b : clic droit / Entree = VALIDE (ferme la surface) ; Echap seul annule */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyMode = true; polyReset();
+        g_polyPts.push_back(Vec3(0, 0, 0));
+        g_polyPts.push_back(Vec3(3, 0, 0));
+        g_polyPts.push_back(Vec3(0, 0, 3));
+        polyFinish();
+        CHECK(g_objs.size() == 1 && !g_objs[0].tri.empty() && !g_polyMode,
+              "polygone : validation (clic droit/Entree) a 3 sommets = surface posee");
+        const size_t avantF = g_objs.size();
+        g_polyMode = true; polyReset();
+        g_polyPts.push_back(Vec3(0, 0, 0));
+        g_polyPts.push_back(Vec3(3, 0, 0));
+        polyFinish();
+        CHECK(g_objs.size() == avantF && g_polyMode && g_polyPts.size() == 2,
+              "polygone : validation a 2 sommets = refusee, mode conserve (Echap pour sortir)");
         g_polyMode = false; polyReset();
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
     }

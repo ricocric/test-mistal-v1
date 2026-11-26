@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.6";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.6b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -3158,11 +3158,17 @@ static void polyPose() {
     const size_t nc = o.v.size(), ntri = o.tri.size() / 3;   /* capture AVANT le move */
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
-    std::printf("polygone pose : %s, %zu cotes, %zu triangle(s) (feuille etritable)\n",
+    std::printf("polygone pose : %s, %zu cotes, %zu triangle(s) (feuille etirable)\n",
                 g_objs.back().name.c_str(), nc, ntri);
     polyReset();
     g_polyMode = false;
     std::printf("mode selection\n");
+}
+/* B2.6b (retour de test) : clic droit ou Entree = VALIDER la surface, comme
+   un clic sur le depart ; Echap seul sort sans rien poser */
+static void polyFinish() {
+    if (g_polyPts.size() >= 3) polyPose();
+    else std::printf("\npolygone : au moins 3 sommets pour fermer la surface (clic = sommet suivant ; Echap = tout annuler)\n");
 }
 /* chaque clic pose un sommet ; clic sur le depart (>= 3 sommets) = fermeture */
 static void polyTakePoint(GLFWwindow* w) {
@@ -3178,7 +3184,7 @@ static void polyTakePoint(GLFWwindow* w) {
         return;                                     /* meme point : rien */
     g_polyPts.push_back(p);
     g_polyActive = true;
-    std::printf("polygone : %zu sommet(s) (clic = sommet suivant ; clic sur le depart = ferme la surface ; Echap = tout annuler)\n", g_polyPts.size());
+    std::printf("polygone : %zu sommet(s) (clic = sommet suivant ; clic sur le depart, clic droit ou Entree = ferme la surface ; Echap = tout annuler)\n", g_polyPts.size());
 }
 /* apercu : contour deja clique (ferme) + rubber band vers le curseur */
 static void drawPolyPreview() {
@@ -3232,7 +3238,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_rectMode) { rectCancel("dessin annule"); return; }   /* B2.2 : clic droit = annule (2 clics suffisent) */
         if (g_cercleMode) { cercleCancel("dessin annule"); return; }   /* B2.3 : clic droit = annule */
         if (g_arcMode) { arcCancel("dessin annule"); return; }      /* B2.4 : clic droit = annule */
-        if (g_polyMode) { polyCancel("dessin annule"); return; }   /* B2.6 : clic droit = annule */
+        if (g_polyMode) { polyFinish(); return; }   /* B2.6b : clic droit = valide (ferme la surface) */
         if (g_lineMode) { lineFinish(); return; }   /* B2.1 : le clic droit FINIT (segments deja cliques poses) */
         if (g_ppActive) {
             ppCancel();                 /* restaure la piece */
@@ -3630,9 +3636,11 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         }
         return;
     }
-    if (g_polyMode) {   /* B2.6 : pas de saisie numerique - Echap = tout annuler */
+    if (g_polyMode) {   /* B2.6b : Entree/clic droit = valide ; Echap = tout annuler */
         if (action != GLFW_PRESS) { recordAxisKey(scancode, action); return; }
-        if (key == GLFW_KEY_ESCAPE) {
+        if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+            polyFinish();                   /* B2.6b : Entree = valide (ferme la surface) */
+        } else if (key == GLFW_KEY_ESCAPE) {
             polyCancel("dessin annule");
         } else if (keyIsLetter(key, scancode, 'P') && (mods & GLFW_MOD_SHIFT)) {
             runToolCommand(IDM_TOOL_POLY);  /* Maj+P disponible a tout moment */
@@ -3815,7 +3823,7 @@ static void runToolCommand(int id) {
             polyReset();
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("mode Polygone : clic = sommet ; clic sur le depart = ferme la surface ; Echap = tout annuler\n");
+            std::printf("mode Polygone : clic = sommet ; clic sur le depart, clic droit ou Entree = ferme la surface ; Echap = tout annuler\n");
         } else {
             std::printf("polygone : terminez d'abord le mode en cours (Echap)\n");
         }
@@ -3960,7 +3968,7 @@ static std::string statusPrompt() {
     if (g_cercleActive)
         return "Cercle : clic = rayon (pose) | chiffres + Entree = rayon exact | Echap = tout annuler";
     if (g_polyActive)
-        return "Polygone : clic = sommet suivant | clic sur le depart = fermer (surface) | Echap = tout annuler";
+        return "Polygone : clic = sommet suivant | clic sur le depart, clic droit ou Entree = fermer (surface) | Echap = tout annuler";
     if (g_arcMode && g_arcState == 1)
         return "Arc : clic = fin de la corde | chiffres + Entree = longueur de corde | Echap = tout annuler";
     if (g_arcMode && g_arcState == 2)
@@ -4140,7 +4148,7 @@ int main() {
     /* entete console : court, groupe par theme (retour utilisateur : trop de
        verbiage noie les informations importantes) */
     std::printf("Sketch3D - build %s\n", BUILD_VERSION);
-    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart = ferme) | Ctrl+C/V | Suppr\n");
+    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart, clic droit ou Entree = ferme) | Ctrl+C/V | Suppr\n");
     std::printf("Vue     : orbite = clic gauche dans le vide | zoom = molette | panoramique = molette-clic ou Shift+glisser | C centrer | F cadrer | H origine\n");
     std::printf("Projets : Ctrl+S enregistrer | clic droit = infos objet + duplication | I importer\n");
     std::printf("Formats : export scene/selection = menu Fichier, format defini dans Preferences\n");
