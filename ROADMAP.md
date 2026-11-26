@@ -100,6 +100,32 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   - nommage "Cercle", "Cercle (2)"... ; bouton + entree menu Outils
     "Cercle  Maj+C" (regle B1.7c) ; 10e bouton de la barre (toolLayout n=10) ;
 
+- B2.4 ARC (conception avant code, mecanique commune B2, choix
+  utilisateur : interaction « Arc 2 points » de SketchUp, objet = FIL
+  OUVERT) :
+  - 3 clics : clic 1 = depart (P1, au sol), clic 2 = fin (P2, la corde),
+    souris = bombement, clic 3 = pose ;
+  - les 3 points (P1, bombement B, P2) definissent LE cercle unique
+    (centre = intersection des mediatrices, rayon) ; l'arc pose est la
+    portion de P1 a P2 PASSANT PAR B, points recalculés exacts sur le
+    cercle ; v1 : angle balaye < 180 deg (limite du bombement a moitie
+    de corde, message explicite sinon) ;
+  - objet pose = fil ouvert (choix utilisateur) : N+1 points, N segments,
+    SANS triangle (chaîne derivee comme la ligne B2.1 : capture filRayHit,
+    hors exports OBJ/STL) ; completable apres coup par une ligne de 2
+    points pour fermer une surface etirable (remarque utilisateur) ;
+    le push/pull d'un arc plein passera par la fermeture ou par B3 ;
+  - N = 12 segments fixes en v1 (defaut SketchUp arc ; le cercle garde 24)
+    - a confirmer avec l'utilisateur ;
+  - saisie exacte en deux temps (meme contrat que la ligne) : apres le
+    depart, chiffres + Entree = longueur de corde exacte (direction =
+    curseur) pose la fin ; apres la fin, chiffres + Entree = fleche exacte
+    (bombement, cote = curseur) pose l'arc ; decimales FR (convention
+    B2.2b/B2.2d) ;
+  - Maj+A arme (retour = desarme) ; Echap/clic droit = annulation SANS
+    objet ; nommage "Arc", "Arc (2)"... ; bouton + entree menu Outils
+    (11e bouton, regle B1.7c) ; zone de saisie "corde" puis "fleche" ;
+
 Questions ouvertes a trancher avec l'utilisateur :
 - ligne : objet "fil" (2 sommets, GL_LINES, pas de volume -> pas de
   push/pull) OU feuille fine ? (retenu : fil de la v1, c'est le chemin que
