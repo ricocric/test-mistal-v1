@@ -62,6 +62,11 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   le moteur de tests compte desormais ses CHECKs executes (resume :
   "N echec(s), M verifications") - les totaux anterieurs etaient des
   comptages de lignes, sous-estimes ;
+- B2.4 ARC fait : « Arc 2 points » de SketchUp (depart, fin de corde,
+  bombement pose au 3e clic, apercu arc flechissant), 12 segments, FIL
+  OUVERT (choix utilisateur, completable par une ligne de 2 points) ;
+  points recalcules EXACTS sur le cercle des 3 clics (mediatrices) ;
+  saisie corde puis fleche (decimales FR) ; Maj+A ; v1 : arc <= 180 deg ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil

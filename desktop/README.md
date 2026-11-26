@@ -697,6 +697,27 @@ droit = annulation sans objet (mecanique commune B2).
   le total execute - les totaux anterieurs comptaient des lignes de
   sortie, sous-estimes (messages multi-lignes) ;
 
+## B2.4 : outil Arc (Arc 2 points de SketchUp)
+
+Maj+A (bouton « Arc » de la barre, entree du menu Outils). 3 clics :
+depart (P1), fin (P2 = la corde), bombement (clic 3 = pose, l'arc flechit
+a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
+
+- les 3 points (P1, B, P2) definissent LE cercle unique (mediatrices) ;
+  les 13 points poses sont recalcules EXACTS sur le cercle ; le bombement
+  clic ne sert qu'a definir ; v1 : arc <= 180 deg (message explicite si
+  le bombement depasse la moitie de la corde) ;
+- objet pose = FIL OUVERT (choix utilisateur) : 12 segments (defaut
+  SketchUp arc), sans triangle, chaine derivee comme la ligne (capture
+  filRayHit, hors exports OBJ/STL) ; completable apres coup par une ligne
+  de 2 points pour fermer une surface etirable (remarque utilisateur) ;
+- saisie exacte en deux temps : apres le depart, chiffres + Entree =
+  longueur de corde (direction = curseur) pose la fin ; apres la fin,
+  chiffres + Entree = fleche exacte (cote = curseur) pose l'arc ;
+  decimales FR (convention B2.2b/B2.2d) ;
+- nommage « Arc », « Arc (2) »... ; 11e bouton de la barre ;
+- moteur de tests : +9 verifications, total execute **276, 0 echec**.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils
