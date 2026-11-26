@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1.8";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B1.8b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1647,7 +1647,7 @@ static LRESULT CALLBACK toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         SetFocus(g_mainHwnd);   /* B2.4c : un clic bouton vole le focus clavier a la vue 3D */
         return 0;
     }
-    if (msg == WM_SIZE && wParam != SIZE_MINIMIZED) {
+    if (msg == WM_SIZE && wp != SIZE_MINIMIZED) {   /* B1.8b : le parametre s'appelle wp (wParam = C2065, section _WIN32 jamais compilee en sandbox) */
         /* B1.8 : barre redimensionnable - horizontal : le nombre de colonnes
            suit la largeur client (1 rangee par defaut, l'utilisateur retrecit
            a sa main) ; vertical : le nombre de rangees suit la hauteur.
