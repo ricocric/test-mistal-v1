@@ -296,7 +296,7 @@ build\Debug\sketch3d.exe
   section `[outils]` du `sketch3d.ini` (visible, vertical, x, y) a chaque
   changement - la barre revient exactement OU elle etait au lancement ;
   valeurs non numeriques tolerees (parse = atoi, fichier toujours lisible) ;
-- batterie : **215 verifications, 0 echec** (+4 : section [outils] absente =
+- batterie : **217 verifications, 0 echec** (+4 : section [outils] absente =
   defauts, ini edite a la main relu, round-trip fermeture -> lancement,
   valeurs non numeriques tolerees).
 
@@ -312,9 +312,12 @@ build\Debug\sketch3d.exe
   UNIQUE des formats : tout export (menu Fichier, raccourcis O/S) comme tout
   choix Preferences y passe, et les coches du menu Preferences sont
   resynchronisees a chaque fois (plus d'incoherence constatee en test) ;
-- conforme a l'usage : les sous-menus `Fichier > Exporter...` gardent leur
-  format explicite (zero regression) ; le format memorise sera le consommateur
-  de la future commande d'export rapide (bouton/raccourci) ;
+- **B1.7 : UN SEUL lieu de choix du format** (demande utilisateur, evite les
+  collisions) - les sous-menus OBJ/STL du menu Fichier sont SUPPRIMES :
+  `Fichier > Exporter la scene...` / `Exporter la selection...` exportent au
+  FORMAT PREFERE (dialogue pre-filtre, format reel = extension du fichier
+  choisi, grafe via noteExportFormat) ; les raccourcis O/S historiques sont
+  supprimes aussi (collisions) ; l'import garde sa touche I ;
 - le menu s'etoilera au fil des B (unites, preferences d'outils...), le
   mecanisme B0 est pret a chaque fois.
 

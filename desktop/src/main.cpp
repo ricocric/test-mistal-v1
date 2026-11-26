@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1.6";
+static const char* BUILD_VERSION = "B1.7";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1305,14 +1305,12 @@ enum {
     IDM_SAVE_PROJECT,
     IDM_CLOSE_PROJECT,
     IDM_IMPORT_OBJECT,
-    IDM_EXPORT_OBJ,
-    IDM_EXPORT_STL,
+    IDM_EXPORT_SCENE,
+    IDM_EXPORT_SEL,
     IDM_QUIT,
     IDM_INFO_OBJECT,
     IDM_DUPLICATE,
     IDM_DELETE_OBJECT,
-    IDM_EXPORT_OBJ_SEL,
-    IDM_EXPORT_STL_SEL,
     IDM_TOOL_SELECT,
     IDM_TOOL_PP,
     IDM_TOOL_ROT,
@@ -1353,6 +1351,24 @@ static void prefSetExportFormat(bool scene, bool stl);
 static void prefSyncCoches();
 #endif
 
+/* B1.7 : un seul lieu de choix du format = le menu Preferences (un seul
+   chemin). Le dialogue s'ouvre filtre sur le FORMAT PREFERE ; le format reel
+   applique est celui de l'extension du fichier choisi (grafe via
+   noteExportFormat, le goulot unique). */
+static bool exportPathIsStl(const std::string& p) {
+    const size_t dot = p.find_last_of('.');
+    if (dot == std::string::npos) return false;
+    std::string e = p.substr(dot + 1);
+    for (char& c : e) if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+    return e == "stl";
+}
+static std::string exportFileChooser(bool scene) {
+    const bool stl = scene ? (g_setup.formatScene == "stl") : (g_setup.formatSelection == "stl");
+    const char* titre = scene ? "Exporter la scene" : "Exporter la selection";
+    if (stl) return fileDialog(true, "Fichier STL\0*.stl\0Fichier OBJ\0*.obj\0\0", "stl", titre);
+    return fileDialog(true, "Fichier OBJ\0*.obj\0Fichier STL\0*.stl\0\0", "obj", titre);
+}
+
 static void handleMenuAction(int id) {
     /* commandes (outils/affichage/preferences) : deleguees au dispatcher */
     if (id >= kIdCommandStart) { runToolCommand(id); return; }
@@ -1391,28 +1407,24 @@ static void handleMenuAction(int id) {
     case IDM_IMPORT_OBJECT:
         importFile();
         return;
-    case IDM_EXPORT_OBJ: {
-        const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter en OBJ");
-        if (!p.empty()) { exportOBJ(p); noteExportFormat(true, false); }
+    /* B1.7 : UN SEUL lieu de choix du format (menu Preferences) ; le dialogue
+       s'ouvre filtre sur le format prefere, le format reel = extension choisie */
+    case IDM_EXPORT_SCENE: {
+        const std::string p = exportFileChooser(true);
+        if (p.empty()) return;
+        const bool stl = exportPathIsStl(p);
+        if (stl) exportSTL(p); else exportOBJ(p);
+        noteExportFormat(true, stl);
         return;
     }
-    case IDM_EXPORT_STL: {
-        const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter en STL");
-        if (!p.empty()) { exportSTL(p); noteExportFormat(true, true); }
-        return;
-    }
-    case IDM_EXPORT_OBJ_SEL: {
+    case IDM_EXPORT_SEL: {
         const std::vector<int> sel = selectedIndices();
         if (sel.empty()) { flashBand("selectionnez d'abord un objet (clic gauche ou Ctrl+clic)"); return; }
-        const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter la selection en OBJ");
-        if (!p.empty()) { exportOBJ(p, sel); noteExportFormat(false, false); }
-        return;
-    }
-    case IDM_EXPORT_STL_SEL: {
-        const std::vector<int> sel = selectedIndices();
-        if (sel.empty()) { flashBand("selectionnez d'abord un objet (clic gauche ou Ctrl+clic)"); return; }
-        const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter la selection en STL");
-        if (!p.empty()) { exportSTL(p, sel); noteExportFormat(false, true); }
+        const std::string p = exportFileChooser(false);
+        if (p.empty()) return;
+        const bool stl = exportPathIsStl(p);
+        if (stl) exportSTL(p, sel); else exportOBJ(p, sel);
+        noteExportFormat(false, stl);
         return;
     }
     case IDM_DUPLICATE:
@@ -1680,18 +1692,12 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(file, MF_STRING, IDM_SAVE_PROJECT, "&Enregistrer le projet...");
     AppendMenuA(file, MF_STRING, IDM_CLOSE_PROJECT, "&Fermer le projet");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
-    /* Paquet "objets" : import + export de la selection (sous-menu par format) */
+    /* B1.7 : export SANS choix de format dans Fichier (un seul lieu = menu
+       Preferences) : le format prefere pre-filtre le dialogue */
     AppendMenuA(file, MF_STRING, IDM_IMPORT_OBJECT, "&Importer un objet...");
-    HMENU exportSel = CreatePopupMenu();
-    AppendMenuA(exportSel, MF_STRING, IDM_EXPORT_OBJ_SEL, "&OBJ...");
-    AppendMenuA(exportSel, MF_STRING, IDM_EXPORT_STL_SEL, "S&TL...");
-    AppendMenuA(file, MF_POPUP, (UINT_PTR)exportSel, "&Exporter la selection...");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
-    /* Paquet "scene" : export scene complet (sous-menu par format) */
-    HMENU exportScene = CreatePopupMenu();
-    AppendMenuA(exportScene, MF_STRING, IDM_EXPORT_OBJ, "&OBJ...");
-    AppendMenuA(exportScene, MF_STRING, IDM_EXPORT_STL, "S&TL...");
-    AppendMenuA(file, MF_POPUP, (UINT_PTR)exportScene, "Exporter la scene...");
+    AppendMenuA(file, MF_STRING, IDM_EXPORT_SCENE, "Exporter la &scene...");
+    AppendMenuA(file, MF_STRING, IDM_EXPORT_SEL, "Exporter la selec&tion...");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(file, MF_STRING, IDM_QUIT, "&Quitter");
     HMENU bar = CreateMenu();
@@ -2738,8 +2744,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             }
         }
         if (key == GLFW_KEY_I) { importFile(); }   /* importer OBJ/STL */
-        if (key == GLFW_KEY_O) { const std::string p = fileDialog(true, "Fichier OBJ\0*.obj\0\0", "obj", "Exporter en OBJ"); if (!p.empty()) { exportOBJ(p); noteExportFormat(true, false); } }
-        if (key == GLFW_KEY_S) { const std::string p = fileDialog(true, "Fichier STL\0*.stl\0\0", "stl", "Exporter en STL"); if (!p.empty()) { exportSTL(p); noteExportFormat(true, true); } }
+        /* B1.7 : touches O/S supprimees (collisions avec le format prefere) ;
+           export par Fichier > Exporter la scene / la selection uniquement */
     }
     recordAxisKey(scancode, action);
 }
@@ -3086,7 +3092,7 @@ static void updateWindowTitle(GLFWwindow* w) {
 
 int main() {
     std::printf("Sketch3D natif — build %s (outillages T1 : duplication multi-instances, rotation autour des axes + menus du lot N5)\n", BUILD_VERSION);
-    std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer, exporter OBJ/STL, quitter ; menu Affichage : barre d'outils (rappel, verticale) ; menu Preferences : formats d'export scene/selection ; menu contextuel (clic droit) : infos objet, duplication\n");
+    std::printf("menu Fichier : nouveau/ouvrir/enregistrer/fermer projet, importer (I), exporter scene/selection (format = Preferences), quitter ; menu Affichage : barre d'outils (rappel, verticale) ; menu Preferences : formats d'export scene/selection ; menu contextuel (clic droit) : infos objet, duplication\n");
     std::printf("P : mode Push/Pull ; R : mode Rotation (X/Y/Z = axe, souris ou chiffres+Entree) ; I : import ; F : cadrage ; H : origine ; molette-clic ou Shift+glisser : deplacer la vue ; C : centrer sur le point vise\n");
     g_setupPath = setupFilePath();
     loadSetup();                     /* B0 : preferences de la derniere session */
