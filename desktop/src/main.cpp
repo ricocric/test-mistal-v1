@@ -1583,7 +1583,7 @@ static LRESULT CALLBACK toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_EXITSIZEMOVE) {
         /* fin de deplacement : decalage par rapport a la fenetre principale
            + aimantation sur ses 4 bords (G/D/H/B) si proche (24 px) */
-        RECT r, wc;
+        RECT r;
         GetWindowRect(h, &r);
         RECT c;
         GetClientRect(g_mainHwnd, &c);
