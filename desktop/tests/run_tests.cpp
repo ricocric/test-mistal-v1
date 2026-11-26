@@ -1767,6 +1767,48 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
     }
 
+    { /* B2.6 : outil Polygone (Maj+P, surface fan, fermeture sur le depart) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;   /* stub : jamais dereference */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        onKey(W, GLFW_KEY_P, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_polyMode && !g_polyActive, "polygone : Maj+P arme l outil");
+        onKey(W, GLFW_KEY_P, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(!g_polyMode, "polygone : rappel de Maj+P = desarme (toggle)");
+        /* quad pose en 4 sommets -> fan de 2 triangles, etirable */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyMode = true; polyReset();
+        g_polyPts.push_back(Vec3(0, 0, 0));
+        g_polyPts.push_back(Vec3(4, 0, 0));
+        g_polyPts.push_back(Vec3(4, 0, 3));
+        g_polyPts.push_back(Vec3(0, 0, 3));
+        polyPose();
+        CHECK(g_objs.size() == 1 && !g_objs[0].tri.empty() && g_objs[0].v.size() == 4
+              && g_objs[0].tri.size() == 6,
+              "polygone : quad pose = 1 objet, 4 sommets, fan de 2 tris (6 indices)");
+        CHECK(g_objs[0].edges.size() == 5,
+              "polygone : aretes derivees = 4 bords + 1 diagonale du fan (v1)");
+        CHECK(std::fabs(signedVolume(g_objs[0])) < 1e-12,
+              "polygone : feuille plane = volume nul");
+        CHECK(std::fabs(g_objs[0].pos.x) < 1e-12 && std::fabs(g_objs[0].pos.z) < 1e-12
+              && std::fabs(g_objs[0].pos.y + g_objs[0].v[0].y) < 1e-12,
+              "polygone : ancre locale = premier sommet (pos + v = monde)");
+        /* makeExtrude : la feuille du polygone est une face push/pull valide */
+        {
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[0], 0, dd), "polygone : feuille = face push/pull valide");
+        }
+        /* noms uniques : Polygone, Polygone (2) */
+        g_polyMode = true; polyReset();
+        g_polyPts.push_back(Vec3(1, 0, 1));
+        g_polyPts.push_back(Vec3(2, 0, 1));
+        g_polyPts.push_back(Vec3(2, 0, 2));
+        polyPose();
+        CHECK(g_objs.size() == 2 && g_objs[1].name != g_objs[0].name,
+              "polygone : noms uniques (Polygone, Polygone (2))");
+        g_polyMode = false; polyReset();
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
     std::printf("resume : %d echec(s), %d verifications\n", g_fail, g_tot);
     return g_fail ? 1 : 0;
 }

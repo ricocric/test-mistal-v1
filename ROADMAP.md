@@ -86,6 +86,13 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   rotation) ; touches de controle par code (positions universelles) ;
   stub : disposition AZERTY simulee pour (GLFW_KEY_Q, sc 0x10) = "A",
   +2 verifications executees = 280, 0 echec ;
+- B2.6 POLYGONE QUELCONQUE fait (conception avant code, choix utilisateur :
+  Maj+P, surface seule, fermeture au clic sur le depart uniquement) :
+  N clics = sommets au sol, fermeture = clic sur le depart (>= 3 sommets,
+  tolerance filPickTol), feuille fan (0,i,i+1) en UN objet etirable au
+  push/pull, aretes = bords + diagonales (v1) ; Echap/clic droit = annule ;
+  pas de saisie numerique v1 ; 12e bouton + menu Outils ; +8 verifications
+  = 288, 0 echec ; PHASE B2 (profils de ligne) COMPLETE ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil

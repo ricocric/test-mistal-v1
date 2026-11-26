@@ -757,6 +757,25 @@ a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
   (3) les gardes du dispatcher rejetaient en SILENCE : message desormais
   affiche ("terminez d'abord le mode en cours").
 
+## B2.6 : outil Polygone quelconque
+
+- Maj+P (convention Maj + lettre des formes de base ; P seul = Push/Pull) ;
+- N clics = sommets au sol (y = 0), apercu : contour deja clique (ferme,
+  GL_LINE_LOOP) + rubber band vers le curseur ;
+- fermeture = clic sur le depart (>= 3 sommets, tolerance filPickTol, meme
+  mecanique que la ligne B2.5) ; SURFACE SEULE (choix utilisateur - le fil
+  ouvert est deja couvert par Ligne Maj+L) ; pas de saisie numerique v1 ;
+- pose : feuille fan (0,i,i+1) en UN objet (n-2 triangles), ancre locale =
+  premier sommet (pos + v = monde), etirable au push/pull ; aretes derivees
+  = bords + diagonales du fan (v1, comme la ligne fermee) ;
+- Echap / clic droit = annulation sans objet (mecanique B2) ; bandeau = etat
+  de la commande seule (regle B1.7c) ; nommage unique « Polygone » ;
+- v1 : eventail correct pour polygones CONVEXES (concaves = reprise avec le
+  vrai solide B6) ;
+- 12e bouton de la barre (g_toolBtn[12], taille toolLayout derivee du
+  tableau - lecon B2.4b respectee) ; menu Outils ; entete console ;
+- moteur de tests : +8 verifications executees, total **288, 0 echec**.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils
