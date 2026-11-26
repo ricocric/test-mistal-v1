@@ -620,23 +620,24 @@ que le reste). Pose sur le plan du sol en v1.
 
 Un clic sur le point de DEPART alors que le fil compte au moins 3 sommets
 (tolerance `filPickTol`, la meme que la capture du fil) ferme la boucle. Le
-comportement est choisi par une **paire radio du menu Outils** :
+comportement est choisi par la COMMANDE qui arme l'outil (B2.5b, retour de
+test : rien n'est memorise, aucune preference, aucune cle dans le INI) :
 
-- **"Fermer en surface" (defaut)** : la boucle cree une feuille FUSEE au fil
-  en UN objet (fidele SketchUp) - fan triangulaire (0, i, i+1) + aretes de
-  bord ; la feuille est etirable au push/pull ;
-- **"Fil ouvert (sans surface)"** : la boucle reste un fil - arete de
-  fermeture n-1 -> 0 ajoutee apres la derive de la chaine, aucun triangle.
+- **Outils > Ligne (fermee en surface) - L** : la boucle cree une feuille
+  FUSEE au fil en UN objet (fidele SketchUp) - fan triangulaire (0, i, i+1)
+  + aretes de bord ; la feuille est etirable au push/pull ;
+- **Outils > Ligne (fil ouvert) - Maj+L** : la boucle reste un fil - arete
+  de fermeture n-1 -> 0 ajoutee apres la derive de la chaine, aucun triangle.
 
-- preference de **SESSION, NON persistee** : aucune cle dans le
-  sketch3d.ini (pas de section [ligne]) ; a chaque lancement, le defaut est
-  "Fermer en surface" (le cas surface represente la majorite des usages) ;
+B2.5b corrige aussi un bug de relocalisation : la boucle fermee etait dessinee
+decalee du premier point (coordonnees monde stockees comme locales, le rendu
+ajoutant encore o.pos).
 - note v1 : `computeObjectDerived` derive les aretes de TOUS les triangles
   du fan -> un carre ferme montre 5 aretes (4 bords + 1 diagonale). La
   difference bord/diagonale sera naturelle avec le VRAI SOLIDE de B6 ;
-- moteur de tests : +5 verifications (feuille = 2 tris / 5 aretes / volume
-  plat nul / 4 sommets sans doublon ; fil ouvert = 4 aretes, 0 tri ; sortie
-  du mode ; noms uniques), total **238, 0 echec**.
+- moteur de tests : +7 verifications (armement L / Maj+L ; feuille = 2 tris /
+  5 aretes / volume plat nul / 4 sommets sans doublon ; fil ouvert = 4
+  aretes, 0 tri ; sortie du mode ; noms uniques), total **240, 0 echec**.
 
 ## Organiseur des prochains lots
 

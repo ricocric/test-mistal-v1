@@ -47,11 +47,12 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil
-  ouvert en boucle (arete n-1 -> 0 ajoutee apres la derive) ; paire radio
-  du menu Outils (Fermer en surface / Fil ouvert), preference de SESSION
-  NON persistee (defaut surface a chaque lancement) ; la derive du fan
-  compte la diagonale (5 aretes pour un carre) - se rattrapera avec le
-  vrai solide de B6 ;
+  ouvert en boucle (arete n-1 -> 0 ajoutee apres la derive) ; B2.5b (retour
+  de test) : choix par la COMMANDE d'armement, rien de memorise - Outils >
+  Ligne (fermee en surface) = L, Outils > Ligne (fil ouvert) = Maj+L ;
+  correction au passage d'un bug de relocalisation (v locales, pos + v =
+  monde) ; la derive du fan compte la diagonale (5 aretes pour un carre) -
+  se rattrapera avec le vrai solide de B6 ;
 
 Questions ouvertes a trancher avec l'utilisateur :
 - ligne : objet "fil" (2 sommets, GL_LINES, pas de volume -> pas de
