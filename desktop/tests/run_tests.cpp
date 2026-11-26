@@ -1525,6 +1525,35 @@ int main() {
         lineReset();
     }
 
+    { /* B2.5 : fermeture de la ligne sur le depart (radio du menu Outils, NON persistee) */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_setup.ligneFerme = 1;                      /* defaut = surface fermee */
+        g_linePts = { Vec3(0, 0, 0), Vec3(2, 0, 0), Vec3(2, 0, 2), Vec3(0, 0, 2) };
+        g_lineActive = true;
+        g_lineMode = true;
+        lineCloseLoop();
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.size() == 6 && g_objs[0].edges.size() == 5,
+              "ligne : fermeture en surface = feuille FUSEE au fil (2 tris) ; aretes derivees = 4 bords + 1 diagonale du fan (v1)");
+        CHECK(std::fabs(signedVolume(g_objs[0])) < 1e-12 && g_objs[0].v.size() == 4,
+              "ligne : feuille fermee = 4 sommets (pas de doublon du depart), volume plat nul");
+        CHECK(!g_lineMode && !g_lineActive && g_linePts.empty(),
+              "ligne : fermeture = pose + sortie du mode");
+
+        g_setup.ligneFerme = 0;                      /* option : fil ouvert */
+        g_linePts = { Vec3(0, 0, 0), Vec3(2, 0, 0), Vec3(2, 0, 2), Vec3(0, 0, 2) };
+        g_lineActive = true;
+        g_lineMode = true;
+        lineCloseLoop();
+        CHECK(g_objs.size() == 2 && g_objs[1].tri.empty() && g_objs[1].edges.size() == 4,
+              "ligne : fil ouvert = boucle fermee sans surface (4 aretes, 0 tri)");
+        CHECK(g_objs[1].name != g_objs[0].name, "ligne : noms uniques aux deux poses");
+        g_setup.ligneFerme = 1;                      /* retour au defaut (session) */
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_lineMode = false;
+        lineReset();
+    }
+
     std::printf("resume : %d echec(s)\n", g_fail);
     return g_fail ? 1 : 0;
 }

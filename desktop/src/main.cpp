@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.1c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.5";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1014,6 +1014,7 @@ struct Setup {
     int toolVisible = 1;         /* B1.1 : barre d'outils flottante */
     int toolVertical = 0;
     int toolX = 140, toolY = 140;
+    int ligneFerme = 1;      /* B2.5 : fermeture de ligne = surface fermee (defaut) ou fil ouvert ; NON persiste (session) */
 };
 static Setup g_setup;
 static std::string g_setupPath = "sketch3d.ini";
@@ -1388,6 +1389,8 @@ enum {
     IDM_PREF_SEL_OBJ,
     IDM_PREF_SEL_STL,
     IDM_VIEW_TOOLBAR_HOR,
+    IDM_LIGNE_SURFACE,
+    IDM_LIGNE_FIL,
 };
 
 /* Homogeneite ("UN SEUL CHEMIN DE CODE", regle systematique) : tous les
@@ -1409,6 +1412,8 @@ static void toolbarSetVertical(bool vert);
 static void toolFollow();
 /* B1.4 : menu Preferences - formats d'export editables au vol */
 static void prefSetExportFormat(bool scene, bool stl);
+/* B2.5 : radio fermeture de ligne (menu Outils) */
+static void ligneSetFerme(bool surface);
 #endif
 
 /* B1.7 : un seul lieu de choix du format = le menu Preferences (un seul
@@ -1602,6 +1607,7 @@ static HWND g_toolBtn[9];
 static HMENU g_viewMenu = nullptr;   /* menu Affichage : coches tenus a jour */
 static HMENU g_prefSceneMenu = nullptr;  /* menu Preferences : export scene */
 static HMENU g_prefSelMenu = nullptr;    /* menu Preferences : export selection */
+static HMENU g_outilsMenu = nullptr;     /* menu Outils : radios fermeture de ligne (B2.5) */
 
 /* replace la barre a mainHwnd + decalage persiste (appelee au WM_MOVE et
    WM_SIZE de la fenetre principale) */
@@ -1745,6 +1751,21 @@ static void prefSetExportFormat(bool scene, bool stl) {
     noteExportFormat(scene, stl);
     std::printf("preferences : export %s en %s\n", scene ? "scene" : "selection", stl ? "STL" : "OBJ");
 }
+
+/* B2.5 : radio fermeture de ligne - preference de SESSION, NON persistee
+   dans le INI (pas de section [ligne]) ; defaut = surface fermee a chaque
+   lancement (le cas surface represente la majorite des usages). */
+static void ligneSetFerme(bool surface) {
+    g_setup.ligneFerme = surface ? 1 : 0;
+    if (g_outilsMenu) {
+        CheckMenuItem(g_outilsMenu, IDM_LIGNE_SURFACE,
+                      surface ? MF_CHECKED : MF_UNCHECKED);
+        CheckMenuItem(g_outilsMenu, IDM_LIGNE_FIL,
+                      surface ? MF_UNCHECKED : MF_CHECKED);
+    }
+    std::printf(surface ? "ligne : fermeture = surface fermee (etirable)\n"
+                        : "ligne : fermeture = fil ouvert (sans surface)\n");
+}
 #endif
 
 static void attachMenus(GLFWwindow* win) {
@@ -1813,6 +1834,13 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(outils, MF_STRING, IDM_TOOL_COPY, "&Copier\tCtrl+C");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_PASTE, "Co&ller\tCtrl+V");
+    /* B2.5 : paire radio - fermeture de la ligne (NON persistee : session) */
+    AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(outils, MF_STRING | (g_setup.ligneFerme ? MF_CHECKED : MF_UNCHECKED),
+                IDM_LIGNE_SURFACE, "&Fermer en surface");
+    AppendMenuA(outils, MF_STRING | (g_setup.ligneFerme ? MF_UNCHECKED : MF_CHECKED),
+                IDM_LIGNE_FIL, "Fil &ouvert (sans surface)");
+    g_outilsMenu = outils;
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)outils, "&Outils");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)aff, "&Affichage");
     SetMenu(hwnd, bar);
@@ -2568,11 +2596,16 @@ static void lineTrackCursor(GLFWwindow* w) {
     g_lineCursor = p;
     g_lineCursorOk = ok;
 }
+static void lineCloseLoop();   /* B2.5 : fermeture de la boucle sur le depart */
 static void lineTakePoint(GLFWwindow* w) {
     bool ok;
     Vec3 p;
     lineGroundPoint(w, ok, p);
     if (!ok) return;                                /* pointe le ciel : rien */
+    if (g_linePts.size() >= 3 && (p - g_linePts[0]).norm() <= filPickTol()) {
+        lineCloseLoop();                            /* B2.5 : clic sur le depart = fermeture */
+        return;
+    }
     if (!g_linePts.empty() && (p - g_linePts.back()).norm() < 1e-9)
         return;                                     /* meme point : rien */
     g_linePts.push_back(p);
@@ -2606,6 +2639,36 @@ static void linePose() {
     const int idx = (int)g_objs.size() - 1;
     selectOnly(idx);
     std::printf("ligne posee : %s, %zu segment(s)\n", g_objs.back().name.c_str(), nseg);
+    lineReset();
+    g_lineMode = false;
+    std::printf("mode selection\n");
+}
+/* B2.5 : fermeture de la boucle - clic sur le depart (>= 3 sommets).
+   Radio du menu Outils : "Fermer en surface" (defaut) = feuille FUSEE au fil
+   en UN objet - fan (0,i,i+1), etirable au push/pull - ou "Fil ouvert" =
+   boucle fermee sans triangle (arete n-1 -> 0 ajoutee apres la derive). */
+static void lineCloseLoop() {
+    const bool surface = g_setup.ligneFerme != 0;
+    Object o;
+    o.name = lineNewName();
+    o.pos = g_linePts[0];
+    o.scl = 1.0;
+    o.v = g_linePts;                     /* pas de doublon du depart */
+    o.tri.clear();
+    o.n.clear();
+    if (surface)
+        for (size_t i = 1; i + 1 < o.v.size(); ++i) {
+            o.tri.push_back(0); o.tri.push_back((int)i); o.tri.push_back((int)(i + 1));
+        }
+    computeObjectDerived(o);
+    if (!surface)
+        o.edges.emplace_back((int)o.v.size() - 1, 0);   /* boucle fermee */
+    const size_t nseg = o.edges.size();     /* capture AVANT le move */
+    g_objs.push_back(std::move(o));
+    selectOnly((int)g_objs.size() - 1);
+    std::printf(surface
+        ? "ligne fermee : %zu cotes, feuille posee (etirable)\n"
+        : "ligne fermee : %zu cotes, fil simple (pas de surface)\n", nseg);
     lineReset();
     g_lineMode = false;
     std::printf("mode selection\n");
@@ -3064,6 +3127,12 @@ static void runToolCommand(int id) {
         return;
     case IDM_PREF_SEL_STL:
         prefSetExportFormat(false, true);
+        return;
+    case IDM_LIGNE_SURFACE:
+        ligneSetFerme(true);
+        return;
+    case IDM_LIGNE_FIL:
+        ligneSetFerme(false);
         return;
 #endif
     default:
