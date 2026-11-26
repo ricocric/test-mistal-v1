@@ -70,6 +70,10 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   B2.4b (retour de test, grave) : g_toolBtn[9] debordait (11 boutons
   crees) = corruption memoire au demarrage ; [11] + taille de toolLayout
   derivee du tableau (synchro automatique) ;
+  B2.4c (retour de test) : AdjustWindowRect dans toolLayout (la barre de
+  titre rognait la derniere rangee : Rectangle/Cercle/Arc invisibles
+  depuis B2.3) ; SetFocus apres chaque commande menu/bouton (le clic
+  volait le focus clavier a la vue 3D) ; gardes du dispatcher verbeuses ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil

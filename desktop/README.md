@@ -723,7 +723,17 @@ a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
   folle constatee par l'utilisateur) ; g_toolBtn[11] + toolLayout derive
   maintenant sa taille du tableau (synchro automatique, plus de
   desynchronisation possible) ; lecon : les sections Windows ne sont
-  JAMAIS compilees en sandbox, seul le build MSVC les voit.
+  JAMAIS compilees en sandbox, seul le build MSVC les voit ;
+- B2.4c (retour de test, build B2.4b confirme) : Arc toujours absent de la
+  barre + Maj+A sans effet + fleche + Entree sans effet. Trois pieges
+  Windows corriges : (1) toolLayout dimensionnait la fenetre EXTERIEURE
+  avec la taille CLIENT necessaire - la barre de titre rognait la
+  derniere rangee (Rectangle, Cercle, Arc invisibles depuis B2.3) ;
+  correctif AdjustWindowRect ; (2) un clic sur un bouton Win32 vole le
+  focus clavier a la vue 3D (les touches mouraient jusqu'au clic suivant
+  dans la vue) ; SetFocus rendu apres chaque commande menu/bouton ;
+  (3) les gardes du dispatcher rejetaient en SILENCE : message desormais
+  affiche ("terminez d'abord le mode en cours").
 
 ## Organiseur des prochains lots
 

@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.4b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.4c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1542,7 +1542,7 @@ static void showContextMenu(GLFWwindow* w) {
 static WNDPROC g_baseWndProc = nullptr;
 
 static LRESULT CALLBACK menuWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
-    if (msg == WM_COMMAND) { handleMenuAction((int)LOWORD(wp)); return 0; }
+    if (msg == WM_COMMAND) { handleMenuAction((int)LOWORD(wp)); SetFocus(h); return 0; }   /* B2.4c : focus clavier rendu a la vue */
     if (msg == WM_MOVE || msg == WM_SIZE) toolFollow();   /* B1.3 : la barre suit */
     return CallWindowProc(g_baseWndProc, h, msg, wp, lp);
 }
@@ -1625,14 +1625,20 @@ static void toolLayout(HWND tw) {
     for (int i = 0; i < n; ++i)
         SetWindowPos(g_toolBtn[i], nullptr, pad + (i % cols) * (bw + pad),
                      pad + (i / cols) * (bh + pad), bw, bh, SWP_NOZORDER);
-    const int mx = pad + cols * (bw + pad);
-    const int my = pad + rows * (bh + pad);
-    SetWindowPos(tw, nullptr, 0, 0, mx, my, SWP_NOMOVE | SWP_NOZORDER);
+    const int cw = pad + cols * (bw + pad);
+    const int ch = pad + rows * (bh + pad);
+    /* B2.4c : SetWindowPos dimensionne la fenetre EXTERIEURE ; sans
+       AdjustWindowRect, la barre de titre rognait la derniere rangee
+       (Rectangle, Cercle, Arc invisibles depuis B2.3 - retour de test) */
+    RECT r = {0, 0, cw, ch};
+    AdjustWindowRect(&r, WS_POPUP | WS_CAPTION | WS_SYSMENU, FALSE);
+    SetWindowPos(tw, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
 }
 
 static LRESULT CALLBACK toolWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_COMMAND && HIWORD(wp) == BN_CLICKED) {
         runToolCommand((int)LOWORD(wp));
+        SetFocus(g_mainHwnd);   /* B2.4c : un clic bouton vole le focus clavier a la vue 3D */
         return 0;
     }
     if (msg == WM_CLOSE) {
@@ -3646,6 +3652,8 @@ static void runToolCommand(int id) {
             g_ppMode = false;
             g_rotMode = false;
             std::printf("mode Rectangle : clic = premier coin ; clic = coin oppose pose ; chiffres L;H + Entree = dimensions exactes ; Echap = tout annuler\n");
+        } else {
+            std::printf("rectangle : terminez d'abord le mode en cours (Echap)\n");
         }
         return;
     case IDM_TOOL_CERCLE:      /* = Maj+C (B2.3) */
@@ -3657,6 +3665,8 @@ static void runToolCommand(int id) {
             g_ppMode = false;
             g_rotMode = false;
             std::printf("mode Cercle : clic = centre ; clic = rayon pose ; chiffres + Entree = rayon exact ; Echap = tout annuler\n");
+        } else {
+            std::printf("cercle : terminez d'abord le mode en cours (Echap)\n");
         }
         return;
     case IDM_TOOL_ARC:         /* = Maj+A (B2.4) */
@@ -3668,6 +3678,8 @@ static void runToolCommand(int id) {
             g_ppMode = false;
             g_rotMode = false;
             std::printf("mode Arc : clic = depart ; clic = fin de la corde ; clic = bombement pose ; chiffres + Entree = corde puis fleche ; Echap = tout annuler\n");
+        } else {
+            std::printf("arc : terminez d'abord le mode en cours (Echap)\n");
         }
         return;
 #ifdef _WIN32
