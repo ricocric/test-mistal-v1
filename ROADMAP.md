@@ -121,9 +121,16 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   deplacement (filRayHit) ; apercu = courbe lisse + rubber band droit
   (prolongement droit en v1) ; pas de saisie numerique v1 ; 13e bouton +
   menu Outils + entete console ; +9 verifications = 299, 0 echec ;
-  options futures (reserve utilisateur) : points de CONTROLE (la courbe
-  glisse dans le polygone, facon Rhino) et interpolation globale type
+  options futures (reserve utilisateur) : interpolation globale type
   NURBS (A9.1) ;
+  B2.7b (retour de test : « j'aurai du prendre tout de suite le choix
+  points de controle ») : variante COMMUTABLE - Maj+S = passage,
+  Maj+B = points de controle (les clics tracent le polygone de controle,
+  la courbe glisse a l'interieur, noeuds serres = depart et arrivee
+  exacts si ouverte, boucle periodique si fermee) ; bascule Maj+S/Maj+B
+  A CHAUD pendant un trace, points conserves ; polygone de controle
+  visible en apercu ; 14e bouton + 2e entree menu Outils ; +5
+  verifications = 304, 0 echec ;
 - B2.2 RECTANGLE (conception avant code, mecanique commune B2) :
   - clic 1 = coin, souris = apercu du rectangle au sol, clic 2 = pose ;
     clic droit ou Echap = annulation SANS objet pose ; Entree vide = rien ;

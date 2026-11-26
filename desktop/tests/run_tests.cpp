@@ -1881,6 +1881,41 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
     }
 
+    { /* B2.7b : variante POINTS DE CONTROLE (Maj+B, bascule a chaud) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        onKey(W, GLFW_KEY_B, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_splMode && g_splCtrl, "spline : Maj+B arme la variante points de controle");
+        /* carre en polygone de controle : la courbe glisse a l'interieur */
+        const std::vector<Vec3> carre = { Vec3(0, 0, 0), Vec3(4, 0, 0), Vec3(4, 0, 4), Vec3(0, 0, 4) };
+        g_splMode = true; g_splCtrl = true; splReset();
+        for (const Vec3& q : carre) g_splPts.push_back(q);
+        splFinish();                             /* ouverte : noeuds serres */
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.empty(),
+              "spline (controle) : posee = fil en UN objet sans triangle");
+        {
+            const Object& o = g_objs[0];
+            const Vec3 w0 = o.pos + o.v.front(), w1 = o.pos + o.v.back();
+            CHECK((w0 - Vec3(0, 0, 0)).norm() < 1e-9 && (w1 - Vec3(0, 0, 4)).norm() < 1e-9,
+                  "spline (controle) : noeuds serres = depart et arrivee EXACTS");
+            double dmin = 1e300;
+            for (const Vec3& loc : o.v) {
+                const double d = (Vec3(4, 0, 0) - (o.pos + loc)).norm();
+                if (d < dmin) dmin = d;
+            }
+            CHECK(dmin > 0.1, "spline (controle) : la courbe glisse a l'interieur (coin non touche)");
+        }
+        /* boucle fermee : dernier sommet = premier */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_splMode = true; g_splCtrl = true; splReset();
+        for (const Vec3& q : carre) g_splPts.push_back(q);
+        splPose(true);
+        CHECK(g_objs.size() == 1 && (g_objs[0].v.front() - g_objs[0].v.back()).norm() < 1e-12,
+              "spline (controle) fermee : boucle = dernier sommet = premier");
+        g_splMode = false; g_splCtrl = false; splReset();
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
     std::printf("resume : %d echec(s), %d verifications\n", g_fail, g_tot);
     return g_fail ? 1 : 0;
 }

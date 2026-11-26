@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.7";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.7b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1394,6 +1394,7 @@ enum {
     IDM_TOOL_ARC,
     IDM_TOOL_POLY,
     IDM_TOOL_SPL,
+    IDM_TOOL_SPLC,
 };
 
 /* Homogeneite ("UN SEUL CHEMIN DE CODE", regle systematique) : tous les
@@ -1604,7 +1605,7 @@ static void drawText2D(float x, float y, const char* s) {
    Tout est persiste dans la section [outils] du sketch3d.ini. */
 static HWND g_toolWin = nullptr;
 static HWND g_mainHwnd = nullptr;    /* fenetre principale : suivi + aimantation */
-static HWND g_toolBtn[13];   /* B2.4b : dimension = nombre de boutons (l'ancien [9] debordait = corruption memoire) ; B2.7 : 13 */
+static HWND g_toolBtn[14];   /* B2.4b : dimension = nombre de boutons (l'ancien [9] debordait = corruption memoire) ; B2.7b : 14 */
 static HMENU g_viewMenu = nullptr;   /* menu Affichage : coches tenus a jour */
 static HMENU g_prefSceneMenu = nullptr;  /* menu Preferences : export scene */
 static HMENU g_prefSelMenu = nullptr;    /* menu Preferences : export selection */
@@ -1694,9 +1695,9 @@ static void attachToolbar(HWND mainHwnd) {
     const HWND tw = CreateWindowExA(WS_EX_TOOLWINDOW, cls, "Outils",
         WS_POPUP | WS_CAPTION | WS_SYSMENU, o.x + g_setup.toolX, o.y + g_setup.toolY, 0, 0,
         mainHwnd, nullptr, GetModuleHandleA(nullptr), nullptr);
-    static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller", "Ligne", "Rectangle", "Cercle", "Arc", "Polygone", "Spline" };
+    static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller", "Ligne", "Rectangle", "Cercle", "Arc", "Polygone", "Spline", "Spline ctrl" };
     static const int ids[] = { IDM_TOOL_SELECT, IDM_TOOL_PP, IDM_TOOL_ROT, IDM_TOOL_FRAME,
-                               IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE, IDM_TOOL_LINE, IDM_TOOL_RECT, IDM_TOOL_CERCLE, IDM_TOOL_ARC, IDM_TOOL_POLY, IDM_TOOL_SPL };
+                               IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE, IDM_TOOL_LINE, IDM_TOOL_RECT, IDM_TOOL_CERCLE, IDM_TOOL_ARC, IDM_TOOL_POLY, IDM_TOOL_SPL, IDM_TOOL_SPLC };
     for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); ++i) {
         g_toolBtn[i] = CreateWindowExA(0, "BUTTON", labels[i],
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -1824,7 +1825,8 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(outils, MF_STRING, IDM_TOOL_CERCLE, "&Cercle\tMaj+C");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_ARC, "&Arc\tMaj+A");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_POLY, "&Polygone\tMaj+P");
-    AppendMenuA(outils, MF_STRING, IDM_TOOL_SPL, "&Spline\tMaj+S");
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_SPL, "&Spline (passage)\tMaj+S");
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_SPLC, "Spline (points de &controle)\tMaj+B");
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(outils, MF_STRING, IDM_TOOL_FRAME, "&Cadrer la selection\tF");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_HOME, "Vue d'&origine\tH");
@@ -3221,6 +3223,7 @@ static bool g_splActive = false;        /* au moins un point clique */
 static std::vector<Vec3> g_splPts;      /* points de passage cliques, monde (y = 0) */
 static Vec3 g_splCursor(0, 0, 0);       /* point sol sous le curseur (apercu) */
 static bool g_splCursorOk = false;
+static bool g_splCtrl = false;          /* B2.7b : variante POINTS DE CONTROLE (Maj+B) */
 static const int kSplSub = 16;          /* sous-segments par intervalle (v1 fixe) */
 
 static void splReset() {
@@ -3257,9 +3260,68 @@ static void splTangents(const Vec3& q0, const Vec3& q1, const Vec3& q2, const Ve
     else
         tm2 = (q2 - q1) * (dt2 / dt1) - (q3 - q1) * (dt2 / (dt1 + dt2)) + (q3 - q2);
 }
+/* base B-spline generale (Cox-de Boor recursif) */
+static double splBasisV(int i, int p, const std::vector<double>& U, double u) {
+    if (p == 0) return (u >= U[i] && u < U[i + 1]) ? 1.0 : 0.0;
+    const double a = (U[i + p] > U[i] + 1e-12) ? (u - U[i]) / (U[i + p] - U[i]) : 0.0;
+    const double b = (U[i + p + 1] > U[i + 1] + 1e-12) ? (U[i + p + 1] - u) / (U[i + p + 1] - U[i + 1]) : 0.0;
+    return a * splBasisV(i, p - 1, U, u) + b * splBasisV(i + 1, p - 1, U, u);
+}
+/* noeuds serres uniformes : courbe ouverte = depart et arrivee EXACTS */
+static std::vector<double> splKnotsOpen(int m, int p) {
+    const int n = m - 1;
+    std::vector<double> U(n + p + 2, 0.0);
+    const double fin = (double)(n + 1 - p);
+    for (int i = n + 1; i <= n + p + 1; ++i) U[i] = fin;
+    for (int j = 1; j <= n - p; ++j) U[j + p] = (double)j;
+    return U;
+}
+/* evaluation de la courbe (controle) au parametre u ; fermee = indices modulo */
+static Vec3 splEvalCtrl(const std::vector<Vec3>& P, int p, const std::vector<double>& U,
+                        double u, bool fermee) {
+    const int m = (int)P.size();
+    const int k = (int)std::floor(u);
+    Vec3 c;
+    for (int j = k - p; j <= k; ++j) {
+        if (!fermee && j < 0) continue;
+        const int i = fermee ? (((j % m) + m) % m) : j;
+        c += P[i] * splBasisV(j, p, U, u);
+    }
+    return c;
+}
+/* variante POINTS DE CONTROLE (B2.7b, demande utilisateur) : les clics
+   tracent le polygone de controle, la courbe glisse a l'interieur */
+static std::vector<Vec3> splSampleCtrl(bool fermee) {
+    const int m = (int)g_splPts.size();
+    std::vector<Vec3> out;
+    if (m < 2) return out;
+    const int p = std::min(3, m - 1);
+    std::vector<double> U;
+    double u0 = 0.0;
+    int span = 0;
+    if (fermee) {
+        span = m;                                   /* une periode */
+        U.resize(m + 2 * p + 1);
+        for (int i = 0; i < (int)U.size(); ++i) U[i] = (double)i;
+        u0 = (double)p;
+    } else {
+        U = splKnotsOpen(m, p);
+        span = m - p;                               /* domaine serre [0, m - p] */
+    }
+    const int total = span * kSplSub;
+    out.reserve((size_t)total + 1);
+    for (int j = 0; j < total; ++j)
+        out.push_back(splEvalCtrl(g_splPts, p, U, u0 + (double)j / (double)kSplSub, fermee));
+    if (fermee)
+        out.push_back(out[0]);                      /* arete de cloture naturelle */
+    else
+        out.push_back(g_splPts.back());             /* arrivee exacte (noeud serre) */
+    return out;
+}
 /* discretisation : polyline cubique par les points de passage
    (fermee = indices modulo, dernier sommet = depart) */
 static std::vector<Vec3> splSample(bool fermee) {
+    if (g_splCtrl) return splSampleCtrl(fermee);    /* B2.7b : variante points de controle */
     const size_t m = g_splPts.size();
     std::vector<Vec3> out;
     if (m < 2) return out;
@@ -3307,8 +3369,8 @@ static void splPose(bool fermee) {
     const size_t nv = o.v.size();
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
-    std::printf("spline posee : %s, %zu point(s) de passage, %zu sommets discretises%s (fil etirable au deplacement)\n",
-                g_objs.back().name.c_str(), np, nv, fermee ? ", boucle fermee" : "");
+    std::printf("spline posee : %s, %zu %s, %zu sommets discretises%s (fil etirable au deplacement)\n",
+                g_objs.back().name.c_str(), np, g_splCtrl ? "point(s) de controle" : "point(s) de passage", nv, fermee ? ", boucle fermee" : "");
     splReset();
     g_splMode = false;
     std::printf("mode selection\n");
@@ -3341,6 +3403,13 @@ static void drawSplinePreview() {
     glDisable(GL_DEPTH_TEST);
     glColor3d(0.92, 0.75, 0.1);
     glLineWidth(2.0);
+    if (g_splCtrl && g_splPts.size() >= 2) {        /* B2.7b : polygone de controle visible */
+        glColor3d(0.45, 0.45, 0.2);
+        glBegin(GL_LINE_STRIP);
+        for (const Vec3& pt : g_splPts) glVertex3d(pt.x, pt.y, pt.z);
+        glEnd();
+        glColor3d(0.92, 0.75, 0.1);
+    }
     if (g_splPts.size() >= 2) {                     /* courbe lisse des points cliques */
         glBegin(GL_LINE_STRIP);
         for (const Vec3& pt : splSample(false)) glVertex3d(pt.x, pt.y, pt.z);
@@ -3807,6 +3876,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             splCancel("dessin annule");
         } else if (keyIsLetter(key, scancode, 'S') && (mods & GLFW_MOD_SHIFT)) {
             runToolCommand(IDM_TOOL_SPL);   /* Maj+S disponible a tout moment */
+        } else if (keyIsLetter(key, scancode, 'B') && (mods & GLFW_MOD_SHIFT)) {
+            runToolCommand(IDM_TOOL_SPLC);  /* Maj+B = points de controle (B2.7b) */
         }
         return;
     }
@@ -3850,6 +3921,10 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         }
         if (keyIsLetter(key, scancode, 'S') && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineActive && !g_rectActive) {
             runToolCommand(IDM_TOOL_SPL);      /* B2.7 : Maj+S = spline (Ctrl+S = enregistrer) */
+            return;
+        }
+        if (keyIsLetter(key, scancode, 'B') && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineActive && !g_rectActive) {
+            runToolCommand(IDM_TOOL_SPLC);     /* B2.7b : Maj+B = spline par points de controle */
             return;
         }
         if (keyIsLetter(key, scancode, 'L') && g_mode == M_None && !g_dupPending && !g_lineActive)
@@ -3996,15 +4071,37 @@ static void runToolCommand(int id) {
         }
         return;
     case IDM_TOOL_SPL:         /* = Maj+S (B2.7) */
-        if (g_splMode) {
+        if (g_splMode && !g_splCtrl) {
             splCancel("mode spline quitte");
+        } else if (g_splMode) {
+            g_splCtrl = false;               /* B2.7b : bascule variante, points conserves */
+            std::printf("mode Spline (points de passage) : clic = point ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide ; Echap = tout annuler\n");
         } else if (g_mode == M_None && !g_dupPending && !g_lineActive && !g_lineMode
                    && !g_rectActive && !g_cercleActive && !g_arcMode && !g_polyMode) {
             g_splMode = true;
+            g_splCtrl = false;
             splReset();
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("mode Spline : clic = point ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler\n");
+            std::printf("mode Spline (points de passage) : clic = point ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler\n");
+        } else {
+            std::printf("spline : terminez d'abord le mode en cours (Echap)\n");
+        }
+        return;
+    case IDM_TOOL_SPLC:        /* = Maj+B (B2.7b) */
+        if (g_splMode && g_splCtrl) {
+            splCancel("mode spline quitte");
+        } else if (g_splMode) {
+            g_splCtrl = true;                /* B2.7b : bascule variante, points conserves */
+            std::printf("mode Spline (points de controle) : les clics tracent le polygone de controle, la courbe glisse a l'interieur ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide ; Echap = tout annuler\n");
+        } else if (g_mode == M_None && !g_dupPending && !g_lineActive && !g_lineMode
+                   && !g_rectActive && !g_cercleActive && !g_arcMode && !g_polyMode) {
+            g_splMode = true;
+            g_splCtrl = true;
+            splReset();
+            g_ppMode = false;
+            g_rotMode = false;
+            std::printf("mode Spline (points de controle) : les clics tracent le polygone de controle, la courbe glisse a l'interieur ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler\n");
         } else {
             std::printf("spline : terminez d'abord le mode en cours (Echap)\n");
         }
@@ -4151,7 +4248,9 @@ static std::string statusPrompt() {
     if (g_polyActive)
         return "Polygone : clic = sommet suivant | clic sur le depart, clic droit ou Entree = fermer (surface) | Echap = tout annuler";
     if (g_splActive)
-        return "Spline : clic = point suivant | clic sur le depart = boucle fermee | clic droit ou Entree = valider | Echap = tout annuler";
+        return g_splCtrl
+            ? "Spline (controle) : clic = point du polygone | clic sur le depart = boucle fermee | clic droit ou Entree = valider | Echap = tout annuler"
+            : "Spline : clic = point suivant | clic sur le depart = boucle fermee | clic droit ou Entree = valider | Echap = tout annuler";
     if (g_arcMode && g_arcState == 1)
         return "Arc : clic = fin de la corde | chiffres + Entree = longueur de corde | Echap = tout annuler";
     if (g_arcMode && g_arcState == 2)
@@ -4331,7 +4430,7 @@ int main() {
     /* entete console : court, groupe par theme (retour utilisateur : trop de
        verbiage noie les informations importantes) */
     std::printf("Sketch3D - build %s\n", BUILD_VERSION);
-    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart, clic droit ou Entree = ferme) | Maj+S spline (points de passage, clic depart = boucle fermee) | Ctrl+C/V | Suppr\n");
+    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart, clic droit ou Entree = ferme) | Maj+S spline (passage) | Maj+B spline (controle, clic depart = boucle) | Ctrl+C/V | Suppr\n");
     std::printf("Vue     : orbite = clic gauche dans le vide | zoom = molette | panoramique = molette-clic ou Shift+glisser | C centrer | F cadrer | H origine\n");
     std::printf("Projets : Ctrl+S enregistrer | clic droit = infos objet + duplication | I importer\n");
     std::printf("Formats : export scene/selection = menu Fichier, format defini dans Preferences\n");

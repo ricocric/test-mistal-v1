@@ -805,6 +805,24 @@ a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
   tableau) ; menu Outils ; entete console ;
 - moteur de tests : +9 verifications executees, total **299, 0 echec**.
 
+### B2.7b : variante points de controle (retour de test)
+- retour : « j'aurai du prendre tout de suite le choix points de
+  controle » → variante COMMUTABLE (regle B2.5b : choix par la commande,
+  rien de memorise) :
+  - Maj+S = Spline (passage) : la courbe passe par chaque clic ;
+  - Maj+B = Spline (points de controle) : les clics tracent le polygone
+    de controle, la courbe glisse a l'interieur (facon Rhino) ; noeuds
+    serres uniformes (Cox-de Boor) : depart et arrivee EXACTS si
+    ouverte, boucle periodique si fermee ; degre reduit (3, 2, 1)
+    automatiquement pour les petits nombres de points ;
+  - bascule Maj+S/Maj+B A CHAUD pendant un trace, points conserves ;
+  - polygone de controle visible (trait sombre) sous la courbe en
+    apercu ; bandeau et messages de pose/presence par variante ;
+  - 14e bouton « Spline ctrl » + 2e entree menu Outils ;
+- moteur de tests : +5 verifications (armement Maj+B, noeuds serres =
+  extremites exactes, courbe interieure au carre de controle, boucle
+  fermee), total **304, 0 echec**.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils
