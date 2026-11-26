@@ -147,6 +147,15 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   bandeau) ; +1 verification = 305, 0 echec ; VALIDATION UTILISATEUR :
   « la seconde version est plus proche de ce que j'avais en tete » (les
   deux variantes restent, regle des variantes) ;
+- B1.8 fait (retour de test : la barre de boutons s'etalait sur 4 niveaux
+  sans etre redimensionnable) : UNE rangee par defaut en horizontal,
+  WS_THICKFRAME = poignees de redimensionnement, le nombre de colonnes
+  suit la largeur client (symetrique en vertical) ; B1.8b : correctif
+  C2065 'wParam' dans toolWndProc (le parametre s'appelle wp - section
+  _WIN32 jamais compilee en sandbox, seule la build MSVC voit ce nom) ;
+  VALIDATION UTILISATEUR B1.8b : barre horizontale et verticale
+  redimensionnables ; NOTES.md cree a la racine du depot (bloc-notes
+  versionne : formats/dimensions des icones boutons + regles permanentes) ;
 - BACKLOG B2.7e (demande utilisateur) : EDITION DE SPLINE APRES COUP -
   l'objet pose ne conserve aujourd'hui que la courbe discretisee (points
   de controle perdus) ; prevoir de stocker dans l'objet : points de
