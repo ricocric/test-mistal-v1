@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B1.5";
+static const char* BUILD_VERSION = "B1.6";
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1043,6 +1043,11 @@ static void noteExportFormat(bool scene, bool stl) {
     std::string& cible = scene ? g_setup.formatScene : g_setup.formatSelection;
     const std::string voulu = stl ? "stl" : "obj";
     if (cible != voulu) { cible = voulu; saveSetup(); }
+#ifdef _WIN32
+    /* B1.6 : coches du menu Preferences = etat reel, TOUS les ecrivains du
+       format passent ici (export menu Fichier, raccourcis O/S, radios) */
+    prefSyncCoches();
+#endif
 }
 
 /* T1.12 : presse-papiers interne (copier-coller clavier Ctrl+C / Ctrl+V) ;
@@ -1343,6 +1348,9 @@ static void toolbarSetVertical(bool vert);
 static void toolFollow();
 /* B1.4 : menu Preferences - formats d'export editables au vol */
 static void prefSetExportFormat(bool scene, bool stl);
+/* B1.6 : coches Preferences recoherentes avec l'etat reel (appele par
+   noteExportFormat, le goulot unique) */
+static void prefSyncCoches();
 #endif
 
 static void handleMenuAction(int id) {
@@ -1634,18 +1642,29 @@ static void toolbarSetVertical(bool vert) {
     std::printf("barre d'outils : %s\n", vert ? "verticale" : "horizontale");
 }
 
+/* B1.6 : recoherence des coches avec l'etat reel - appelee par
+   noteExportFormat, donc automatiquement a chaque export (menu Fichier,
+   raccourcis O/S) comme a chaque radio du menu Preferences. */
+static void prefSyncCoches() {
+    if (g_prefSceneMenu) {
+        CheckMenuItem(g_prefSceneMenu, IDM_PREF_SCENE_OBJ,
+                      g_setup.formatScene != "stl" ? MF_CHECKED : MF_UNCHECKED);
+        CheckMenuItem(g_prefSceneMenu, IDM_PREF_SCENE_STL,
+                      g_setup.formatScene == "stl" ? MF_CHECKED : MF_UNCHECKED);
+    }
+    if (g_prefSelMenu) {
+        CheckMenuItem(g_prefSelMenu, IDM_PREF_SEL_OBJ,
+                      g_setup.formatSelection != "stl" ? MF_CHECKED : MF_UNCHECKED);
+        CheckMenuItem(g_prefSelMenu, IDM_PREF_SEL_STL,
+                      g_setup.formatSelection == "stl" ? MF_CHECKED : MF_UNCHECKED);
+    }
+}
+
 /* B1.4 : menu Preferences - formats d'export editables au vol. UN SEUL
    CHEMIN DE CODE : passe par noteExportFormat (le meme que les exports
-   reels) -> memoire gravee immediatement, impossible de diverger. */
+   reels) -> memoire gravee immediatement, coches coherentes en cascade. */
 static void prefSetExportFormat(bool scene, bool stl) {
     noteExportFormat(scene, stl);
-    HMENU m = scene ? g_prefSceneMenu : g_prefSelMenu;
-    if (m) {
-        CheckMenuItem(m, scene ? IDM_PREF_SCENE_OBJ : IDM_PREF_SEL_OBJ,
-                      !stl ? MF_CHECKED : MF_UNCHECKED);
-        CheckMenuItem(m, scene ? IDM_PREF_SCENE_STL : IDM_PREF_SEL_STL,
-                      stl ? MF_CHECKED : MF_UNCHECKED);
-    }
     std::printf("preferences : export %s en %s\n", scene ? "scene" : "selection", stl ? "STL" : "OBJ");
 }
 #endif

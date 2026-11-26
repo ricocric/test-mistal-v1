@@ -308,6 +308,10 @@ build\Debug\sketch3d.exe
 - **un seul chemin de code** : les radios passent par `noteExportFormat`, le
   meme mecanisme que les exports reels - memoire `[exports]` gravee
   immediatement dans `sketch3d.ini`, impossible de diverger ;
+- **B1.6 : coches toujours justes** - `noteExportFormat` est le GOULOT
+  UNIQUE des formats : tout export (menu Fichier, raccourcis O/S) comme tout
+  choix Preferences y passe, et les coches du menu Preferences sont
+  resynchronisees a chaque fois (plus d'incoherence constatee en test) ;
 - conforme a l'usage : les sous-menus `Fichier > Exporter...` gardent leur
   format explicite (zero regression) ; le format memorise sera le consommateur
   de la future commande d'export rapide (bouton/raccourci) ;
