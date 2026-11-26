@@ -175,6 +175,14 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   seekg = vieux projets relisibles) ; +25 verifications = 330, 0 echec ;
   SUITE (arbitrages tranches par l'utilisateur : "comme propose") :
   E2 = formes de base, E3 = extrusions ;
+  E2 FAIT : types 4 = rectangle (2 coins, canoniques min/max), 5 = cercle
+  (centre + point du rayon SUR le cercle), 6 = arc (depart/fin/bombement,
+  coeur commun arcComputePts extrait d'arcPose - un seul chemin de code ;
+  bombe aligne = DERNIERE geometrie valide gardee), 7 = polygone
+  (sommets, fan) ; points FIXES pour rectangle/cercle/arc (ni ajout ni
+  suppression, message explicite), polygone = ajout/suppression avec
+  garde a 3 ; round-trip save/load des 4 formes ; +20 verifications =
+  350, 0 echec ; reste E3 = extrusions (profil + hauteur/chemin) ;
   remarques utilisateur : (1) le probleme est le MEME pour la ligne
   (segments droits) et la spline (courbe) - il faudra pouvoir les
   modifier toutes ; (2) GENERALISATION : l'edition doit etre possible

@@ -2034,6 +2034,92 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
     }
 
+    /* ------------------------------------------------------------------ */
+    /* B2.7e E2 : formes de base editables (rectangle, cercle, arc,        */
+    /* polygone) - memes poignees, regeneration par les MEMES constructions */
+    /* ------------------------------------------------------------------ */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        /* 1. RECTANGLE : TraceData = 2 coins ; drag d'un coin = dimensions suivent */
+        rectPose(Vec3(0,0,0), Vec3(2,0,3));
+        CHECK(g_objs.size() == 1 && g_objs[0].traceType == 4 && g_objs[0].tracePts.size() == 2,
+              "edition (rectangle) : TraceData = 2 coins a la pose");
+        g_objs[0].tracePts[1] = Vec3(5, 0, 1);      /* coin oppose deplace (locales) */
+        traceRegen(g_objs[0]);
+        CHECK(g_objs[0].v.size() == 4 && std::fabs(g_objs[0].v[2].x - 5.0) < 1e-12
+              && std::fabs(g_objs[0].v[2].z - 1.0) < 1e-12,
+              "edition (rectangle) : coins canoniques recalcules (min/max des 2 coins)");
+        CHECK(g_objs[0].tri.size() == 6,
+              "edition (rectangle) : 2 tris regeneres");
+        /* 2. CERCLE : centre + point du rayon ; drag du rayon = 24 tris suivent */
+        cerclePose(Vec3(1,0,1), 2.0);
+        CHECK(g_objs[1].traceType == 5 && g_objs[1].v.size() == 1 + (size_t)CERCLE_SEG,
+              "edition (cercle) : TraceData = centre + point du rayon, 24 segments");
+        g_objs[1].tracePts[1] = Vec3(4, 0, 0);      /* rayon 4 (locales, centre = 0,0,0) */
+        traceRegen(g_objs[1]);
+        CHECK(std::fabs((g_objs[1].v[1] - g_objs[1].tracePts[0]).norm() - 4.0) < 1e-9,
+              "edition (cercle) : rayon regenere = distance centre -> poignee");
+        /* 3. ARC : 3 points de definition ; drag du bombement = arc suit */
+        arcPose(Vec3(0,0,0), Vec3(1,0,1), Vec3(2,0,0));
+        CHECK(g_objs[2].traceType == 6 && g_objs[2].v.size() == (size_t)ARC_SEG + 1,
+              "edition (arc) : TraceData = depart/fin/bombement, 13 sommets");
+        {
+            double dmin = 1e300;
+            for (const Vec3& loc : g_objs[2].v) dmin = std::min(dmin, (loc - Vec3(1,0,1)).norm());
+            CHECK(dmin < 1e-9, "edition (arc) : l'arc passe EXACTEMENT par le bombement");
+            g_objs[2].tracePts[1] = Vec3(1, 0, -1);   /* bombement deplace (locales, ancre = depart) */
+            traceRegen(g_objs[2]);
+            dmin = 1e300;
+            for (const Vec3& loc : g_objs[2].v) dmin = std::min(dmin, (loc - Vec3(1,0,-1)).norm());
+            CHECK(dmin < 1e-9, "edition (arc) : bombe deplace = arc regenere passant par le nouveau point");
+            CHECK((g_objs[2].v.front()).norm() < 1e-9 && (g_objs[2].v.back() - Vec3(2,0,0)).norm() < 1e-9,
+                  "edition (arc) : depart et fin exacts (ancre locale conservee)");
+        }
+        /* 4. ARC degenere (bombement aligne) : la derniere geometrie valide est GARDEE */
+        {
+            const std::vector<Vec3> avant = g_objs[2].v;
+            g_objs[2].tracePts[1] = Vec3(1, 0, 0);    /* aligne avec la corde */
+            traceRegen(g_objs[2]);
+            bool intact = g_objs[2].v.size() == avant.size();
+            for (size_t i = 0; intact && i < avant.size(); ++i)
+                intact = (g_objs[2].v[i] - avant[i]).norm() < 1e-12;
+            CHECK(intact, "edition (arc) : bombe aligne = geometrie precedente conservee");
+        }
+        /* 5. POLYGONE : sommets = TraceData ; ajout sur un bord, suppression, garde a 3 */
+        g_polyPts = { Vec3(0,0,0), Vec3(4,0,0), Vec3(4,0,4), Vec3(0,0,4) };
+        polyPose();
+        CHECK(g_objs[3].traceType == 7 && g_objs[3].traceFerme == 1 && g_objs[3].tri.size() == 6,
+              "edition (polygone) : TraceData = sommets, fan 2 tris");
+        CHECK(traceAddPoint(g_objs[3], Vec3(6,0,2)) >= 0 && g_objs[3].tracePts.size() == 5
+              && g_objs[3].tri.size() == 9,
+              "edition (polygone) : clic sur un bord = sommet ajoute (3 tris)");
+        CHECK(traceDelPoint(g_objs[3], 4) && g_objs[3].tri.size() == 6,
+              "edition (polygone) : point supprime (2 tris)");
+        {
+            Object& pg = g_objs[3];
+            CHECK(traceDelPoint(pg, 3) && pg.tracePts.size() == 3,
+                  "edition (polygone) : suppression a 4 points (-> 3)");
+            CHECK(!traceDelPoint(pg, 0), "edition (polygone) : garde - minimum 3 sommets");
+            traceToggleFerme(pg);
+            CHECK(pg.traceFerme == 1, "edition (polygone) : ouvert/ferme sans effet (surface seule)");
+        }
+        /* 6. persistence : rectangle et cercle round-trip (bloc trace) */
+        {
+            std::string err;
+            const std::string p = tmpPath("edition_e2.s3projet");
+            CHECK(saveProject(p, err), err.c_str());
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), err.c_str());
+            CHECK(g_objs.size() == 4 && g_objs[0].traceType == 4 && g_objs[1].traceType == 5
+                  && g_objs[2].traceType == 6 && g_objs[3].traceType == 7,
+                  "edition E2 : types de trace survivent au save/load (4 formes)");
+            CHECK(g_objs[1].tracePts.size() == 2 && std::fabs(g_objs[1].tracePts[1].x - 4.0) < 1e-12,
+                  "edition E2 : points de definition fideles au save/load");
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyPts.clear();
+    }
+
     std::printf("resume : %d echec(s), %d verifications\n", g_fail, g_tot);
     return g_fail ? 1 : 0;
 }

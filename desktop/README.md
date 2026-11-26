@@ -870,6 +870,26 @@ trace (un seul chemin de code). Generalise plus tard a toutes les formes
   .s3projet (peek par ligne avec retour arriere du flux = vieux projets
   relisibles) ; total **330, 0 echec**.
 
+### B2.7e E2 : formes de base editables (rectangle, cercle, arc, polygone)
+
+Les MEMES poignees, les MEMES regles - chaque forme porte ses parametres
+et se regenere par SA construction d'origine :
+
+- **Rectangle** : 2 poignees = les coins ; les coins canoniques (min/max)
+  sont recalcules, la feuille reste normale +y ;
+- **Cercle** : 2 poignees = centre + point du rayon (toujours SUR le
+  cercle, angle 0) ; le rayon suit la distance centre -> poignee ;
+- **Arc** : 3 poignees = depart, fin, bombement ; l'arc regenere passe
+  EXACTEMENT par les 3 ; si le bombement est amene sur la corde (arc
+  degenere), la DERNIERE geometrie valide est conservee ;
+- **Polygone** : poignees sur les sommets ; clic sur un bord = sommet
+  ajoute, poignee + Suppr = supprime (garde : minimum 3 sommets) ;
+  ouvert/ferme sans effet (surface seule, choix B2.6) ;
+- rectangle, cercle et arc = points FIXES : ni ajout ni suppression
+  (message explicite), seuls les deplacements sont permis ;
+- round-trip save/load verifie pour les 4 formes ; total **350,
+  0 echec**.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils

@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.7e";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.7e2";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1364,7 +1364,7 @@ static bool loadProject(const std::string& path, std::string& err) {
                 std::istringstream is(probe);
                 std::string tag;
                 if (!(is >> tag >> o.traceType >> o.traceFerme >> o.traceSurface)
-                    || o.traceType < 0 || o.traceType > 3) {
+                    || o.traceType < 0 || o.traceType > 7) {
                     err = "fichier corrompu (entete de trace)"; return false;
                 }
                 size_t ntp = 0;
@@ -2853,6 +2853,9 @@ static void rectPose(const Vec3& a, const Vec3& b) {
     o.v = { Vec3(0, 0, 0), Vec3(x1 - x0, 0, 0), Vec3(x1 - x0, 0, z1 - z0), Vec3(0, 0, z1 - z0) };
     o.tri = { 0, 2, 1, 0, 3, 2 };    /* normale +y (CCW vu de dessus) */
     o.n.clear();
+    /* B2.7e : les 2 coins de definition survivent a la pose (edition) */
+    o.traceType = 4;
+    o.tracePts = { a - o.pos, b - o.pos };
     computeObjectDerived(o);
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
@@ -2971,6 +2974,9 @@ static void cerclePose(const Vec3& c, double r) {
         o.tri.push_back(1 + (i + 1) % CERCLE_SEG);
     }
     o.n.clear();
+    /* B2.7e : centre + point du rayon (sur le cercle, angle 0) survivent a la pose */
+    o.traceType = 5;
+    o.tracePts = { Vec3(0, 0, 0), Vec3(r, 0, 0) };
     computeObjectDerived(o);
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
@@ -3084,15 +3090,13 @@ static double wrapAngle(double a) {      /* dans (-pi, pi] */
     while (a <= -3.14159265358979323846) a += 6.28318530717958647692;
     return a;
 }
-/* construction : les N+1 points sont recalcules EXACTS sur le cercle ;
-   v LOCALES (pos = depart, pos + v = monde, convention commune) */
-static void arcPose(const Vec3& p1, const Vec3& b, const Vec3& p2) {
+/* coeur commun (arcPose + edition B2.7e) : les ARC_SEG+1 points de l'arc,
+   EXACTS sur le cercle, dans le MEME espace que les 3 points d'entree
+   (invariant par translation) ; faux si alignes / arc nul ou complet */
+static bool arcComputePts(const Vec3& p1, const Vec3& b, const Vec3& p2, std::vector<Vec3>& out) {
     Vec3 C;
     double r;
-    if (!arcCircle3(p1, b, p2, C, r)) {
-        std::printf("arc : bombement aligne avec la corde - rien a poser\n");
-        return;
-    }
+    if (!arcCircle3(p1, b, p2, C, r)) return false;
     const double t1 = std::atan2(p1.z - C.z, p1.x - C.x);
     const double t2 = std::atan2(p2.z - C.z, p2.x - C.x);
     const double tb = std::atan2(b.z - C.z, b.x - C.x);
@@ -3100,26 +3104,39 @@ static void arcPose(const Vec3& p1, const Vec3& b, const Vec3& p2) {
     double sweep = wrapAngle(t2 - t1);
     if (db >= 0.0) { if (sweep < 0.0) sweep += 6.28318530717958647692; }
     else           { if (sweep > 0.0) sweep -= 6.28318530717958647692; }
-    if (std::fabs(sweep) < 1e-9 || std::fabs(sweep) > 6.28318530717958647692 - 1e-9) {
-        std::printf("arc : bombement invalide (arc nul ou cercle complet) - deplacez le bombement\n");
+    if (std::fabs(sweep) < 1e-9 || std::fabs(sweep) > 6.28318530717958647692 - 1e-9) return false;
+    out.clear();
+    out.reserve((size_t)ARC_SEG + 1);
+    for (int i = 0; i <= ARC_SEG; ++i) {
+        const double a = t1 + sweep * double(i) / double(ARC_SEG);
+        out.push_back(Vec3(C.x + r * std::cos(a), 0.0, C.z + r * std::sin(a)));
+    }
+    return true;
+}
+/* construction : les N+1 points sont recalcules EXACTS sur le cercle ;
+   v LOCALES (pos = depart, pos + v = monde, convention commune) */
+static void arcPose(const Vec3& p1, const Vec3& b, const Vec3& p2) {
+    std::vector<Vec3> pts;
+    if (!arcComputePts(p1, b, p2, pts)) {
+        std::printf("arc : bombement invalide (aligne avec la corde, arc nul ou cercle complet) - deplacez le bombement\n");
         return;
     }
     Object o;
     o.name = uniqueName("Arc");
     o.pos = p1;
     o.scl = 1.0;
-    o.v.reserve((size_t)ARC_SEG + 1);
-    for (int i = 0; i <= ARC_SEG; ++i) {
-        const double a = t1 + sweep * double(i) / double(ARC_SEG);
-        o.v.push_back(Vec3(C.x + r * std::cos(a) - p1.x, 0.0, C.z + r * std::sin(a) - p1.z));
-    }
+    o.v.reserve(pts.size());
+    for (const Vec3& p : pts) o.v.push_back(p - p1);
     o.tri.clear();     /* fil ouvert : SANS triangle, chaine derivee (ligne B2.1) */
     o.n.clear();
+    /* B2.7e : les 3 points de definition survivent a la pose (edition) */
+    o.traceType = 6;
+    o.tracePts = { Vec3(0, 0, 0), b - p1, p2 - p1 };
     computeObjectDerived(o);
     const size_t nseg = o.edges.size();
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
-    std::printf("arc pose : %s, %zu segment(s), rayon %.3g\n", g_objs.back().name.c_str(), nseg, r);
+    std::printf("arc pose : %s, %zu segment(s)\n", g_objs.back().name.c_str(), nseg);   /* B2.7e2 : le rayon vit dans arcComputePts */
     arcReset();
     g_arcMode = false;
     std::printf("mode selection\n");
@@ -3263,6 +3280,10 @@ static void polyPose() {
     o.v.resize(g_polyPts.size());
     for (size_t i = 0; i < o.v.size(); ++i) o.v[i] = g_polyPts[i] - o.pos;
     o.n.clear();
+    /* B2.7e : les sommets de definition survivent a la pose (edition) */
+    o.traceType = 7;
+    o.traceFerme = 1;                    /* surface seule (choix utilisateur B2.6) */
+    o.tracePts = o.v;
     for (size_t i = 1; i + 1 < o.v.size(); ++i) {
         o.tri.push_back(0); o.tri.push_back((int)i); o.tri.push_back((int)(i + 1));
     }
@@ -3578,8 +3599,10 @@ static double pointRayDist(const Vec3& org, const Vec3& dir, const Vec3& p) {
    MEMES fonctions que le trace ; tracePts LOCAUX -> v LOCAUX, la convention
    pos + scl*v = monde est preservee (la translation ne change rien aux
    echantillonnages, centripete incluse : longueurs de cordes). */
+static void traceRegenBase(Object& o);   /* E2 : formes de base (defini plus bas) */
 static void traceRegen(Object& o) {
     if (o.traceType == 0 || o.tracePts.size() < 2) return;
+    if (o.traceType >= 4) { traceRegenBase(o); return; }   /* E2 : rectangle/cercle/arc/polygone */
     if (o.traceType == 1) {                     /* LIGNE : v = points */
         const bool surface = o.traceFerme && o.traceSurface && !o.tri.empty();
         o.v = o.tracePts;
@@ -3608,9 +3631,73 @@ static void traceRegen(Object& o) {
     o.tri.clear();
     o.n.clear();
     computeObjectDerived(o);
+    return;
+}
+
+/* E2 (B2.7e) : formes de base - MEMES constructions que les poses
+   (rectPose, cerclePose, arcComputePts, fan du polygone) */
+static void traceRegenBase(Object& o) {
+    if (o.traceType == 4) {                     /* RECTANGLE : 2 coins (locales) */
+        const Vec3& a = o.tracePts[0];
+        const Vec3& b = o.tracePts[1];
+        const double x0 = (a.x < b.x) ? a.x : b.x, x1 = (a.x < b.x) ? b.x : a.x;
+        const double z0 = (a.z < b.z) ? a.z : b.z, z1 = (a.z < b.z) ? b.z : a.z;
+        o.v = { Vec3(x0, 0, z0), Vec3(x1, 0, z0), Vec3(x1, 0, z1), Vec3(x0, 0, z1) };
+        o.tri = { 0, 2, 1, 0, 3, 2 };           /* normale +y (comme rectPose) */
+        o.n.clear();
+        computeObjectDerived(o);
+        return;
+    }
+    if (o.traceType == 5) {                     /* CERCLE : centre + point du rayon */
+        const Vec3 c = o.tracePts[0];
+        const double r = (o.tracePts[1] - c).norm();
+        if (r < 1e-9) return;                   /* rayon nul : garder la derniere geometrie */
+        o.v.clear();
+        o.v.reserve(1 + (size_t)CERCLE_SEG);
+        o.v.push_back(c);
+        for (int i = 0; i < CERCLE_SEG; ++i) {
+            const double a = 6.283185307179586 * double(i) / double(CERCLE_SEG);
+            o.v.push_back(c + Vec3(r * std::cos(a), 0.0, -r * std::sin(a)));
+        }
+        o.tri.clear();
+        for (int i = 0; i < CERCLE_SEG; ++i) {
+            o.tri.push_back(0);
+            o.tri.push_back(1 + i);
+            o.tri.push_back(1 + (i + 1) % CERCLE_SEG);
+        }
+        o.n.clear();
+        computeObjectDerived(o);
+        return;
+    }
+    if (o.traceType == 6) {                     /* ARC : depart, fin, bombement */
+        std::vector<Vec3> pts;
+        if (!arcComputePts(o.tracePts[0], o.tracePts[1], o.tracePts[2], pts))
+            return;                             /* alignes/arc nul : garder la derniere geometrie */
+        for (Vec3& p : pts) p = p - o.tracePts[0];   /* locales (ancre = depart) */
+        o.v = pts;
+        o.tri.clear();
+        o.n.clear();
+        computeObjectDerived(o);
+        return;
+    }
+    if (o.traceType == 7) {                     /* POLYGONE : fan (surface seule) */
+        o.v = o.tracePts;
+        o.tri.clear();
+        o.n.clear();
+        for (size_t i = 1; i + 1 < o.v.size(); ++i) {
+            o.tri.push_back(0); o.tri.push_back((int)i); o.tri.push_back((int)(i + 1));
+        }
+        computeObjectDerived(o);
+        return;
+    }
+}
+/* formes a points FIXES (pas d'ajout/suppression : les poignees se deplacent) */
+static bool tracePointsFixes(const Object& o) {
+    return o.traceType == 4 || o.traceType == 5 || o.traceType == 6;
 }
 /* minimum de points de definition par forme (garde de suppression/fermeture) */
 static size_t traceMinPoints(const Object& o) {
+    if (o.traceType == 7) return 3;             /* polygone : surface seule fermee */
     return o.traceFerme ? 3 : 2;
 }
 /* index d'insertion dans tracePts : apres l'intervalle le plus proche du clic
@@ -3632,6 +3719,20 @@ static int traceInsertIndex(const Object& o, const Vec3& pLocal) {
         }
         return bi;
     }
+    if (o.traceType == 7) {                     /* polygone ferme : segments + cloture */
+        double best = 1e300; int bi = 1;
+        for (size_t i = 0; i < n; ++i) {
+            const Vec3 a = o.tracePts[i], b = o.tracePts[(i + 1) % n];
+            const Vec3 ab = b - a;
+            const double l2 = dot(ab, ab);
+            double t = l2 > 1e-18 ? dot(pLocal - a, ab) / l2 : 0.0;
+            if (t < 0.0) t = 0.0;
+            if (t > 1.0) t = 1.0;
+            const double d = (a + ab * t - pLocal).norm();
+            if (d < best) { best = d; bi = (int)i + 1; }   /* i = n-1 : fin du vecteur = avant le depart */
+        }
+        return bi;
+    }
     double best = 1e300; int bi = 1;
     for (size_t j = 0; j < o.v.size(); ++j) {
         const double d = (o.v[j] - pLocal).norm();
@@ -3645,6 +3746,10 @@ static int traceInsertIndex(const Object& o, const Vec3& pLocal) {
    insere (-1 = refuse : doublon ou trace inedit) */
 static int traceAddPoint(Object& o, const Vec3& monde) {
     if (o.traceType == 0 || o.tracePts.size() < 2) return -1;
+    if (tracePointsFixes(o)) {
+        std::printf("edition : cette forme a des points fixes (rectangle, cercle, arc) - deplacez les poignees\n");
+        return -1;
+    }
     const Vec3 pLocal = (monde - o.pos) * (1.0 / o.scl);
     for (const Vec3& q : o.tracePts)
         if ((q - pLocal).norm() < 1e-9) return -1;      /* meme point : rien */
@@ -3656,6 +3761,10 @@ static int traceAddPoint(Object& o, const Vec3& monde) {
 /* poignee + Suppr = supprimer (garde : minimum par forme) */
 static bool traceDelPoint(Object& o, int idx) {
     if (o.traceType == 0 || idx < 0 || idx >= (int)o.tracePts.size()) return false;
+    if (tracePointsFixes(o)) {
+        std::printf("edition : cette forme a des points fixes (rectangle, cercle, arc) - deplacez les poignees\n");
+        return false;
+    }
     if (o.tracePts.size() <= traceMinPoints(o)) {
         std::printf("edition : minimum %zu point(s) pour ce trace\n", traceMinPoints(o));
         return false;
@@ -3668,6 +3777,10 @@ static bool traceDelPoint(Object& o, int idx) {
 /* O pendant l'edition : bascule ouvert/ferme (feuille <-> fil pour la ligne) */
 static void traceToggleFerme(Object& o) {
     if (o.traceType == 0) return;
+    if (o.traceType != 1 && o.traceType != 2 && o.traceType != 3) {
+        std::printf("edition : ouvert/ferme concerne la ligne et la spline\n");
+        return;
+    }
     if (!o.traceFerme && o.tracePts.size() < 3) {
         std::printf("edition : au moins 3 points pour fermer le trace\n");
         return;
@@ -4442,14 +4555,14 @@ static void runToolCommand(int id) {
                    && !g_ppMode && !g_rotMode) {
             const int idx = (selectedCount() == 1 && g_selected >= 0) ? g_selected : -1;
             if (idx < 0 || g_objs[(size_t)idx].traceType == 0) {
-                flashBand("Editer : selectionnez d'abord UNE ligne ou une spline (E)");
-                std::printf("editer : selectionnez d'abord UNE ligne ou une spline (E)\n");
+                flashBand("Editer : selectionnez d'abord UNE forme tracee (E)");
+                std::printf("editer : selectionnez d'abord UNE forme tracee (ligne, spline, rectangle, cercle, arc, polygone)\n");
             } else {
                 g_editMode = true;
                 g_editObj = idx;
                 g_editGrab = -1;
                 g_editSel = -1;
-                std::printf("mode Edition : %s (%zu points) - glissez une poignee ; clic sur la courbe = ajouter un point ; poignee + Suppr = supprimer ; Maj+S/Maj+B = variante spline ; O = ouvert/ferme ; Echap ou clic droit = quitter\n",
+                std::printf("mode Edition : %s (%zu points) - glissez une poignee ; clic sur la courbe = ajouter un point (ligne, spline, polygone) ; poignee + Suppr = supprimer ; Maj+S/Maj+B = variante spline ; O = ouvert/ferme ; Echap ou clic droit = quitter\n",
                             g_objs[(size_t)idx].name.c_str(), g_objs[(size_t)idx].tracePts.size());
             }
         }
@@ -4606,7 +4719,7 @@ static std::string statusPrompt() {
         g_bandFlash.clear();
     }
     if (g_editMode)
-        return "Edition du trace : glissez une poignee | clic sur la courbe = ajouter un point | poignee + Suppr = supprimer | Maj+S/Maj+B = variante spline | O = ouvert/ferme | Echap ou clic droit = quitter";
+        return "Edition du trace : glissez une poignee | clic sur la courbe = ajouter un point (ligne, spline, polygone) | poignee + Suppr = supprimer | Maj+S/Maj+B = variante spline | O = ouvert/ferme | Echap ou clic droit = quitter";
     if (g_lineActive)
         return "Ligne : clic = prolonger | clic droit = fin | chiffres + Entree = longueur exacte | Echap = tout annuler";
     if (g_rectActive)
