@@ -30,7 +30,15 @@ void glfwSetFramebufferSizeCallback(GLFWwindow*,GLFWframebuffersizefun){}
 /* horloge scriptable : avancee par le simulateur (double-clic 0.3 s exerce) */
 double g_stubTime = 0.0;
 double glfwGetTime(void){return g_stubTime;}
-const char* glfwGetKeyName(int,int){return nullptr;}
+/* B2.4e : simule une disposition AZERTY - la touche etiquetee A (position
+   QWERTY du Q) arrive en GLFW_KEY_Q avec scancode 0x10, et son NOM est "A" ;
+   nullptr ailleurs (comportement anterieur, repli par code). */
+const char* glfwGetKeyName(int key, int scancode){
+    static const char azertyA[] = "A";
+    if (key == GLFW_KEY_Q && scancode == 0x10) return azertyA;
+    (void)scancode;
+    return nullptr;
+}
 void glBegin(GLenum){} void glEnd(void){}
 void glVertex3d(GLdouble,GLdouble,GLdouble){}
 void glVertex3dv(const GLdouble*){}

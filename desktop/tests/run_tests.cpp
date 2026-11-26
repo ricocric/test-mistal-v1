@@ -1697,6 +1697,13 @@ int main() {
         CHECK(g_arcMode && g_arcState == 0, "arc : Maj+A arme l outil");
         onKey(W, GLFW_KEY_A, 0, GLFW_PRESS, GLFW_MOD_SHIFT);
         CHECK(!g_arcMode, "arc : rappel de Maj+A = desarme (toggle)");
+        /* B2.4e : AZERTY - la touche etiquetee A arrive en GLFW_KEY_Q (position
+           QWERTY) ; le raccourci suit l'ETIQUETTE (keyIsLetter via le nom de touche) */
+        onKey(W, GLFW_KEY_Q, 0x10, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_arcMode && g_arcState == 0,
+              "arc : AZERTY - Maj + touche etiquetee A (code GLFW_KEY_Q) arme l'outil");
+        onKey(W, GLFW_KEY_Q, 0x10, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(!g_arcMode, "arc : AZERTY - rappel = desarme (toggle)");
         /* pose par 3 points : P1(0,0,0), P2(4,0,0), B(2,0,1) -> cercle centre (2,-1.5), r = 2.5 */
         g_arcMode = true; arcReset();
         arcPose(Vec3(0, 0, 0), Vec3(2, 0, 1), Vec3(4, 0, 0));

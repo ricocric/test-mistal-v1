@@ -81,6 +81,11 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   POSITION QWERTY (AZERTY : A arrive en GLFW_KEY_Q) ; raccourcis lettres
   desormais compares par ETIQUETTE reelle (keyIsLetter/glfwGetKeyName,
   regle B2.2d), repli par code ;
+  B2.4f (regle generalisee, demande utilisateur) : TOUTE comparaison de
+  touche lettre passe par keyIsLetter (dernier cas : pivot B de la
+  rotation) ; touches de controle par code (positions universelles) ;
+  stub : disposition AZERTY simulee pour (GLFW_KEY_Q, sc 0x10) = "A",
+  +2 verifications executees = 280, 0 echec ;
 - B2.5 FERMETURE DE LIGNE fait (avant B2.2-B2.4, demande utilisateur) :
   clic sur le depart (>= 3 sommets, tolerance filPickTol) = feuille
   fusionnee au fil en UN objet (fan 0,i,i+1, etirable au push/pull) ou fil

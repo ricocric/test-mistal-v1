@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.4e";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.4f";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -3342,7 +3342,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             std::printf("\nmode selection\n");
         } else if (keyIsLetter(key, scancode, 'R')) {
             runToolCommand(IDM_TOOL_ROT);  /* R disponible a tout moment : quitte le mode */
-        } else if (key == GLFW_KEY_B && !g_rotMulti.empty()) {
+        } else if (keyIsLetter(key, scancode, 'B') && !g_rotMulti.empty()) {
             g_rotPivotKind = (g_rotPivotKind == 1) ? 0 : 1;   /* T1.10 : centre propre <-> barycentre du groupe, angle conserve */
             rotApplyCurrent(g_rotAxis, g_rotAngle);
             std::printf("\rpivot : %s   \n\rRotation %s (multi) : %+.1f deg   ",

@@ -670,6 +670,14 @@ aligne aux axes (largeur en X, profondeur en Z), pose au sol y = 0.
     en '.' decimale ;
   - convention generale : « ; » = separateur de champs, « , » et « . » =
     decimales ;
+- REGLE GENERALISEE (B2.4f, retour de test Maj+A) : GLFW rapporte les
+  touches par POSITION QWERTY (codes US) - sur AZERTY la touche etiquetee
+  A arrive en GLFW_KEY_Q, le M en GLFW_KEY_SEMICOLON, etc. Toute
+  comparaison de touche LETTRE passe donc par keyIsLetter (etiquette
+  reelle via glfwGetKeyName, repli par code) : JAMAIS de comparaison
+  directe du code GLFW pour une lettre. Les touches de controle
+  (Entree, Echap, Suppr, Backspace, moins, KP_*) restent comparees par
+  code : positions universelles ;
 - moteur de tests : +7 verifications (B2.2c/d).
 
 ## B2.3 : outil Cercle
