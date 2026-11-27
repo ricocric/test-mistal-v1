@@ -359,6 +359,9 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   (un seul moyen de se deplacer, pan molette-clic supprime) ; zoom
   borne 0.1..4000 ; refus "terminez d abord" au pied de page ; +3+2
   = 445, 0 echec ;
+  B3.3f (REGLE) : console = debug uniquement, tout message
+  utilisateur passe par userMsg (bandeau + journal consultable, J,
+  panneau des 200 derniers) ; +3 = 448, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec

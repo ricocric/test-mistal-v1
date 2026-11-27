@@ -997,6 +997,12 @@ globale corrigee par le volume signe (normales exterieures) ;
   (tres pres 0.1, tres loin 4000) ; **tous les refus "terminez d'abord" passent
   au pied de page** (la console ne sera pas livree avec le soft) ; +2
   verifications = **445, 0 echec**.
+- **B3.3f (REGLE utilisateur)** : **console = debug uniquement ; tout message
+  utilisateur va DANS LA FENETRE** - les ~200 printf du programme passent par
+  un helper unique `userMsg` (bandeau + **journal consultable**, panneau des
+  200 derniers messages, **touche J** ou menu Affichage > Journal des
+  messages) ; restent en console : l'echo de developpement, les compteurs
+  live (\r) et le repli sans fenetre ; +3 verifications = **448, 0 echec**.
 
 ## Organiseur des prochains lots
 

@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
+#include <cstdarg>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -300,6 +301,34 @@ static void buildScene() {
 /* ------------------------------------------------------------------ */
 
 enum Mode { M_None, M_Orbit, M_Drag, M_Pan };
+
+/* message ephemere affiche dans le bandeau de la FENETRE (retour de test :
+   les avis de saisie doivent se voir dans l'application, pas en console) */
+static std::string g_bandFlash;
+static double g_bandFlashUntil = 0.0;
+
+static void flashBand(const char* msg) {
+    g_bandFlash = msg;
+    g_bandFlashUntil = glfwGetTime() + 3.0;
+}
+
+/* B3.3f (REGLE utilisateur) : console = debug uniquement ; tout message
+   utilisateur va DANS LA FENETRE - bandeau + JOURNAL consultable (touche J,
+   panneau des derniers messages). L'echo console reste pendant le
+   developpement uniquement. */
+static std::vector<std::string> g_journal;
+static bool g_journalVisible = false;
+static void userMsg(const char* fmt, ...) {
+    char buf[512];
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    std::printf("%s\n", buf);       /* echo developpement */
+    g_journal.push_back(buf);
+    if (g_journal.size() > 200) g_journal.erase(g_journal.begin(), g_journal.end() - 200);
+    flashBand(buf);
+}
 static Mode g_mode = M_None;
 static Camera g_cam;
 static Camera g_camHome;
@@ -537,7 +566,7 @@ static void beginDrag(GLFWwindow* w, int idx) {
             m.startPos = g_objs[(size_t)j].pos;
             g_dragMulti.push_back(m);
         }
-        std::printf("deplacement multi : %zu objets\n", g_dragMulti.size());
+        userMsg("deplacement multi : %zu objets", g_dragMulti.size());
     }
     g_lockAxis = -1;
     g_mode = M_Drag;
@@ -567,8 +596,8 @@ static void updateDrag(GLFWwindow* w) {
     const int axis = (g_axisHeld[0]) ? 0 : (g_axisHeld[1]) ? 1 : (g_axisHeld[2]) ? 2 : -1;
     if (axis != g_lockAxis) {
         g_lockAxis = axis;
-        if (axis >= 0) std::printf("deplacement verrouille sur %s\n", axisName(axis));
-        else           std::printf("deplacement libre (plan camera)\n");
+        if (axis >= 0) userMsg("deplacement verrouille sur %s", axisName(axis));
+        else           userMsg("deplacement libre (plan camera)");
     }
     Vec3 org, dir;
     if (!rayFromMouse(w, org, dir)) return;
@@ -701,8 +730,8 @@ static bool loadOBJ(std::istream& in, Object& o, std::string& err) {
     weldObject(o);
     computeObjectDerived(o);
     if (o.v.size() < rawCount)
-        std::printf("import OBJ : %zu sommets soudes (%zu restants)\n", rawCount - o.v.size(), o.v.size());
-    if (skipped) std::printf("import OBJ : %zu faces degenerees ou invalides ignorees\n", skipped);
+        userMsg("import OBJ : %zu sommets soudes (%zu restants)", rawCount - o.v.size(), o.v.size());
+    if (skipped) userMsg("import OBJ : %zu faces degenerees ou invalides ignorees", skipped);
     return true;
 }
 
@@ -756,7 +785,7 @@ static bool loadSTL(std::istream& in, Object& o, std::string& err) {
     weldObject(o);
     computeObjectDerived(o);
     if (o.v.size() < rawCount)
-        std::printf("import STL : %zu sommets soudes (%zu restants)\n", rawCount - o.v.size(), o.v.size());
+        userMsg("import STL : %zu sommets soudes (%zu restants)", rawCount - o.v.size(), o.v.size());
     return true;
 }
 
@@ -841,7 +870,7 @@ static int placeImport(Object& o) {
         o.pos.x += (hmax.x - amin.x) + 0.25;
         ++shifts;
     }
-    std::printf("attention : pas d'emplacement libre trouve, objet laisse en surimpression\n");
+    userMsg("attention : pas d'emplacement libre trouve, objet laisse en surimpression");
     return shifts;
 }
 
@@ -852,7 +881,7 @@ static void importFile() {
     if (path.empty()) return;
     Object o;
     std::string err;
-    if (!loadMeshFile(path, o, err)) { std::printf("import echoue : %s\n", err.c_str()); return; }
+    if (!loadMeshFile(path, o, err)) { userMsg("import echoue : %s", err.c_str()); return; }
     o.name = baseNameOf(path);
     o.col[0] = 0.35; o.col[1] = 0.55; o.col[2] = 0.35;
     computeObjectDerived(o);
@@ -876,12 +905,12 @@ static void importFile() {
 
     const int shifts = placeImport(o);
     const Vec3 dim = (o.bmax - o.bmin) * o.scl;
-    std::printf("import : %s — %zu sommets, %zu tris, dimensions locales %.4g x %.4g x %.4g, echelle %.6g, dimensions affichees %.4g x %.4g x %.4g, volume local %.6g, volume affiche %.6g, aretes non-manifold %zu\n",
+    userMsg("import : %s — %zu sommets, %zu tris, dimensions locales %.4g x %.4g x %.4g, echelle %.6g, dimensions affichees %.4g x %.4g x %.4g, volume local %.6g, volume affiche %.6g, aretes non-manifold %zu",
                 o.name.c_str(), o.v.size(), o.tri.size(),
                 o.bmax.x - o.bmin.x, o.bmax.y - o.bmin.y, o.bmax.z - o.bmin.z, o.scl,
                 dim.x, dim.y, dim.z, vol, vol * o.scl * o.scl * o.scl, nonManifold);
     if (shifts > 0)
-        std::printf("superposition evitee : objet decale de %d pas vers +X, pose a x = %.3f (comme le lot web 2.x)\n",
+        userMsg("superposition evitee : objet decale de %d pas vers +X, pose a x = %.3f (comme le lot web 2.x)",
                     shifts, o.pos.x);
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
@@ -911,11 +940,11 @@ static void duplicateObject(int idx, int n) {
             ++shifts;
         }
         if (shifts > 0)
-            std::printf("superposition evitee : %s decale de %d pas vers +X (x = %.3f)\n", o.name.c_str(), shifts, o.pos.x);
+            userMsg("superposition evitee : %s decale de %d pas vers +X (x = %.3f)", o.name.c_str(), shifts, o.pos.x);
         g_objs.push_back(std::move(o));
         ++made;
     }
-    std::printf("duplication : %s x%d (copies posees vers +X, pas de %.3f)\n", src.name.c_str(), made, step);
+    userMsg("duplication : %s x%d (copies posees vers +X, pas de %.3f)", src.name.c_str(), made, step);
 }
 
 /* retrait d'instances (retour de test : corriger une sur-duplication sans
@@ -943,7 +972,7 @@ static int removeInstances(int idx, int k) {
         renumberSelectionAfterDelete(hits[(size_t)r].first);
     }
     if (rem > 0)
-        std::printf("retrait : %d copie(s) supprimee(s) de la serie %s (%d instance(s) restante(s))\n",
+        userMsg("retrait : %d copie(s) supprimee(s) de la serie %s (%d instance(s) restante(s))",
                     rem, g_objs[(size_t)idx].name.c_str(), (int)hits.size() - rem);
     return rem;
 }
@@ -955,7 +984,7 @@ static void deleteObject(int idx) {
     const std::string nm = g_objs[(size_t)idx].name;
     g_objs.erase(g_objs.begin() + idx);
     renumberSelectionAfterDelete(idx);
-    std::printf("suppression : %s (%zu objet(s) restant(s))\n", nm.c_str(), g_objs.size());
+    userMsg("suppression : %s (%zu objet(s) restant(s))", nm.c_str(), g_objs.size());
 }
 
 /* suppression de TOUTE la selection (T1.7 : 1 objet comme plusieurs) ;
@@ -973,7 +1002,7 @@ static size_t deleteSelectedSet() {
     }
     g_objs = std::move(keep);
     clearSelection();
-    std::printf("suppression : %d objet(s) supprimes (%zu restant(s))\n", (int)idxs.size(), g_objs.size());
+    userMsg("suppression : %d objet(s) supprimes (%zu restant(s))", (int)idxs.size(), g_objs.size());
     return idxs.size();
 }
 
@@ -990,7 +1019,7 @@ static void dupStartPrompt() {
     g_dupSrcNames.clear();
     for (int i : selectedIndices()) g_dupSrcNames.push_back(g_objs[(size_t)i].name);
     g_dupNumBuf.clear();
-    std::printf("Dupliquer : tapez le nombre d'instances puis Entree (vide = 1, maximum 999 ; negatif = retire des copies ; Echap pour annuler)\n");
+    userMsg("Dupliquer : tapez le nombre d'instances puis Entree (vide = 1, maximum 999 ; negatif = retire des copies ; Echap pour annuler)");
 }
 
 static int findObjectByName(const std::string& nm) {
@@ -1013,21 +1042,12 @@ static void dupExecute(long n) {
         for (const std::string& snm : g_dupSrcNames)
             rem += removeInstances(findObjectByName(snm), (int)-n);
         if (rem == 0)
-            std::printf("\nretrait : aucune copie numerotee dans la selection\n");
+            userMsg("retrait : aucune copie numerotee dans la selection");
         return;
     }
-    std::printf("\nNombre invalide : entrez de -999 a 999 puis Entree (negatif = retire des copies)\n");
+    userMsg("Nombre invalide : entrez de -999 a 999 puis Entree (negatif = retire des copies)");
 }
 
-/* message ephemere affiche dans le bandeau de la FENETRE (retour de test :
-   les avis de saisie doivent se voir dans l'application, pas en console) */
-static std::string g_bandFlash;
-static double g_bandFlashUntil = 0.0;
-
-static void flashBand(const char* msg) {
-    g_bandFlash = msg;
-    g_bandFlashUntil = glfwGetTime() + 3.0;
-}
 
 /* B0 : fichier de setup - INI editable a cote de l exe (sketch3d.ini) ;
    charge au lancement, sauvegarde a la fermeture + a chaque changement de
@@ -1071,7 +1091,7 @@ static std::string setupTrim(const std::string& t) {
 
 static void saveSetup() {
     std::ofstream f(g_setupPath.c_str());
-    if (!f) { std::printf("setup : ecriture impossible (%s)\n", g_setupPath.c_str()); return; }
+    if (!f) { userMsg("setup : ecriture impossible (%s)", g_setupPath.c_str()); return; }
     f << "[fenetre]\n"
       << "x = " << g_setup.winX << "\n"
       << "y = " << g_setup.winY << "\n"
@@ -1201,7 +1221,7 @@ static void copySelected() {
     g_clipboard.clear();
     g_pasteRepeat = 0;              /* nouvelle copie = nouvelle serie */
     for (int i : idxs) g_clipboard.push_back(g_objs[(size_t)i]);
-    std::printf("copie : %zu objet(s) dans le presse-papiers\n", g_clipboard.size());
+    userMsg("copie : %zu objet(s) dans le presse-papiers", g_clipboard.size());
 }
 
 static void pasteClipboard() {
@@ -1249,7 +1269,7 @@ static void pasteClipboard() {
         for (size_t i = 1; i < newIdxs.size(); ++i) g_selMulti.push_back(newIdxs[i]);
     }
     g_pasteRepeat += 1;
-    std::printf("colle : %zu objet(s) poses vers +X (decalage %.3f)\n", g_clipboard.size(), step);
+    userMsg("colle : %zu objet(s) poses vers +X (decalage %.3f)", g_clipboard.size(), step);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1258,7 +1278,7 @@ static void pasteClipboard() {
 
 static void exportOBJ(const std::string& path, const std::vector<int>& only = {}) {
     std::ofstream f(path);
-    if (!f) { std::printf("export OBJ impossible : %s\n", path.c_str()); return; }
+    if (!f) { userMsg("export OBJ impossible : %s", path.c_str()); return; }
     std::vector<int> cible(only);
     std::sort(cible.begin(), cible.end());
     cible.erase(std::unique(cible.begin(), cible.end()), cible.end());
@@ -1280,16 +1300,16 @@ static void exportOBJ(const std::string& path, const std::vector<int>& only = {}
         base += (unsigned)o.v.size();
     }
     if (cible.size() == 1)
-        std::printf("export OBJ : %s (objet : %s, en coordonnees monde)\n", path.c_str(), g_objs[(size_t)cible[0]].name.c_str());
+        userMsg("export OBJ : %s (objet : %s, en coordonnees monde)", path.c_str(), g_objs[(size_t)cible[0]].name.c_str());
     else if (cible.size() > 1)
-        std::printf("export OBJ : %s (selection : %d objet(s), en coordonnees monde)\n", path.c_str(), (int)cible.size());
+        userMsg("export OBJ : %s (selection : %d objet(s), en coordonnees monde)", path.c_str(), (int)cible.size());
     else
-        std::printf("export OBJ : %s (%zu objets, en coordonnees monde)\n", path.c_str(), g_objs.size());
+        userMsg("export OBJ : %s (%zu objets, en coordonnees monde)", path.c_str(), g_objs.size());
 }
 
 static void exportSTL(const std::string& path, const std::vector<int>& only = {}) {
     std::ofstream f(path, std::ios::binary);
-    if (!f) { std::printf("export STL impossible : %s\n", path.c_str()); return; }
+    if (!f) { userMsg("export STL impossible : %s", path.c_str()); return; }
     std::vector<int> cible(only);
     std::sort(cible.begin(), cible.end());
     cible.erase(std::unique(cible.begin(), cible.end()), cible.end());
@@ -1324,11 +1344,11 @@ static void exportSTL(const std::string& path, const std::vector<int>& only = {}
         }
     }
     if (cible.size() == 1)
-        std::printf("export STL binaire : %s (objet : %s, %zu tris)\n", path.c_str(), g_objs[(size_t)cible[0]].name.c_str(), total);
+        userMsg("export STL binaire : %s (objet : %s, %zu tris)", path.c_str(), g_objs[(size_t)cible[0]].name.c_str(), total);
     else if (cible.size() > 1)
-        std::printf("export STL binaire : %s (selection : %d objet(s), %zu tris)\n", path.c_str(), (int)cible.size(), total);
+        userMsg("export STL binaire : %s (selection : %d objet(s), %zu tris)", path.c_str(), (int)cible.size(), total);
     else
-        std::printf("export STL binaire : %s (%zu tris)\n", path.c_str(), total);
+        userMsg("export STL binaire : %s (%zu tris)", path.c_str(), total);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1376,7 +1396,7 @@ static bool saveProject(const std::string& path, std::string& err) {
         }
     }
     if (!f) { err = "ecriture interrompue"; return false; }
-    std::printf("projet enregistre : %s (%zu objets)\n", path.c_str(), g_objs.size());
+    userMsg("projet enregistre : %s (%zu objets)", path.c_str(), g_objs.size());
     return true;
 }
 
@@ -1487,7 +1507,7 @@ static bool loadProject(const std::string& path, std::string& err) {
     }
     g_objs = std::move(objs);
     selectOnly(g_objs.empty() ? -1 : 0);
-    std::printf("projet ouvert : %s (%zu objets)\n", path.c_str(), g_objs.size());
+    userMsg("projet ouvert : %s (%zu objets)", path.c_str(), g_objs.size());
     return true;
 }
 
@@ -1552,6 +1572,7 @@ enum {
     IDM_TOOL_SPLC,
     IDM_TOOL_EDIT,             /* B2.7e : edition des traces apres coup (E) */
     IDM_TOOL_SWEEP,            /* B3 : balayage le long d'un chemin (Maj+W) */
+    IDM_VIEW_JOURNAL,          /* B3.3f : journal des messages utilisateur (J) */
 };
 
 /* Homogeneite ("UN SEUL CHEMIN DE CODE", regle systematique) : tous les
@@ -1602,7 +1623,7 @@ static void handleMenuAction(int id) {
         if (i < g_setup.historique.size()) {
             const std::string p = g_setup.historique[i];
             std::string err;
-            if (!loadProject(p, err)) { std::printf("ouverture impossible : %s\n", err.c_str()); return; }
+            if (!loadProject(p, err)) { userMsg("ouverture impossible : %s", err.c_str()); return; }
             g_editMode = false; g_editObj = -1;
             noteProjectPath(p);
             frameSelected();
@@ -1615,7 +1636,7 @@ static void handleMenuAction(int id) {
         g_editMode = false; g_editObj = -1;   /* B2.7e : defense */
         g_setup.dernierProjet.clear(); saveSetup();   /* B3.2c : ne pas pre-remplir avec un AUTRE projet */
         clearSelection();
-        std::printf("nouveau projet : scene vide\n");
+        userMsg("nouveau projet : scene vide");
         return;
     case IDM_OPEN_PROJECT: {
         const std::string p = fileDialog(false,
@@ -1623,7 +1644,7 @@ static void handleMenuAction(int id) {
             nullptr, "Ouvrir un projet");
         if (p.empty()) return;
         std::string err;
-        if (!loadProject(p, err)) { std::printf("ouverture impossible : %s\n", err.c_str()); return; }
+        if (!loadProject(p, err)) { userMsg("ouverture impossible : %s", err.c_str()); return; }
         g_editMode = false; g_editObj = -1;   /* B2.7e : defense */
         noteProjectPath(p);
         frameSelected();
@@ -1635,7 +1656,7 @@ static void handleMenuAction(int id) {
             "s3projet", "Enregistrer le projet", g_setup.dernierProjet.c_str());
         if (p.empty()) return;
         std::string err;
-        if (!saveProject(p, err)) std::printf("enregistrement impossible : %s\n", err.c_str());
+        if (!saveProject(p, err)) userMsg("enregistrement impossible : %s", err.c_str());
         else noteProjectPath(p);
         return;
     }
@@ -1644,7 +1665,7 @@ static void handleMenuAction(int id) {
         g_editMode = false; g_editObj = -1;   /* B2.7e : defense */
         g_setup.dernierProjet.clear(); saveSetup();   /* B3.2c : ne pas pre-remplir avec un AUTRE projet */
         clearSelection();
-        std::printf("projet ferme\n");
+        userMsg("projet ferme");
         return;
     case IDM_IMPORT_OBJECT:
         importFile();
@@ -1680,7 +1701,7 @@ static void handleMenuAction(int id) {
         return;
     case IDM_INFO_OBJECT:
         if (g_selected >= 0 && g_selected < (int)g_objs.size())
-            std::printf("%s\n", objectInfo(g_objs[(size_t)g_selected]).c_str());
+            userMsg("%s", objectInfo(g_objs[(size_t)g_selected]).c_str());
         return;
     default:
         return;
@@ -1690,12 +1711,12 @@ static void handleMenuAction(int id) {
 static void showContextMenu(GLFWwindow* w) {
     /* le menu contextuel ne concerne qu'un objet deja selectionne (clic gauche) */
     if (g_selected < 0 || g_selected >= (int)g_objs.size()) {
-        std::printf("menu contextuel : selectionnez d'abord un objet (clic gauche)\n");
+        userMsg("menu contextuel : selectionnez d'abord un objet (clic gauche)");
         return;
     }
     (void)w;
     const std::string info = objectInfo(g_objs[(size_t)g_selected]);
-    std::printf("%s\n", info.c_str());
+    userMsg("%s", info.c_str());
 #ifdef _WIN32
     HMENU m = CreatePopupMenu();
     AppendMenuA(m, MF_STRING, IDM_INFO_OBJECT, "&Infos objet");
@@ -1933,7 +1954,7 @@ static void toolbarSetVisible(bool vis) {
     if (g_toolWin) ShowWindow(g_toolWin, vis ? SW_SHOW : SW_HIDE);
     if (g_viewMenu) CheckMenuItem(g_viewMenu, IDM_VIEW_TOOLBAR,
                                   vis ? MF_CHECKED : MF_UNCHECKED);
-    std::printf("barre d'outils : %s\n", vis ? "visible" : "cachee (Affichage pour la rappeler)");
+    userMsg("barre d'outils : %s", vis ? "visible" : "cachee (Affichage pour la rappeler)");
 }
 static void toolbarSetVertical(bool vert) {
     g_setup.toolVertical = vert ? 1 : 0;
@@ -1947,7 +1968,7 @@ static void toolbarSetVertical(bool vert) {
         CheckMenuItem(g_viewMenu, IDM_VIEW_TOOLBAR_VERT,
                       vert ? MF_CHECKED : MF_UNCHECKED);
     }
-    std::printf("barre d'outils : %s\n", vert ? "verticale" : "horizontale");
+    userMsg("barre d'outils : %s", vert ? "verticale" : "horizontale");
 }
 
 /* B1.6 : recoherence des coches avec l'etat reel - appelee par
@@ -1973,7 +1994,7 @@ static void prefSyncCoches() {
    reels) -> memoire gravee immediatement, coches coherentes en cascade. */
 static void prefSetExportFormat(bool scene, bool stl) {
     noteExportFormat(scene, stl);
-    std::printf("preferences : export %s en %s\n", scene ? "scene" : "selection", stl ? "STL" : "OBJ");
+    userMsg("preferences : export %s en %s", scene ? "scene" : "selection", stl ? "STL" : "OBJ");
 }
 #endif
 
@@ -2035,6 +2056,8 @@ static void attachMenus(GLFWwindow* win) {
                 IDM_VIEW_TOOLBAR_HOR, "Barre &horizontale");
     AppendMenuA(aff, MF_STRING | (g_setup.toolVertical ? MF_CHECKED : MF_UNCHECKED),
                 IDM_VIEW_TOOLBAR_VERT, "Barre &verticale");
+    AppendMenuA(aff, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(aff, MF_STRING, IDM_VIEW_JOURNAL, "&Journal des messages\tJ");   /* B3.3f */
     g_viewMenu = aff;
     /* menu Preferences (B1.4) : les choix persistes de B0, editables au vol ;
        il ira en s'etoilant (formats, unites, preferences d'outils...) */
@@ -2089,7 +2112,7 @@ static void attachMenus(GLFWwindow* win) {
     g_baseWndProc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)menuWndProc);
     attachToolbar(hwnd);
 #else
-    std::printf("menus natifs : barre Fichier indisponible hors Windows\n");
+    std::printf("menus natifs : barre Fichier indisponible hors Windows");
 #endif
 }
 
@@ -2530,7 +2553,7 @@ static void ppCancel() {
     computeObjectDerived(o);
     g_ppActive = false;
     g_pp = Extrude();
-    std::printf("\nextrusion annulee\n");
+    userMsg("extrusion annulee");
 }
 
 /* B2.7e E3 : un pull pose sur une feuille issue d un profil (TraceData, patch
@@ -2561,7 +2584,7 @@ static int g_sweepProfil = -1;          /* index de l'objet face (clic 1) */
 static void sweepCancel() {
     g_sweepStage = 0;
     g_sweepProfil = -1;
-    std::printf("\nmode selection\n");
+    userMsg("mode selection");
 }
 /* B3.3d (retour test) : une FACE de balayage = feuille tracee avec surface.
    Avant, le clic 1 acceptait N'IMPORTE QUEL solide (ex. le tube d'un balayage
@@ -2574,23 +2597,23 @@ static bool sweepFaceValide(const Object& o) {
 static bool sweepConvertTo(Object& profil, Object& chemin) {
     if (&profil == &chemin) {
         flashBand("Balayage : le chemin doit etre un AUTRE objet (un fil)");
-        std::printf("balayage : le chemin doit etre un AUTRE objet (un fil)\n");
+        userMsg("balayage : le chemin doit etre un AUTRE objet (un fil)");
         return false;
     }
     if (!sweepFaceValide(profil)) {
         flashBand("Balayage : la face visee n'est pas une feuille tracee");
-        std::printf("balayage : la face visee n'est pas une feuille tracee (ligne, rect, cercle, arc, polygone, spline)\n");
+        userMsg("balayage : la face visee n'est pas une feuille tracee (ligne, rect, cercle, arc, polygone, spline)");
         return false;
     }
     if (chemin.traceType != 1 && chemin.traceType != 2 && chemin.traceType != 3
         && chemin.traceType != 6) {
         flashBand("Balayage : le chemin doit etre un fil (ligne, spline, arc)");
-        std::printf("balayage : le chemin doit etre un fil (ligne, spline ou arc)\n");
+        userMsg("balayage : le chemin doit etre un fil (ligne, spline ou arc)");
         return false;
     }
     if (chemin.tracePts.size() < (chemin.traceType == 6 ? (size_t)3 : (size_t)2)) {
         flashBand("Balayage : le fil chemin est vide ou trop court");
-        std::printf("balayage : le fil chemin est vide ou trop court\n");
+        userMsg("balayage : le fil chemin est vide ou trop court");
         return false;
     }
     /* le chemin est absorbe : locales du fil -> locales du profil (pos + scl*v = monde) */
@@ -2619,20 +2642,20 @@ static void sweepClick(GLFWwindow* w) {
             if (rayObjectTri(org, dir, g_objs[i], t, &ti) && t < bestT) { bestT = t; hit = (int)i; }
         }
         if (hit < 0) {
-            std::printf("balayage : cliquez une face (l'objet vise doit etre une feuille tracee)\n");
+            userMsg("balayage : cliquez une face (l'objet vise doit etre une feuille tracee)");
             return;
         }
         /* B3.3d : refus IMMEDIAT si l'objet vise n'est pas une feuille tracee
            (ex. le tube d'un balayage) - on ne passe PAS a l'etape 2 */
         if (!sweepFaceValide(g_objs[(size_t)hit])) {
             flashBand("Balayage : la face visee n'est pas une feuille tracee");
-            std::printf("balayage : \"%s\" n'est pas une feuille tracee - cliquez une feuille (ligne, rect, cercle, arc, polygone, spline) ; Echap = annuler\n",
+            userMsg("balayage : \"%s\" n'est pas une feuille tracee - cliquez une feuille (ligne, rect, cercle, arc, polygone, spline) ; Echap = annuler",
                         g_objs[(size_t)hit].name.c_str());
             return;
         }
         g_sweepProfil = hit;
         g_sweepStage = 2;
-        std::printf("balayage : %s capte - cliquez le FIL chemin (ligne, spline, arc) ; Echap = annuler\n",
+        userMsg("balayage : %s capte - cliquez le FIL chemin (ligne, spline, arc) ; Echap = annuler",
                     g_objs[(size_t)hit].name.c_str());
         return;
     }
@@ -2646,7 +2669,7 @@ static void sweepClick(GLFWwindow* w) {
     }
     if (hit < 0) {
         flashBand("Balayage : aucun fil vise - cliquez un fil (ligne, spline, arc)");
-        std::printf("balayage : aucun fil vise - cliquez un fil (ligne, spline, arc) ; Echap = annuler\n");
+        userMsg("balayage : aucun fil vise - cliquez un fil (ligne, spline, arc) ; Echap = annuler");
         return;
     }
     const int ip = g_sweepProfil;
@@ -2657,15 +2680,15 @@ static void sweepClick(GLFWwindow* w) {
     selectOnly(ip < hit ? ip : ip - 1);
     g_sweepStage = 0;
     g_sweepProfil = -1;
-    std::printf("balayage pose : %s (le fil \"%s\" est consomme - ses points restent dans les parametres)\n",
+    userMsg("balayage pose : %s (le fil \"%s\" est consomme - ses points restent dans les parametres)",
                 profil.name.c_str(), nomFil.c_str());
-    std::printf("mode selection\n");
+    userMsg("mode selection");
 }
 
 static void ppCommit() {
     if (g_ppActive && g_pp.obj >= 0 && g_pp.obj < (int)g_objs.size())
         extrudeConvertTo(g_objs[(size_t)g_pp.obj], g_pp, g_pp.d);
-    std::printf("\nface posee — extrusion : %.3f\n", g_pp.d);
+    userMsg("face posee — extrusion : %.3f", g_pp.d);
     g_ppActive = false;
     g_pp = Extrude();
 }
@@ -2826,7 +2849,7 @@ static bool isSeparatorKey(int key, int scancode) {
 static void rotBegin(GLFWwindow* w, int axis) {
     const std::vector<int> sel = selectedIndices();
     if (sel.empty()) {
-        std::printf("rotation : selectionnez d'abord un objet (clic gauche)\n");
+        userMsg("rotation : selectionnez d'abord un objet (clic gauche)");
         return;
     }
     g_rotMulti.clear();
@@ -2859,10 +2882,10 @@ static void rotBegin(GLFWwindow* w, int axis) {
     glfwGetCursorPos(w, &g_rotLastX, &dummy);
     g_rotActive = true;
     if (!g_rotMulti.empty()) {
-        std::printf("rotation multi %s de %zu objets autour du %s : souris pour tourner, B = pivot barycentre/centre, chiffres + Entree (tapez dans la fenetre ; Entree pose et quitte)\n",
+        userMsg("rotation multi %s de %zu objets autour du %s : souris pour tourner, B = pivot barycentre/centre, chiffres + Entree (tapez dans la fenetre ; Entree pose et quitte)",
                     axisName(axis), g_rotMulti.size(), rotPivotName());
     } else {
-        std::printf("rotation %s de %s autour de son centre : souris pour tourner, ou chiffres + Entree (tapez dans la fenetre ; Entree pose et quitte)\n",
+        userMsg("rotation %s de %s autour de son centre : souris pour tourner, ou chiffres + Entree (tapez dans la fenetre ; Entree pose et quitte)",
                     axisName(axis), o.name.c_str());
     }
 }
@@ -2888,17 +2911,17 @@ static void rotCancel() {
     g_rotAxis = -1;
     g_rotPivotKind = 0;
     g_rotNumBuf.clear();
-    std::printf("\nrotation annulee\n");
+    userMsg("rotation annulee");
 }
 
 static void rotCommit() {
     if (!g_rotActive) { return; }
     if (!g_rotMulti.empty()) {
-        std::printf("\nrotation posee : %+.2f deg sur %zu objets\n", g_rotAngle, g_rotMulti.size());
+        userMsg("rotation posee : %+.2f deg sur %zu objets", g_rotAngle, g_rotMulti.size());
         g_rotMulti.clear();
     } else {
         if (g_rotObj < 0 || g_rotObj >= (int)g_objs.size()) { g_rotActive = false; return; }
-        std::printf("\nrotation posee : %+.2f deg sur %s\n", g_rotAngle, g_objs[(size_t)g_rotObj].name.c_str());
+        userMsg("rotation posee : %+.2f deg sur %s", g_rotAngle, g_objs[(size_t)g_rotObj].name.c_str());
     }
     g_rotActive = false;
     g_rotAxis = -1;
@@ -2952,7 +2975,7 @@ static void lineReset() {
 static void lineCancel(const char* pourquoi) {
     lineReset();
     g_lineMode = false;
-    std::printf("\nligne : %s\n", pourquoi);
+    userMsg("ligne : %s", pourquoi);
 }
 /* point d'impact du rayon sur le plan du sol (y = 0 monde), v1 */
 static void lineGroundPoint(GLFWwindow* w, bool& ok, Vec3& p) {
@@ -2988,7 +3011,7 @@ static void lineTakePoint(GLFWwindow* w) {
     g_linePts.push_back(p);
     g_lineActive = true;
     g_lineNumBuf.clear();
-    std::printf("ligne : %zu point(s) (clic = prolonger ; clic droit = fin ; Echap = tout annuler)\n", g_linePts.size());
+    userMsg("ligne : %zu point(s) (clic = prolonger ; clic droit = fin ; Echap = tout annuler)", g_linePts.size());
 }
 /* nommage unique "Base", "Base (2)", ... (commun a tous les profils B2) */
 static std::string uniqueName(const char* base) {
@@ -3020,10 +3043,10 @@ static void linePose() {
     g_objs.push_back(std::move(o));
     const int idx = (int)g_objs.size() - 1;
     selectOnly(idx);
-    std::printf("ligne posee : %s, %zu segment(s)\n", g_objs.back().name.c_str(), nseg);
+    userMsg("ligne posee : %s, %zu segment(s)", g_objs.back().name.c_str(), nseg);
     lineReset();
     g_lineMode = false;
-    std::printf("mode selection\n");
+    userMsg("mode selection");
 }
 /* B2.5 : fermeture de la boucle - clic sur le depart (>= 3 sommets).
    B3.1b (retour test) : la ligne ferme en BOUCLE (fil), JAMAIS en surface -
@@ -3049,10 +3072,10 @@ static void lineCloseLoop() {
     const size_t nseg = o.edges.size();     /* capture AVANT le move */
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
-    std::printf("ligne fermee : %zu cotes, fil en boucle (pas de surface - le polygone ferme en surface)\n", nseg);
+    userMsg("ligne fermee : %zu cotes, fil en boucle (pas de surface - le polygone ferme en surface)", nseg);
     lineReset();
     g_lineMode = false;
-    std::printf("mode selection\n");
+    userMsg("mode selection");
 }
 static void lineFinish() {           /* clic droit ou Entree vide : FIN */
     if (g_linePts.size() >= 2) linePose();
@@ -3063,7 +3086,7 @@ static void lineFinish() {           /* clic droit ou Entree vide : FIN */
 static void linePoseByLength(double len) {
     if (!g_lineActive || g_linePts.empty()) return;
     if (!g_lineCursorOk || (g_lineCursor - g_linePts.back()).norm() < 1e-9) {
-        std::printf("longueur tapee : pointez d'abord une direction (curseur sur le sol)\n");
+        userMsg("longueur tapee : pointez d'abord une direction (curseur sur le sol)");
         return;
     }
     const Vec3 toCur = g_lineCursor - g_linePts.back();
@@ -3103,7 +3126,7 @@ static void rectReset() {
 static void rectCancel(const char* pourquoi) {
     rectReset();
     g_rectMode = false;
-    std::printf("\nrectangle : %s\n", pourquoi);
+    userMsg("rectangle : %s", pourquoi);
 }
 /* suivi du curseur chaque tour (apercu + orientation de la saisie L;H) */
 static void rectTrackCursor(GLFWwindow* w) {
@@ -3132,10 +3155,10 @@ static void rectPose(const Vec3& a, const Vec3& b) {
     computeObjectDerived(o);
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
-    std::printf("rectangle pose : %s, %.3g x %.3g\n", g_objs.back().name.c_str(), x1 - x0, z1 - z0);
+    userMsg("rectangle pose : %s, %.3g x %.3g", g_objs.back().name.c_str(), x1 - x0, z1 - z0);
     rectReset();
     g_rectMode = false;
-    std::printf("mode selection\n");
+    userMsg("mode selection");
 }
 static void rectTakePoint(GLFWwindow* w) {
     bool ok;
@@ -3146,11 +3169,11 @@ static void rectTakePoint(GLFWwindow* w) {
         g_rectCorner = p;
         g_rectActive = true;
         g_rectNumBuf.clear();
-        std::printf("rectangle : premier coin (%.3f, %.3f) - clic = coin oppose ; chiffres L;H + Entree = dimensions exactes\n", p.x, p.z);
+        userMsg("rectangle : premier coin (%.3f, %.3f) - clic = coin oppose ; chiffres L;H + Entree = dimensions exactes", p.x, p.z);
         return;
     }
     if (std::fabs(p.x - g_rectCorner.x) < 1e-9 || std::fabs(p.z - g_rectCorner.z) < 1e-9) {
-        std::printf("rectangle : coin oppose aligne avec le premier - rien a poser\n");
+        userMsg("rectangle : coin oppose aligne avec le premier - rien a poser");
         return;
     }
     rectPose(g_rectCorner, p);
@@ -3160,7 +3183,7 @@ static void rectTakePoint(GLFWwindow* w) {
    dirige), puis pose + sortie du mode (meme contrat que la ligne) */
 static void rectPoseByDims(const std::string& txt) {
     if (!g_rectCursorOk) {
-        std::printf("dimensions tapees : pointez d'abord la direction (curseur sur le sol)\n");
+        userMsg("dimensions tapees : pointez d'abord la direction (curseur sur le sol)");
         return;
     }
     std::string t = txt;
@@ -3171,7 +3194,7 @@ static void rectPoseByDims(const std::string& txt) {
     std::istringstream is(t);
     if (!(is >> L >> H)
         || !std::isfinite(L) || !std::isfinite(H) || L <= 0.0 || H <= 0.0) {
-        std::printf("\nDimensions invalides - tapez L;H (deux nombres positifs) puis Entree.\n");
+        userMsg("Dimensions invalides - tapez L;H (deux nombres positifs) puis Entree.");
         return;
     }
     const double sx = (g_rectCursor.x >= g_rectCorner.x) ? 1.0 : -1.0;
@@ -3215,7 +3238,7 @@ static void cercleReset() {
 static void cercleCancel(const char* pourquoi) {
     cercleReset();
     g_cercleMode = false;
-    std::printf("\ncercle : %s\n", pourquoi);
+    userMsg("cercle : %s", pourquoi);
 }
 /* suivi du curseur chaque tour (apercu du rayon) */
 static void cercleTrackCursor(GLFWwindow* w) {
@@ -3253,10 +3276,10 @@ static void cerclePose(const Vec3& c, double r) {
     computeObjectDerived(o);
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
-    std::printf("cercle pose : %s, rayon %.3g\n", g_objs.back().name.c_str(), r);
+    userMsg("cercle pose : %s, rayon %.3g", g_objs.back().name.c_str(), r);
     cercleReset();
     g_cercleMode = false;
-    std::printf("mode selection\n");
+    userMsg("mode selection");
 }
 static void cercleTakePoint(GLFWwindow* w) {
     bool ok;
@@ -3267,12 +3290,12 @@ static void cercleTakePoint(GLFWwindow* w) {
         g_cercleCentre = p;
         g_cercleActive = true;
         g_cercleNumBuf.clear();
-        std::printf("cercle : centre (%.3f, %.3f) - clic = rayon pose ; chiffres + Entree = rayon exact\n", p.x, p.z);
+        userMsg("cercle : centre (%.3f, %.3f) - clic = rayon pose ; chiffres + Entree = rayon exact", p.x, p.z);
         return;
     }
     const double r = (p - g_cercleCentre).norm();
     if (r < 1e-9) {
-        std::printf("cercle : rayon nul - rien a poser\n");
+        userMsg("cercle : rayon nul - rien a poser");
         return;
     }
     cerclePose(g_cercleCentre, r);
@@ -3286,7 +3309,7 @@ static void cerclePoseByRayon(const std::string& txt) {
     double r = 0.0;
     std::istringstream is(t);
     if (!(is >> r) || !std::isfinite(r) || r <= 0.0) {
-        std::printf("\nRayon invalide - tapez un nombre positif puis Entree.\n");
+        userMsg("Rayon invalide - tapez un nombre positif puis Entree.");
         return;
     }
     cerclePose(g_cercleCentre, r);
@@ -3337,7 +3360,7 @@ static void arcReset() {
 static void arcCancel(const char* pourquoi) {
     arcReset();
     g_arcMode = false;
-    std::printf("\narc : %s\n", pourquoi);
+    userMsg("arc : %s", pourquoi);
 }
 /* suivi du curseur chaque tour (corde a venir + cote du bombement) */
 static void arcTrackCursor(GLFWwindow* w) {
@@ -3391,7 +3414,7 @@ static bool arcComputePts(const Vec3& p1, const Vec3& b, const Vec3& p2, std::ve
 static void arcPose(const Vec3& p1, const Vec3& b, const Vec3& p2) {
     std::vector<Vec3> pts;
     if (!arcComputePts(p1, b, p2, pts)) {
-        std::printf("arc : bombement invalide (aligne avec la corde, arc nul ou cercle complet) - deplacez le bombement\n");
+        userMsg("arc : bombement invalide (aligne avec la corde, arc nul ou cercle complet) - deplacez le bombement");
         return;
     }
     Object o;
@@ -3409,10 +3432,10 @@ static void arcPose(const Vec3& p1, const Vec3& b, const Vec3& p2) {
     const size_t nseg = o.edges.size();
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
-    std::printf("arc pose : %s, %zu segment(s)\n", g_objs.back().name.c_str(), nseg);   /* B2.7e2 : le rayon vit dans arcComputePts */
+    userMsg("arc pose : %s, %zu segment(s)", g_objs.back().name.c_str(), nseg);   /* B2.7e2 : le rayon vit dans arcComputePts */
     arcReset();
     g_arcMode = false;
-    std::printf("mode selection\n");
+    userMsg("mode selection");
 }
 static void arcTakePoint(GLFWwindow* w) {
     bool ok;
@@ -3423,18 +3446,18 @@ static void arcTakePoint(GLFWwindow* w) {
         g_arcP1 = p;
         g_arcState = 1;
         g_arcNumBuf.clear();
-        std::printf("arc : depart (%.3f, %.3f) - clic = fin de la corde ; chiffres + Entree = longueur de corde\n", p.x, p.z);
+        userMsg("arc : depart (%.3f, %.3f) - clic = fin de la corde ; chiffres + Entree = longueur de corde", p.x, p.z);
         return;
     }
     if (g_arcState == 1) {
         if ((p - g_arcP1).norm() < 1e-9) {
-            std::printf("arc : corde nulle - rien a poser\n");
+            userMsg("arc : corde nulle - rien a poser");
             return;
         }
         g_arcP2 = p;
         g_arcState = 2;
         g_arcNumBuf.clear();
-        std::printf("arc : corde posee - clic = bombement pose ; chiffres + Entree = fleche exacte\n");
+        userMsg("arc : corde posee - clic = bombement pose ; chiffres + Entree = fleche exacte");
         return;
     }
     arcPose(g_arcP1, p, g_arcP2);                   /* etat 2 : le clic = bombement pose */
@@ -3443,21 +3466,21 @@ static void arcTakePoint(GLFWwindow* w) {
 static void arcPoseByCorde(double len) {
     Vec3 dir = g_arcCursor - g_arcP1;
     if (!g_arcCursorOk || dir.norm() < 1e-9) {
-        std::printf("corde tapee : pointez d'abord la direction (curseur sur le sol)\n");
+        userMsg("corde tapee : pointez d'abord la direction (curseur sur le sol)");
         return;
     }
     dir = dir * (1.0 / dir.norm());
     g_arcP2 = g_arcP1 + dir * len;
     g_arcState = 2;
     g_arcNumBuf.clear();
-    std::printf("arc : corde posee - clic = bombement pose ; chiffres + Entree = fleche exacte\n");
+    userMsg("arc : corde posee - clic = bombement pose ; chiffres + Entree = fleche exacte");
 }
 /* fleche tapee + Entree : pose l'arc ; cote donne par le curseur ;
    B2.4d : toute fleche > 0 est valide - au-dela de la moitie de la corde
    l'arc est MAJEUR (> 180 deg) ; fleche 5-10x la corde = proche du cercle */
 static void arcPoseByFleche(double f) {
     if (f <= 0.0) {
-        std::printf("\nFleche invalide - tapez un nombre strictement positif puis Entree.\n");
+        userMsg("Fleche invalide - tapez un nombre strictement positif puis Entree.");
         return;
     }
     const Vec3 mid = (g_arcP1 + g_arcP2) * 0.5;
@@ -3533,7 +3556,7 @@ static void polyReset() {
 static void polyCancel(const char* pourquoi) {
     polyReset();
     g_polyMode = false;
-    std::printf("\npolygone : %s\n", pourquoi);
+    userMsg("polygone : %s", pourquoi);
 }
 /* suivi du curseur chaque tour (apercu du contour + rubber band) */
 static void polyTrackCursor(GLFWwindow* w) {
@@ -3564,17 +3587,17 @@ static void polyPose() {
     const size_t nc = o.v.size(), ntri = o.tri.size() / 3;   /* capture AVANT le move */
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
-    std::printf("polygone pose : %s, %zu cotes, %zu triangle(s) (feuille etirable)\n",
+    userMsg("polygone pose : %s, %zu cotes, %zu triangle(s) (feuille etirable)",
                 g_objs.back().name.c_str(), nc, ntri);
     polyReset();
     g_polyMode = false;
-    std::printf("mode selection\n");
+    userMsg("mode selection");
 }
 /* B2.6b (retour de test) : clic droit ou Entree = VALIDER la surface, comme
    un clic sur le depart ; Echap seul sort sans rien poser */
 static void polyFinish() {
     if (g_polyPts.size() >= 3) polyPose();
-    else std::printf("\npolygone : au moins 3 sommets pour fermer la surface (clic = sommet suivant ; Echap = tout annuler)\n");
+    else userMsg("polygone : au moins 3 sommets pour fermer la surface (clic = sommet suivant ; Echap = tout annuler)");
 }
 /* chaque clic pose un sommet ; clic sur le depart (>= 3 sommets) = fermeture */
 static void polyTakePoint(GLFWwindow* w) {
@@ -3590,7 +3613,7 @@ static void polyTakePoint(GLFWwindow* w) {
         return;                                     /* meme point : rien */
     g_polyPts.push_back(p);
     g_polyActive = true;
-    std::printf("polygone : %zu sommet(s) (clic = sommet suivant ; clic sur le depart, clic droit ou Entree = ferme la surface ; Echap = tout annuler)\n", g_polyPts.size());
+    userMsg("polygone : %zu sommet(s) (clic = sommet suivant ; clic sur le depart, clic droit ou Entree = ferme la surface ; Echap = tout annuler)", g_polyPts.size());
 }
 /* apercu : contour deja clique (ferme) + rubber band vers le curseur */
 static void drawPolyPreview() {
@@ -3635,7 +3658,7 @@ static void splReset() {
 static void splCancel(const char* pourquoi) {
     splReset();
     g_splMode = false;
-    std::printf("\nspline : %s\n", pourquoi);
+    userMsg("spline : %s", pourquoi);
 }
 /* suivi du curseur chaque tour (apercu) */
 static void splTrackCursor(GLFWwindow* w) {
@@ -3795,16 +3818,16 @@ static void splPose(bool fermee) {
     const size_t nv = o.v.size();
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
-    std::printf("spline posee : %s, %zu %s, %zu sommets discretises%s (fil etirable au deplacement)\n",
+    userMsg("spline posee : %s, %zu %s, %zu sommets discretises%s (fil etirable au deplacement)",
                 g_objs.back().name.c_str(), np, g_splCtrl ? "point(s) de controle" : "point(s) de passage", nv, fermee ? ", boucle fermee" : "");
     splReset();
     g_splMode = false;
-    std::printf("mode selection\n");
+    userMsg("mode selection");
 }
 /* B2.6b generalisee : clic droit ou Entree = VALIDER (courbe ouverte) */
 static void splFinish() {
     if (g_splPts.size() >= 2) splPose(false);
-    else std::printf("\nspline : au moins 2 points pour poser la courbe (clic = point suivant ; Echap = tout annuler)\n");
+    else userMsg("spline : au moins 2 points pour poser la courbe (clic = point suivant ; Echap = tout annuler)");
 }
 /* chaque clic pose un point ; clic sur le depart (>= 3) = boucle fermee */
 static void splTakePoint(GLFWwindow* w) {
@@ -3820,7 +3843,7 @@ static void splTakePoint(GLFWwindow* w) {
         return;                                     /* meme point : rien */
     g_splPts.push_back(p);
     g_splActive = true;
-    std::printf("spline : %zu point(s) (clic = point suivant ; clic sur le depart = boucle fermee ; clic droit ou Entree = valider ; Echap = tout annuler)\n", g_splPts.size());
+    userMsg("spline : %zu point(s) (clic = point suivant ; clic sur le depart = boucle fermee ; clic droit ou Entree = valider ; Echap = tout annuler)", g_splPts.size());
 }
 /* apercu : courbe deja passee par les points + droite vers le curseur */
 static void drawSplinePreview() {
@@ -4421,27 +4444,27 @@ static int sweepChainInsert(const std::vector<Vec3>& pts, bool ferme, const Vec3
 static int traceAddPoint(Object& o, const Vec3& monde, bool gardeProfil = false) {
     if (o.traceType == 0 || o.tracePts.size() < 2) return -1;
     if (tracePointsFixes(o)) {
-        std::printf("edition : cette forme a des points fixes (rectangle, cercle, arc) - deplacez les poignees\n");
+        userMsg("edition : cette forme a des points fixes (rectangle, cercle, arc) - deplacez les poignees");
         return -1;
     }
     if (o.traceType == 9) {                     /* B3.3 : edition du balayage */
         const Vec3 pLocal = (monde - o.pos) * (1.0 / o.scl);
         if (g_sweepEditChemin) {
             if (sweepCheminFixes(o)) {
-                std::printf("edition : le chemin a des points fixes (rect, cercle, arc) - deplacez les poignees\n");
+                userMsg("edition : le chemin a des points fixes (rect, cercle, arc) - deplacez les poignees");
                 return -1;
             }
             for (const Vec3& q : o.traceChemin)
                 if ((q - pLocal).norm() < 1e-9) return -1;      /* meme point : rien */
             const int idx = sweepChainInsert(o.traceChemin, o.traceCheminFerme != 0, pLocal,
                                              gardeProfil ? filPickTol() : -1.0);
-            if (idx < 0) { std::printf("edition : cliquez SUR le tube ou PRES du chemin pour ajouter un point\n"); return -1; }
+            if (idx < 0) { userMsg("edition : cliquez SUR le tube ou PRES du chemin pour ajouter un point"); return -1; }
             o.traceChemin.insert(o.traceChemin.begin() + idx, pLocal);
             traceRegen(o);
             return (int)o.tracePts.size() + idx;
         }
         if (sweepProfilFixes(o)) {
-            std::printf("edition : le profil a des points fixes (rect, cercle, arc) - deplacez les poignees\n");
+            userMsg("edition : le profil a des points fixes (rect, cercle, arc) - deplacez les poignees");
             return -1;
         }
         Vec3 cPt, nn;
@@ -4451,7 +4474,7 @@ static int traceAddPoint(Object& o, const Vec3& monde, bool gardeProfil = false)
         for (const Vec3& q : o.tracePts)
             if ((q - proj).norm() < 1e-9) return -1;            /* meme point : rien */
         const int idx = sweepChainInsert(o.tracePts, o.traceFerme != 0, proj, filPickTol());
-        if (idx < 0) { std::printf("edition : cliquez PRES du profil pour ajouter un point\n"); return -1; }
+        if (idx < 0) { userMsg("edition : cliquez PRES du profil pour ajouter un point"); return -1; }
         o.tracePts.insert(o.tracePts.begin() + idx, proj);
         traceRegen(o);
         return idx;
@@ -4461,7 +4484,7 @@ static int traceAddPoint(Object& o, const Vec3& monde, bool gardeProfil = false)
        rien ajouter (fini les points parasites sur les murs) */
     if (gardeProfil && o.traceType == 8
         && traceProfilDist(o, Vec3(pLocal.x, 0.0, pLocal.z)) > filPickTol()) {
-        std::printf("edition : cliquez sur une face du solide ou pres du profil pour ajouter un point\n");
+        userMsg("edition : cliquez sur une face du solide ou pres du profil pour ajouter un point");
         return -1;
     }
     for (const Vec3& q : o.tracePts)
@@ -4478,7 +4501,7 @@ static bool traceDelPoint(Object& o, int idx) {
     if (o.traceType == 0 || idx < 0) return false;
     if (o.traceType != 9 && idx >= (int)o.tracePts.size()) return false;
     if (tracePointsFixes(o)) {
-        std::printf("edition : cette forme a des points fixes (rectangle, cercle, arc) - deplacez les poignees\n");
+        userMsg("edition : cette forme a des points fixes (rectangle, cercle, arc) - deplacez les poignees");
         return false;
     }
     if (o.traceType == 9) {                     /* B3.3 : edition du balayage */
@@ -4487,11 +4510,11 @@ static bool traceDelPoint(Object& o, int idx) {
             const size_t ic = (size_t)idx - npts;
             if (ic >= o.traceChemin.size()) return false;
             if (sweepCheminFixes(o)) {
-                std::printf("edition : le chemin a des points fixes (rect, cercle, arc) - deplacez les poignees\n");
+                userMsg("edition : le chemin a des points fixes (rect, cercle, arc) - deplacez les poignees");
                 return false;
             }
             if (o.traceChemin.size() <= (o.traceCheminFerme ? (size_t)3 : (size_t)2)) {
-                std::printf("edition : minimum %zu point(s) pour le chemin du balayage\n",
+                userMsg("edition : minimum %zu point(s) pour le chemin du balayage",
                             (size_t)(o.traceCheminFerme ? 3 : 2));
                 return false;
             }
@@ -4501,12 +4524,12 @@ static bool traceDelPoint(Object& o, int idx) {
             return true;
         }
         if (sweepProfilFixes(o)) {
-            std::printf("edition : le profil a des points fixes (rect, cercle, arc) - deplacez les poignees\n");
+            userMsg("edition : le profil a des points fixes (rect, cercle, arc) - deplacez les poignees");
             return false;
         }
         const size_t mini = (o.traceProfil == 7) ? (size_t)3 : (o.traceFerme ? (size_t)3 : (size_t)2);
         if (o.tracePts.size() <= mini) {
-            std::printf("edition : minimum %zu point(s) pour le profil\n", mini);
+            userMsg("edition : minimum %zu point(s) pour le profil", mini);
             return false;
         }
         o.tracePts.erase(o.tracePts.begin() + idx);
@@ -4515,7 +4538,7 @@ static bool traceDelPoint(Object& o, int idx) {
         return true;
     }
     if (o.tracePts.size() <= traceMinPoints(o)) {
-        std::printf("edition : minimum %zu point(s) pour ce trace\n", traceMinPoints(o));
+        userMsg("edition : minimum %zu point(s) pour ce trace", traceMinPoints(o));
         return false;
     }
     o.tracePts.erase(o.tracePts.begin() + idx);
@@ -4528,35 +4551,35 @@ static void traceToggleFerme(Object& o) {
     if (o.traceType == 0) return;
     if (o.traceType == 8) {                     /* E3 : bascule du profil extrude */
         if (o.traceProfil != 1 && o.traceProfil != 2 && o.traceProfil != 3) {
-            std::printf("edition : le profil de cette extrusion est toujours ferme\n");
+            userMsg("edition : le profil de cette extrusion est toujours ferme");
             return;
         }
         if (!o.traceFerme && o.tracePts.size() < 3) {
-            std::printf("edition : au moins 3 points pour fermer le trace\n");
+            userMsg("edition : au moins 3 points pour fermer le trace");
             return;
         }
         o.traceFerme = o.traceFerme ? 0 : 1;
         traceRegen(o);
-        std::printf("edition : extrusion du profil %s\n", o.traceFerme ? "FERME" : "ouvert");
+        userMsg("edition : extrusion du profil %s", o.traceFerme ? "FERME" : "ouvert");
         return;
     }
     if (o.traceType == 9) {                     /* B3.3 : O = cible des ajouts/suppressions */
         g_sweepEditChemin = !g_sweepEditChemin;
-        std::printf("edition balayage : ajouts/suppressions sur le %s\n",
+        userMsg("edition balayage : ajouts/suppressions sur le %s",
                     g_sweepEditChemin ? "CHEMIN" : "PROFIL");
         return;
     }
     if (o.traceType != 1 && o.traceType != 2 && o.traceType != 3) {
-        std::printf("edition : ouvert/ferme concerne la ligne et la spline\n");
+        userMsg("edition : ouvert/ferme concerne la ligne et la spline");
         return;
     }
     if (!o.traceFerme && o.tracePts.size() < 3) {
-        std::printf("edition : au moins 3 points pour fermer le trace\n");
+        userMsg("edition : au moins 3 points pour fermer le trace");
         return;
     }
     o.traceFerme = o.traceFerme ? 0 : 1;
     traceRegen(o);
-    std::printf("edition : trace %s\n", o.traceFerme ? "FERME" : "ouvert");
+    userMsg("edition : trace %s", o.traceFerme ? "FERME" : "ouvert");
 }
 /* Maj+S / Maj+B pendant l'edition d'une spline : bascule variante a chaud
    (regle des variantes : points conserves) */
@@ -4564,23 +4587,23 @@ static void traceSetVariante(Object& o, bool ctrl) {
     if (o.traceType == 8 && (o.traceProfil == 2 || o.traceProfil == 3)) {
         o.traceProfil = ctrl ? 3 : 2;           /* E3 : variante du profil, points conserves */
         traceRegen(o);
-        std::printf("edition : profil spline %s (points conserves)\n", ctrl ? "POINTS DE CONTROLE" : "passage");
+        userMsg("edition : profil spline %s (points conserves)", ctrl ? "POINTS DE CONTROLE" : "passage");
         return;
     }
     if (o.traceType != 2 && o.traceType != 3) {
-        std::printf("edition : la bascule passage/controle concerne les splines\n");
+        userMsg("edition : la bascule passage/controle concerne les splines");
         return;
     }
     o.traceType = ctrl ? 3 : 2;
     traceRegen(o);
-    std::printf("edition : variante spline %s (points conserves)\n", ctrl ? "POINTS DE CONTROLE" : "passage");
+    userMsg("edition : variante spline %s (points conserves)", ctrl ? "POINTS DE CONTROLE" : "passage");
 }
 static void editExit() {
     g_editMode = false;
     g_editObj = -1;
     g_editGrab = -1;
     g_editSel = -1;
-    std::printf("\nmode selection\n");
+    userMsg("mode selection");
 }
 /* B3.3c (retour test) : en edition, un clic qui ne saisit aucune poignee et
    n'ajoute aucun point = ORBITE - tourner autour de l'objet pendant
@@ -4646,7 +4669,7 @@ static void editClick(GLFWwindow* w) {
             const int idx = traceAddPoint(o, hw, false);   /* sans garde : station la plus proche */
             if (idx >= 0) {
                 g_editSel = idx;
-                std::printf("edition : point ajoute au chemin (%zu au total)\n", o.traceChemin.size());
+                userMsg("edition : point ajoute au chemin (%zu au total)", o.traceChemin.size());
             }
             return;
         }
@@ -4662,7 +4685,7 @@ static void editClick(GLFWwindow* w) {
         const int idx = traceAddPoint(o, org + dir * t, false);
         if (idx >= 0) {
             g_editSel = idx;
-            std::printf("edition : point ajoute au profil (%zu au total)\n", o.tracePts.size());
+            userMsg("edition : point ajoute au profil (%zu au total)", o.tracePts.size());
         } else {
             editOrbit(w);
         }
@@ -4692,9 +4715,9 @@ static void editClick(GLFWwindow* w) {
     if (idx >= 0) {
         g_editSel = idx;
         if (o.traceType == 9 && g_sweepEditChemin)
-            std::printf("edition : point ajoute au chemin (%zu au total)\n", o.traceChemin.size());
+            userMsg("edition : point ajoute au chemin (%zu au total)", o.traceChemin.size());
         else
-            std::printf("edition : point ajoute (%zu au total)\n", o.tracePts.size());
+            userMsg("edition : point ajoute (%zu au total)", o.tracePts.size());
     } else {
         editOrbit(w);
     }
@@ -4854,18 +4877,18 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_ppActive) {
             ppCancel();                 /* restaure la piece */
             g_ppMode = false;
-            std::printf("\nmode selection\n");
+            userMsg("mode selection");
         } else if (g_rotActive) {
             rotCancel();                /* restaure la geometrie */
             g_rotMode = false;
-            std::printf("\nmode selection\n");
+            userMsg("mode selection");
         } else if (g_mode == M_Drag) {
             g_mode = M_None;
             g_lockAxis = -1;
         } else if (g_ppMode || g_rotMode) {
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("\nmode selection\n");
+            userMsg("mode selection");
         } else {
             showContextMenu(w);
         }
@@ -4900,7 +4923,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
             selectOnly(hit);
             Extrude dd;
             if (!makeExtrude(g_objs[(size_t)hit], bestTri, dd)) {
-                std::printf("Face non plane — Push/Pull indisponible sur cette surface.\n");
+                userMsg("Face non plane — Push/Pull indisponible sur cette surface.");
                 return;
             }
             dd.obj = hit;
@@ -4924,7 +4947,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
             dd.d = 0.0;
             g_pp = std::move(dd);
             g_ppActive = true;
-            std::printf("face capturee — deplacez le long de la normale, cliquez pour poser la face (clic droit ou Echap : annuler ; chiffres + Entree : dimension exacte)\n");
+            userMsg("face capturee — deplacez le long de la normale, cliquez pour poser la face (clic droit ou Echap : annuler ; chiffres + Entree : dimension exacte)");
             return;
         }
         const double now = glfwGetTime();
@@ -4937,9 +4960,9 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
                 toggleSelect(hit);
                 const size_t tot = selectedCount();
                 if (was)
-                    std::printf("selection : %s retire (%zu objet(s) selectionnes)\n", g_objs[(size_t)hit].name.c_str(), tot);
+                    userMsg("selection : %s retire (%zu objet(s) selectionnes)", g_objs[(size_t)hit].name.c_str(), tot);
                 else
-                    std::printf("selection : %s ajoute (%zu objet(s) selectionnes)\n", g_objs[(size_t)hit].name.c_str(), tot);
+                    userMsg("selection : %s ajoute (%zu objet(s) selectionnes)", g_objs[(size_t)hit].name.c_str(), tot);
             }
             glfwGetCursorPos(w, &g_prevX, &g_prevY);
             return;                                 /* Ctrl+clic purement selection : pas de drag */
@@ -4954,9 +4977,9 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
             if (hit != prev || hadMulti) {
                 if (hit >= 0) {
                     const Object& o = g_objs[(size_t)hit];
-                    std::printf("selection : %s (%zu tris)\n", o.name.c_str(), o.tri.size() / 3);
+                    userMsg("selection : %s (%zu tris)", o.name.c_str(), o.tri.size() / 3);
                 } else {
-                    std::printf("deselection\n");
+                    userMsg("deselection");
                 }
             }
         }
@@ -5021,7 +5044,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         } else if (key == GLFW_KEY_ESCAPE) {
             g_dupPending = false;
             g_dupNumBuf.clear();
-            std::printf("\nduplication annulee\n");
+            userMsg("duplication annulee");
         }
         return;
     }
@@ -5040,19 +5063,19 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
             const double a = std::atof(g_rotNumBuf.c_str());
             if (!std::isfinite(a)) {
-                std::printf("\nAngle invalide — tapez un nombre (degres, signe autorise) puis Entree.\n");
+                userMsg("Angle invalide — tapez un nombre (degres, signe autorise) puis Entree.");
             } else {
                 g_rotAngle = a;
                 rotApplyCurrent(g_rotAxis, a);
                 g_rotNumBuf.clear();
                 rotCommit();           /* Entree = pose, comme le clic gauche */
                 g_rotMode = false;     /* sortie du mode (meme contrat que l'extrusion) */
-                std::printf("mode selection\n");
+                userMsg("mode selection");
             }
         } else if (key == GLFW_KEY_ESCAPE) {
             rotCancel();                /* Echap : annule la rotation ET quitte le mode (sortie de l'etat en cours) */
             g_rotMode = false;
-            std::printf("\nmode selection\n");
+            userMsg("mode selection");
         } else if (keyIsLetter(key, scancode, 'R')) {
             runToolCommand(IDM_TOOL_ROT);  /* R disponible a tout moment : quitte le mode */
         } else if (keyIsLetter(key, scancode, 'B') && !g_rotMulti.empty()) {
@@ -5085,17 +5108,17 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
             double v = std::atof(g_pp.numBuf.c_str());
             if (!std::isfinite(v) || v == 0.0) {
-                std::printf("\nValeur invalide — tapez un nombre non nul puis Entree (signe : tiret devant = enfoncement).\n");
+                userMsg("Valeur invalide — tapez un nombre non nul puis Entree (signe : tiret devant = enfoncement).");
             } else {
                 /* butees (demande de test) : une valeur au-dela de la matiere
                    se cale a la butee au lieu de traverser et ressortir ; si
                    tout l enfoncement est consomme, la face devient feuille. */
                 if (g_pp.hasLow && v < g_pp.dLow) {
-                    std::printf("\nButee atteinte : valeur calee a %+.3f.\n", g_pp.dLow);
+                    userMsg("Butee atteinte : valeur calee a %+.3f.", g_pp.dLow);
                     v = g_pp.dLow;
                 }
                 if (g_pp.hasHigh && v > g_pp.dHigh) {
-                    std::printf("\nButee atteinte : valeur calee a %+.3f.\n", g_pp.dHigh);
+                    userMsg("Butee atteinte : valeur calee a %+.3f.", g_pp.dHigh);
                     v = g_pp.dHigh;
                 }
                 applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, v);
@@ -5103,12 +5126,12 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
                 g_pp.numBuf.clear();
                 ppCommit();            /* Entree = pose, comme le second clic gauche */
                 g_ppMode = false;      /* sortie du mode P apres application (demande de test) */
-                std::printf("mode selection\n");
+                userMsg("mode selection");
             }
         } else if (key == GLFW_KEY_ESCAPE) {
             ppCancel();                 /* Echap : annule la face ET quitte le mode P (sortie de l'etat en cours) */
             g_ppMode = false;
-            std::printf("\nmode selection\n");
+            userMsg("mode selection");
         } else if (keyIsLetter(key, scancode, 'P')) {
             runToolCommand(IDM_TOOL_PP);  /* P disponible a tout moment : quitte le mode */
         }
@@ -5132,7 +5155,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             } else {
                 const double len = std::atof(g_lineNumBuf.c_str());
                 if (!std::isfinite(len) || len <= 0.0)
-                    std::printf("\nLongueur invalide - tapez un nombre strictement positif puis Entree.\n");
+                    userMsg("Longueur invalide - tapez un nombre strictement positif puis Entree.");
                 else
                     linePoseByLength(len);
             }
@@ -5174,7 +5197,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             if (!g_rectNumBuf.empty()) g_rectNumBuf.pop_back();
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
             if (g_rectNumBuf.empty()) {
-                std::printf("\nDimensions vides - tapez L;H puis Entree (clic = coin oppose, Echap = tout annuler).\n");
+                userMsg("Dimensions vides - tapez L;H puis Entree (clic = coin oppose, Echap = tout annuler).");
             } else {
                 rectPoseByDims(g_rectNumBuf);
             }
@@ -5204,7 +5227,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             if (!g_cercleNumBuf.empty()) g_cercleNumBuf.pop_back();
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
             if (g_cercleNumBuf.empty()) {
-                std::printf("\nRayon vide - tapez un nombre puis Entree (clic = rayon pose, Echap = tout annuler).\n");
+                userMsg("Rayon vide - tapez un nombre puis Entree (clic = rayon pose, Echap = tout annuler).");
             } else {
                 cerclePoseByRayon(g_cercleNumBuf);
             }
@@ -5231,13 +5254,13 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             if (!g_arcNumBuf.empty()) g_arcNumBuf.pop_back();
         } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
             if (g_arcNumBuf.empty()) {
-                std::printf("\nValeur vide - tapez un nombre puis Entree (corde apres le depart, fleche apres la fin).\n");
+                userMsg("Valeur vide - tapez un nombre puis Entree (corde apres le depart, fleche apres la fin).");
             } else {
                 std::string t = g_arcNumBuf;
                 for (char& cc : t) { if (cc == ',' || cc == ';') cc = '.'; }   /* decimale FR */
                 const double val = std::atof(t.c_str());
                 if (!std::isfinite(val) || val <= 0.0) {
-                    std::printf("\nValeur invalide - tapez un nombre positif puis Entree.\n");
+                    userMsg("Valeur invalide - tapez un nombre positif puis Entree.");
                 } else if (g_arcState == 1) {
                     arcPoseByCorde(val);
                 } else {
@@ -5296,8 +5319,8 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             if (g_cercleMode) { cercleCancel("dessin annule"); return; }   /* B2.3 */
             if (g_arcMode) { arcCancel("dessin annule"); return; }      /* B2.4 */
             if (g_polyMode) { polyCancel("dessin annule"); return; }   /* B2.6 */
-            if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); return; }
-            if (selectedCount() > 0) { clearSelection(); std::printf("\nselection annulee\n"); return; }
+            if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; userMsg("mode selection"); return; }
+            if (selectedCount() > 0) { clearSelection(); userMsg("selection annulee"); return; }
         }
         if (g_editMode) {   /* B2.7e : edition d'un trace - bascules a chaud, le reste est avale */
             if (g_editObj < 0 || g_editObj >= (int)g_objs.size()) { editExit(); return; }   /* defense : scene videe */
@@ -5305,7 +5328,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             if ((mods & GLFW_MOD_SHIFT) && keyIsLetter(key, scancode, 'B')) { traceSetVariante(g_objs[(size_t)g_editObj], true); return; }
             if (keyIsLetter(key, scancode, 'O')) { traceToggleFerme(g_objs[(size_t)g_editObj]); return; }
             if (key == GLFW_KEY_DELETE) {   /* poignee + Suppr = supprimer le point */
-                if (g_editSel < 0) std::printf("edition : cliquez d'abord une poignee (Suppr = supprimer le point saisi)\n");
+                if (g_editSel < 0) userMsg("edition : cliquez d'abord une poignee (Suppr = supprimer le point saisi)");
                 else traceDelPoint(g_objs[(size_t)g_editObj], g_editSel);
                 return;
             }
@@ -5313,6 +5336,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             return;   /* mode exclusif : les autres touches sont ignorees */
         }
         if (keyIsLetter(key, scancode, 'E') && !(mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending) runToolCommand(IDM_TOOL_EDIT);   /* B2.7e : E = editer le trace selectionne */
+        if (keyIsLetter(key, scancode, 'J') && !(mods & GLFW_MOD_SHIFT)) runToolCommand(IDM_VIEW_JOURNAL);   /* B3.3f : journal des messages */
         if (keyIsLetter(key, scancode, 'P') && g_mode == M_None && !g_dupPending && !g_lineMode) runToolCommand(IDM_TOOL_PP);
         if (keyIsLetter(key, scancode, 'R') && !(mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineMode) runToolCommand(IDM_TOOL_ROT);
         if (keyIsLetter(key, scancode, 'R') && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_rectActive)
@@ -5352,14 +5376,14 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             return;
         }
         if (keyIsLetter(key, scancode, 'F')) frameSelected();
-        if (keyIsLetter(key, scancode, 'H')) { goHome(); std::printf("vue d'origine\n"); }
+        if (keyIsLetter(key, scancode, 'H')) { goHome(); userMsg("vue d'origine"); }
         if (keyIsLetter(key, scancode, 'C') && !(mods & GLFW_MOD_CONTROL)) {  /* centrer sur le point vise */
             Vec3 org, dir, p;
             if (rayFromMouse(w, org, dir) && pickPointFromRay(org, dir, p)) {
                 g_cam.target = p;
-                std::printf("vue centree sur le point vise\n");
+                userMsg("vue centree sur le point vise");
             } else {
-                std::printf("C : aucun point vise (pointez un objet ou le sol)\n");
+                userMsg("C : aucun point vise (pointez un objet ou le sol)");
             }
         }
         if (keyIsLetter(key, scancode, 'I')) { importFile(); }   /* importer OBJ/STL */
@@ -5377,31 +5401,31 @@ static void runToolCommand(int id) {
     case IDM_TOOL_SELECT:      /* = Echap, sans jamais fermer l'application */
         if (g_editMode) { editExit(); }   /* B2.7e */
         else if (g_lineMode) { lineCancel("dessin annule"); }
-        else if (g_ppActive) { ppCancel(); g_ppMode = false; std::printf("\nmode selection\n"); }
-        else if (g_rotActive) { rotCancel(); g_rotMode = false; std::printf("\nmode selection\n"); }
-        else if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; std::printf("\nmode selection\n"); }
-        else if (selectedCount() > 0) { clearSelection(); std::printf("\nselection annulee\n"); }
+        else if (g_ppActive) { ppCancel(); g_ppMode = false; userMsg("mode selection"); }
+        else if (g_rotActive) { rotCancel(); g_rotMode = false; userMsg("mode selection"); }
+        else if (g_ppMode || g_rotMode) { g_ppMode = false; g_rotMode = false; userMsg("mode selection"); }
+        else if (selectedCount() > 0) { clearSelection(); userMsg("selection annulee"); }
         return;
     case IDM_TOOL_PP:          /* = touche P */
         if (g_ppMode) {
             ppCancel();          /* annule la face en suspens si active, sans effet sinon */
             g_ppMode = false;
-            std::printf("\nmode selection\n");
+            userMsg("mode selection");
         } else if (g_mode == M_None && !g_dupPending && !g_lineMode) {
             g_ppMode = true;
             g_rotMode = false;
-            std::printf("mode Push/Pull : cliquez une face (dessus ou cote), deplacez, puis re-cliquez pour poser\n");
+            userMsg("mode Push/Pull : cliquez une face (dessus ou cote), deplacez, puis re-cliquez pour poser");
         }
         return;
     case IDM_TOOL_ROT:         /* = touche R */
         if (g_rotMode) {
             rotCancel();         /* annule la rotation en suspens si active */
             g_rotMode = false;
-            std::printf("\nmode selection\n");
+            userMsg("mode selection");
         } else if (g_mode == M_None && !g_dupPending && !g_lineMode) {
             g_rotMode = true;
             g_ppMode = false;
-            std::printf("mode Rotation : selectionnez un objet (Ctrl+clic pour en selectionner plusieurs), puis X, Y ou Z (lettre) pour fixer l'axe\n");
+            userMsg("mode Rotation : selectionnez un objet (Ctrl+clic pour en selectionner plusieurs), puis X, Y ou Z (lettre) pour fixer l'axe");
         }
         return;
     case IDM_TOOL_FRAME:      /* = F */
@@ -5409,7 +5433,7 @@ static void runToolCommand(int id) {
         return;
     case IDM_TOOL_HOME:       /* = H */
         goHome();
-        std::printf("vue d'origine\n");
+        userMsg("vue d'origine");
         return;
     case IDM_TOOL_COPY:       /* = Ctrl+C */
         copySelected();
@@ -5427,9 +5451,9 @@ static void runToolCommand(int id) {
             lineReset();
             g_ppMode = false;
             g_rotMode = false;
-            std::printf(id == IDM_TOOL_LINE
+            userMsg(id == IDM_TOOL_LINE
                 ? "mode Ligne (fermee en boucle) : clics = points du fil ; clic sur le depart = fermeture en boucle (sans surface) ; clic droit = fin ; Echap = tout annuler\n"
-                : "mode Ligne (fil ouvert) : clics = points du fil ; clic sur le depart = boucle sans surface ; clic droit = fin ; Echap = tout annuler\n");
+                : "mode Ligne (fil ouvert) : clics = points du fil ; clic sur le depart = boucle sans surface ; clic droit = fin ; Echap = tout annuler");
         }
         return;
     case IDM_TOOL_RECT:        /* = Maj+R (B2.2) */
@@ -5440,10 +5464,10 @@ static void runToolCommand(int id) {
             rectReset();
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("mode Rectangle : clic = premier coin ; clic = coin oppose pose ; chiffres L;H + Entree = dimensions exactes ; Echap = tout annuler\n");
+            userMsg("mode Rectangle : clic = premier coin ; clic = coin oppose pose ; chiffres L;H + Entree = dimensions exactes ; Echap = tout annuler");
         } else {
             flashBand("rectangle : terminez d'abord le mode en cours (Echap)");
-            std::printf("rectangle : terminez d'abord le mode en cours (Echap)\n");
+            userMsg("rectangle : terminez d'abord le mode en cours (Echap)");
         }
         return;
     case IDM_TOOL_CERCLE:      /* = Maj+C (B2.3) */
@@ -5454,10 +5478,10 @@ static void runToolCommand(int id) {
             cercleReset();
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("mode Cercle : clic = centre ; clic = rayon pose ; chiffres + Entree = rayon exact ; Echap = tout annuler\n");
+            userMsg("mode Cercle : clic = centre ; clic = rayon pose ; chiffres + Entree = rayon exact ; Echap = tout annuler");
         } else {
             flashBand("cercle : terminez d'abord le mode en cours (Echap)");
-            std::printf("cercle : terminez d'abord le mode en cours (Echap)\n");
+            userMsg("cercle : terminez d'abord le mode en cours (Echap)");
         }
         return;
     case IDM_TOOL_ARC:         /* = Maj+A (B2.4) */
@@ -5468,10 +5492,10 @@ static void runToolCommand(int id) {
             arcReset();
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("mode Arc : clic = depart ; clic = fin de la corde ; clic = bombement pose ; chiffres + Entree = corde puis fleche ; Echap = tout annuler\n");
+            userMsg("mode Arc : clic = depart ; clic = fin de la corde ; clic = bombement pose ; chiffres + Entree = corde puis fleche ; Echap = tout annuler");
         } else {
             flashBand("arc : terminez d'abord le mode en cours (Echap)");
-            std::printf("arc : terminez d'abord le mode en cours (Echap)\n");
+            userMsg("arc : terminez d'abord le mode en cours (Echap)");
         }
         return;
     case IDM_TOOL_POLY:        /* = Maj+P (B2.6) */
@@ -5483,10 +5507,10 @@ static void runToolCommand(int id) {
             polyReset();
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("mode Polygone : clic = sommet ; clic sur le depart, clic droit ou Entree = ferme la surface ; Echap = tout annuler\n");
+            userMsg("mode Polygone : clic = sommet ; clic sur le depart, clic droit ou Entree = ferme la surface ; Echap = tout annuler");
         } else {
             flashBand("polygone : terminez d'abord le mode en cours (Echap)");
-            std::printf("polygone : terminez d'abord le mode en cours (Echap)\n");
+            userMsg("polygone : terminez d'abord le mode en cours (Echap)");
         }
         return;
     case IDM_TOOL_SPL:         /* = Maj+S (B2.7) */
@@ -5494,7 +5518,7 @@ static void runToolCommand(int id) {
             splCancel("mode spline quitte");
         } else if (g_splMode) {
             g_splCtrl = false;               /* B2.7b : bascule variante, points conserves */
-            std::printf("mode Spline (points de passage) : clic = point ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide ; Echap = tout annuler\n");
+            userMsg("mode Spline (points de passage) : clic = point ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide ; Echap = tout annuler");
         } else if (g_mode == M_None && !g_dupPending && !g_lineActive && !g_lineMode
                    && !g_rectActive && !g_cercleActive && !g_arcMode && !g_polyMode) {
             g_splMode = true;
@@ -5502,10 +5526,10 @@ static void runToolCommand(int id) {
             splReset();
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("mode Spline (points de passage) : clic = point ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler\n");
+            userMsg("mode Spline (points de passage) : clic = point ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler");
         } else {
             flashBand("spline : terminez d'abord le mode en cours (Echap)");
-            std::printf("spline : terminez d'abord le mode en cours (Echap)\n");
+            userMsg("spline : terminez d'abord le mode en cours (Echap)");
         }
         return;
     case IDM_TOOL_SWEEP:       /* = Maj+W (B3) : balayage le long d'un chemin */
@@ -5518,10 +5542,10 @@ static void runToolCommand(int id) {
             g_sweepProfil = -1;
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("mode Balayage : cliquez la FACE a extruder le long d'un chemin (feuille tracee) ; Echap = annuler\n");
+            userMsg("mode Balayage : cliquez la FACE a extruder le long d'un chemin (feuille tracee) ; Echap = annuler");
         } else {
             flashBand("balayage : terminez d'abord le mode en cours (Echap)");
-            std::printf("balayage : terminez d'abord le mode en cours (Echap)\n");
+            userMsg("balayage : terminez d'abord le mode en cours (Echap)");
         }
         return;
     case IDM_TOOL_EDIT:        /* = E (B2.7e) : edition du trace selectionne */
@@ -5530,14 +5554,14 @@ static void runToolCommand(int id) {
         } else if (g_sweepStage) {   /* B3.3d : ne pas armer l'edition pendant
                                         un balayage arme (Echap d'abord) */
             flashBand("balayage : terminez d'abord le mode en cours (Echap)");
-            std::printf("balayage : terminez d'abord le mode en cours (Echap)\n");
+            userMsg("balayage : terminez d'abord le mode en cours (Echap)");
         } else if (g_mode == M_None && !g_dupPending && !g_lineMode && !g_rectMode
                    && !g_cercleMode && !g_arcMode && !g_polyMode && !g_splMode
                    && !g_ppMode && !g_rotMode) {
             const int idx = (selectedCount() == 1 && g_selected >= 0) ? g_selected : -1;
             if (idx < 0 || g_objs[(size_t)idx].traceType == 0) {
                 flashBand("Editer : selectionnez d'abord UNE forme tracee (E)");
-                std::printf("editer : selectionnez d'abord UNE forme tracee (ligne, spline, rectangle, cercle, arc, polygone)\n");
+                userMsg("editer : selectionnez d'abord UNE forme tracee (ligne, spline, rectangle, cercle, arc, polygone)");
             } else {
                 g_editMode = true;
                 g_editObj = idx;
@@ -5545,12 +5569,12 @@ static void runToolCommand(int id) {
                 g_editSel = -1;
                 g_sweepEditChemin = false;
                 if (g_objs[(size_t)idx].traceType == 9) {   /* B3.3 */
-                    std::printf("mode Edition : %s - PROFIL (%zu pts, verts) + CHEMIN (%zu pts, cyans) - glissez une poignee ; clic sur le tube = point de chemin ; O = cible des ajouts/suppressions ; poignee + Suppr = supprimer ; Echap ou clic droit = quitter\n",
+                    userMsg("mode Edition : %s - PROFIL (%zu pts, verts) + CHEMIN (%zu pts, cyans) - glissez une poignee ; clic sur le tube = point de chemin ; O = cible des ajouts/suppressions ; poignee + Suppr = supprimer ; Echap ou clic droit = quitter",
                                 g_objs[(size_t)idx].name.c_str(), g_objs[(size_t)idx].tracePts.size(),
                                 g_objs[(size_t)idx].traceChemin.size());
                     return;
                 }
-                std::printf("mode Edition : %s (%zu points) - glissez une poignee ; clic sur la courbe = ajouter un point (ligne, spline, polygone) ; poignee + Suppr = supprimer ; Maj+S/Maj+B = variante spline ; O = ouvert/ferme ; Echap ou clic droit = quitter\n",
+                userMsg("mode Edition : %s (%zu points) - glissez une poignee ; clic sur la courbe = ajouter un point (ligne, spline, polygone) ; poignee + Suppr = supprimer ; Maj+S/Maj+B = variante spline ; O = ouvert/ferme ; Echap ou clic droit = quitter",
                             g_objs[(size_t)idx].name.c_str(), g_objs[(size_t)idx].tracePts.size());
             }
         }
@@ -5560,7 +5584,7 @@ static void runToolCommand(int id) {
             splCancel("mode spline quitte");
         } else if (g_splMode) {
             g_splCtrl = true;                /* B2.7b : bascule variante, points conserves */
-            std::printf("mode Spline (points de controle) : chaque clic = un COIN du polygone de controle ; la courbe jaune glisse a l'interieur et ne touche que ses extremites ; ajoutez des points pour serrer la courbe ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide ; Echap = tout annuler\n");
+            userMsg("mode Spline (points de controle) : chaque clic = un COIN du polygone de controle ; la courbe jaune glisse a l'interieur et ne touche que ses extremites ; ajoutez des points pour serrer la courbe ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide ; Echap = tout annuler");
         } else if (g_mode == M_None && !g_dupPending && !g_lineActive && !g_lineMode
                    && !g_rectActive && !g_cercleActive && !g_arcMode && !g_polyMode) {
             g_splMode = true;
@@ -5568,11 +5592,16 @@ static void runToolCommand(int id) {
             splReset();
             g_ppMode = false;
             g_rotMode = false;
-            std::printf("mode Spline (points de controle) : chaque clic = un COIN du polygone de controle ; la courbe jaune glisse a l'interieur et ne touche que ses extremites ; ajoutez des points pour serrer la courbe ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler\n");
+            userMsg("mode Spline (points de controle) : chaque clic = un COIN du polygone de controle ; la courbe jaune glisse a l'interieur et ne touche que ses extremites ; ajoutez des points pour serrer la courbe ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler");
         } else {
             flashBand("spline : terminez d'abord le mode en cours (Echap)");
-            std::printf("spline : terminez d'abord le mode en cours (Echap)\n");
+            userMsg("spline : terminez d'abord le mode en cours (Echap)");
         }
+        return;
+    case IDM_VIEW_JOURNAL:     /* = J (B3.3f) : panneau des messages utilisateur */
+        g_journalVisible = !g_journalVisible;
+        userMsg(g_journalVisible ? "journal des messages affiche (J pour masquer)"
+                                 : "journal des messages masque");
         return;
 #ifdef _WIN32
     /* B1.5 : commandes Affichage / Preferences, a present dans le dispatcher */
@@ -5856,6 +5885,35 @@ static void drawStatusBand() {
         glColor3f(0.08f, 0.09f, 0.12f);
         drawText2D(boxX + 8.0f, 8.0f, inTxt);
     }
+    if (g_journalVisible) {   /* B3.3f : panneau des derniers messages (J) */
+        const size_t nAff = 12;
+        const size_t nj = g_journal.size();
+        const size_t debut = nj > nAff ? nj - nAff : 0;
+        float lj = 120.0f;
+        for (size_t i = debut; i < nj; ++i) {
+            const float wl = (float)textWidthPx(g_journal[i].c_str());
+            if (wl > lj) lj = wl;
+        }
+        lj += 16.0f;
+        const float hj = (float)(nj - debut) * 15.0f + 12.0f;
+        const float xj = 8.0f, yj = 28.0f;
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(0.97f, 0.97f, 0.99f, 0.92f);
+        glBegin(GL_QUADS);
+        glVertex2f(xj, yj); glVertex2f(xj + lj, yj);
+        glVertex2f(xj + lj, yj + hj); glVertex2f(xj, yj + hj);
+        glEnd();
+        glDisable(GL_BLEND);
+        glColor3f(0.6f, 0.6f, 0.65f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(xj + 0.5f, yj + 0.5f); glVertex2f(xj + lj - 0.5f, yj + 0.5f);
+        glVertex2f(xj + lj - 0.5f, yj + hj - 0.5f); glVertex2f(xj + 0.5f, yj + hj - 0.5f);
+        glEnd();
+        glColor3f(0.08f, 0.09f, 0.12f);
+        for (size_t i = debut; i < nj; ++i)
+            drawText2D(xj + 8.0f, yj + 4.0f + (float)(i - debut) * 15.0f, g_journal[i].c_str());
+    }
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
@@ -5912,11 +5970,11 @@ static void updateWindowTitle(GLFWwindow* w) {
 int main() {
     /* entete console : court, groupe par theme (retour utilisateur : trop de
        verbiage noie les informations importantes) */
-    std::printf("Sketch3D - build %s\n", BUILD_VERSION);
-    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart, clic droit ou Entree = ferme) | Maj+S spline (passage) | Maj+B spline (controle, clic depart = boucle) | E editer un trace | Maj+W balayage (face puis fil) | Ctrl+C/V | Suppr\n");
-    std::printf("Vue     : orbite = clic gauche dans le vide | zoom = molette | panoramique = molette-clic ou Shift+glisser | C centrer | F cadrer | H origine\n");
-    std::printf("Projets : Ctrl+S enregistrer | clic droit = infos objet + duplication | I importer\n");
-    std::printf("Formats : export scene/selection = menu Fichier, format defini dans Preferences\n");
+    userMsg("Sketch3D - build %s", BUILD_VERSION);
+    userMsg("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart, clic droit ou Entree = ferme) | Maj+S spline (passage) | Maj+B spline (controle, clic depart = boucle) | E editer un trace | Maj+W balayage (face puis fil) | Ctrl+C/V | Suppr");
+    userMsg("Vue     : orbite = clic gauche dans le vide | zoom = molette | panoramique = molette-clic ou Shift+glisser | C centrer | F cadrer | H origine");
+    userMsg("Projets : Ctrl+S enregistrer | clic droit = infos objet + duplication | I importer");
+    userMsg("Formats : export scene/selection = menu Fichier, format defini dans Preferences");
     g_setupPath = setupFilePath();
     loadSetup();                     /* B0 : preferences de la derniere session */
     if (g_setup.winW > 0) g_winW = g_setup.winW;
@@ -5927,11 +5985,11 @@ int main() {
         std::string err;
         if (g_setup.dernierProjet.empty() || !loadProject(g_setup.dernierProjet, err)) {
             if (!g_setup.dernierProjet.empty())
-                std::printf("projet precedent illisible (%s) : scene de demo\n", err.c_str());
+                userMsg("projet precedent illisible (%s) : scene de demo", err.c_str());
             buildScene();
         }
     }
-    if (!glfwInit()) { std::fprintf(stderr, "glfwInit a echoue\n"); return 1; }
+    if (!glfwInit()) { std::fprintf(stderr, "glfwInit a echoue"); return 1; }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
@@ -5940,7 +5998,7 @@ int main() {
     char titre[64];
     std::snprintf(titre, sizeof(titre), "Sketch3D — build %s", BUILD_VERSION);
     GLFWwindow* win = glfwCreateWindow(g_winW, g_winH, titre, nullptr, nullptr);
-    if (!win) { std::fprintf(stderr, "creation de fenetre impossible\n"); glfwTerminate(); return 1; }
+    if (!win) { std::fprintf(stderr, "creation de fenetre impossible"); glfwTerminate(); return 1; }
     glfwMakeContextCurrent(win);
     glfwSwapInterval(1);
     g_camHome = g_cam;

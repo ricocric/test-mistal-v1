@@ -2536,6 +2536,20 @@ int main() {
             CHECK(g_cam.dist == 0.1, "B3.3e : zoom avant borne a 0.1");
             g_cam.dist = d0;
         }
+        /* B3.3f (regle) : les messages utilisateur vont dans la FENETRE
+           (bandeau + journal consultable), la console garde le debug */
+        {
+            const size_t n0 = g_journal.size();
+            userMsg("essai %d", 42);
+            CHECK(g_journal.size() == n0 + 1 && g_journal.back() == "essai 42",
+                  "B3.3f : userMsg remplit le journal (formate)");
+            CHECK(!g_bandFlash.empty() && g_bandFlash == "essai 42",
+                  "B3.3f : userMsg affiche dans le bandeau");
+            userMsg("plein", 1);
+            for (int i = 0; i < 250; ++i) userMsg("l%d", i);
+            CHECK(g_journal.size() <= 200, "B3.3f : journal borne a 200 messages");
+            g_bandFlash.clear();
+        }
         /* ajout au PROFIL (O = cible profil) : milieu d un bord de la face */
         g_sweepEditChemin = false;
         const Vec3 milieuPr = sw.pos + ((sw.tracePts[0] + sw.tracePts[1]) * 0.5) * sw.scl;
