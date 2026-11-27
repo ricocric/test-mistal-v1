@@ -452,15 +452,30 @@ Questions ouvertes a trancher avec l'utilisateur :
   booleens risquent de devenir des rustines ; B5 (edition directe, notion de
   face) et B4 (offset/chanfrein) tireront aussi parti de cette migration
 - B7 deformations : echelle non homogene, twist, bend, taper
-- **PRIORITAIRE (retour test B3.3i)** : maitrise des points de CONNEXION et
-  des PIVOTS du balayage - l'utilisateur ne peut pas choisir precisement A QUEL
-  POINT du chemin la forme va s'appliquer (ancre actuelle = point du profil le
-  plus proche du DEPART du fil, B3.2) ; symptome : un rectangle colle sur un
-  chemin donne une forme INCLINEE non souhaitee (le roll, rotation de la forme
-  autour du fil, est impose par la normale de la face) ; ETUDE DE CONCEPTION
-  avant code (regle B8, valable pour ce cas) : choix de l'interaction (clic du
-  point de depart sur le fil ? poignee de depart en edition ?) et du roll
-  (coller plat ? reglage en edition ? chiffres ?)
+- **B3.4 CONCEPTION (arbitrages utilisateur B3.3i, ecrite avant code)** :
+  maitrise des points de connexion / pivots du balayage - DECOUPAGE :
+  - **Principe general (le COLLAGE)** : chaque forme possede des POINTS
+    D'ACCROCHE = ses sommets (coins) + les MILIEUX de segments ; coller une
+    forme A = poser une accroche de A sur une cible. Les cibles v1 : un point
+    quelconque d'un FIL (projection au plus proche), plus tard un coin ou une
+    arete d'un autre objet (collage 2 objets : coin contre coin, arete contre
+    arete - le collage sur un fil n'est qu'un cas particulier) ;
+  - **B3.5 balayage, au trace (clic 2 = fil) - COLLAGE INTELLIGENT** : le
+    point d'ACCROCHE du profil (parmi sommets + milieux de segments) le plus
+    proche du fil se pose sur le point du fil le plus proche de lui (remplace
+    l'ancre B3.2 qui imposait le point du profil le plus proche du DEPART) ;
+  - **B3.5 ROLL par defaut = COLLER PLAT** : la face est posee a plat sur le
+    fil (le bas de la forme suit le chemin, la normale de la face remplacee
+    par une orientation deduite du fil + up au depart) - supprime les formes
+    inclinees non souhaitees ;
+  - **B3.6 edition du balayage** : poignee de DEPART (changer le point du fil
+    ou le tube commence + choisir l'accroche : angle ou milieu de segment) et
+    poignee de ROLL (tourner le profil autour du chemin) ; chiffres possibles
+    plus tard ;
+  - **B3.7+ collage generique 2 objets** (coin/coin, arete/arete) : a cadrer
+    separatiment une fois B3.5/B3.6 validees ;
+  - les arbitrages restants (interaction exacte du choix d'accroche au
+    trace, comportement torique) seront poses au fil des tests utilisateur.
 - B8 pivot intelligent : ETUDE DE CONCEPTION avant code (nombreux cas de
   figure : sommet, face, point clique, coordonnees, centre du monde...)
 
