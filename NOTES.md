@@ -33,6 +33,17 @@ versionne avec le depot : toujours disponible apres `git fetch`.
 - garder un calque source par icone (un fichier par outil) pour
   regenerer les tailles.
 
+### Complement OpenGL (fixed-function, barre flottante GLFW) — consigne au build B3.2
+- recommandation : **24 x 24 px PNG avec alpha**, un fichier par bouton dans
+  `desktop/assets/` ;
+- charge au demarrage en texture, dessine en quads textures a la place
+  des labels actuels ;
+- tracer en 32 x 32 puis reduire (glyphe plus lisible) ; marge interne
+  1 px, glyphe utile ~ 12-14 px a 16 px ;
+- etat desarme = desaturation au rendu (pas de fichier separe) ;
+- prevoir la double taille (32 px) pour l'agrandissement de la barre
+  flottante.
+
 ### Regles projet a rappeler
 - Regle des variantes (B2.5b/B2.7b) : choix a deux usages = variantes
   commutables par la commande, rien de memorise ;

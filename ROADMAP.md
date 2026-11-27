@@ -321,6 +321,12 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   - fermer en surface = le role du POLYGONE ; Maj+L = fil ouvert ;
   vieux projets avec feuille de ligne fermee toujours lus ;
   +1 verification = 412, 0 echec ;
+  B3.2b (retour test) : au CHARGEMENT d un projet, tout objet portant
+  ses parametres de construction (principe B2.7e) regenere SA
+  geometrie par les MEMES fonctions que le trace (avant : simple
+  calcul derive) - le fil ferme (boucle L) retrouvait PAS son arete de
+  cloture apres save/load (fil devenu ouvert) ; corrige ; +3
+  verifications = 415, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec

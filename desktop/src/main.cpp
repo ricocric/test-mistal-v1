@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.2";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.2b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1328,6 +1328,9 @@ static bool saveProject(const std::string& path, std::string& err) {
     return true;
 }
 
+static bool loadProject(const std::string& path, std::string& err);
+static void traceRegen(Object& o);   /* B2.7e : regeneration par les MEMES fonctions que le trace */
+
 static bool loadProject(const std::string& path, std::string& err) {
     std::ifstream f(path);
     if (!f) { err = "fichier illisible"; return false; }
@@ -1421,7 +1424,13 @@ static bool loadProject(const std::string& path, std::string& err) {
                 f.seekg(avant);                     /* le jeton "objet" suivant reste a lire */
             }
         }
-        computeObjectDerived(o);
+        /* B3.2b (retour test) : un objet portant ses parametres de
+           construction (principe B2.7e) regenere SA geometrie par les MEMES
+           fonctions que le trace - le fil ferme retrouve son arete de
+           cloture, le balayage ses anneaux. Un objet sans trace garde le
+           calcul derive simple. */
+        if (o.traceType != 0 && o.tracePts.size() >= 2) traceRegen(o);
+        else computeObjectDerived(o);
         objs.push_back(std::move(o));
     }
     g_objs = std::move(objs);

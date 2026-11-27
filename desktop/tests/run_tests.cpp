@@ -1560,6 +1560,21 @@ int main() {
         CHECK(g_objs[1].name != g_objs[0].name, "ligne : noms uniques aux deux poses");
         g_lineFerme = true;                          /* retour au defaut */
 
+        /* B3.2b (retour test) : round-trip d un fil ferme - l arete de
+           cloture survit au save/load SANS regen manuelle (la regen des
+           parametres de construction fait partie du CHARGEMENT) */
+        {
+            std::string err;
+            const std::string p = tmpPath("boucle_ligne.s3projet");
+            CHECK(saveProject(p, err), err.c_str());
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), err.c_str());
+            CHECK(g_objs.size() == 2 && g_objs[0].traceFerme == 1
+                  && g_objs[0].tri.empty() && g_objs[0].edges.size() == 4
+                  && g_objs[1].edges.size() == 4,
+                  "ligne : fil ferme relu = boucle complete (arete de cloture survivante, 0 tri)");
+        }
+
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_lineMode = false;
         lineReset();

@@ -946,6 +946,12 @@ globale corrigee par le volume signe (normales exterieures) ;
   polygone) ; Maj+L = fil ouvert ; les vieux projets avec feuille de
   ligne fermee restent lus (regen type 1 conserve la branche
   surface) ; total **412, 0 echec**.
+- **B3.2b (retour test)** : au **chargement** d'un projet, tout objet
+  portant ses parametres de construction (principe B2.7e) regenere SA
+  geometrie par les MEMES fonctions que le trace (avant : simple calcul
+  derive) - le fil ferme (boucle L) perdait son arete de cloture apres
+  save/load (il redevenait un fil ouvert) ; corrige ; total **415,
+  0 echec**.
 
 ## Organiseur des prochains lots
 
