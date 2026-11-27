@@ -2305,6 +2305,80 @@ int main() {
             CHECK(makeExtrude(poly, 0, dd),
                   "E3c : Push/Pull refonctionne apres l ajout (Face non plane repare)");
         }
+        /* ===== B3 : balayage (extrusion le long d'un chemin) ===== */
+        {
+            /* profil = polygone 4x4 pose, chemin = fil ligne droite (pose a la main) */
+            g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+            polyPose();
+            Object chemin;
+            chemin.name = "Ligne";
+            chemin.traceType = 1; chemin.traceFerme = 0;
+            chemin.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            g_objs.push_back(chemin);
+            const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+            CHECK(sweepConvertTo(g_objs[ip], g_objs[ic]),
+                  "B3 : balayage polygone + ligne droite accepte");
+            CHECK(g_objs[ip].traceType == 9 && g_objs[ip].traceProfil == 7,
+                  "B3 : l objet passe en type 9 (profil = polygone)");
+            CHECK(g_objs[ip].traceCheminType == 1 && g_objs[ip].traceChemin.size() == 2,
+                  "B3 : les points du chemin sont absorbes");
+            CHECK(g_objs[ip].v.size() == 8, "B3 : 2 anneaux de 4 sommets");
+            CHECK(g_objs[ip].tri.size() == (size_t)(3 * 12),
+                  "B3 : prisme balaye = 12 tris (8 murs + 4 caps)");
+            CHECK(std::fabs(signedVolume(g_objs[ip]) - 160.0) < 1e-6,
+                  "B3 : volume = aire 16 x longueur 10");
+            /* profil perpendiculaire au chemin : anneaux a z = 10 et 20 exactement (monde) */
+            bool perp = true;
+            for (const Vec3& p : g_objs[ip].v) {
+                const Vec3 pw = g_objs[ip].pos + p * g_objs[ip].scl;
+                if (std::fabs(pw.z - 10.0) > 1e-9 && std::fabs(pw.z - 20.0) > 1e-9) perp = false;
+            }
+            CHECK(perp, "B3 : anneaux PERPENDICULAIRES au chemin (z constant par anneau)");
+            CHECK(signedVolume(g_objs[ip]) > 0.0, "B3 : normales exterieures (volume signe positif)");
+            /* chemin ferme = solide torique (sans caps) */
+            g_polyPts = { Vec3(70,0,0), Vec3(74,0,0), Vec3(74,0,4), Vec3(70,0,4) };
+            polyPose();
+            Object boucle;
+            boucle.name = "Ligne (2)";
+            boucle.traceType = 1; boucle.traceFerme = 1;
+            boucle.tracePts = { Vec3(0,0,30), Vec3(0,0,36), Vec3(4,0,36), Vec3(4,0,30) };
+            g_objs.push_back(boucle);
+            const size_t jp = g_objs.size() - 2, jc = g_objs.size() - 1;
+            CHECK(sweepConvertTo(g_objs[jp], g_objs[jc]), "B3 : chemin FERME accepte (torique)");
+            CHECK(g_objs[jp].v.size() == 16 && g_objs[jp].tri.size() == (size_t)(3 * 32),
+                  "B3 : torique = 4 anneaux, 32 tris (murs seuls, sans caps)");
+            CHECK(signedVolume(g_objs[jp]) > 0.0, "B3 : torique = normales exterieures");
+            /* refus : chemin non trace, meme objet */
+            g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+            polyPose();
+            Object& profil3 = g_objs.back();
+            CHECK(!sweepConvertTo(profil3, profil3), "B3 : refus - le chemin ne peut pas etre l objet lui-meme");
+            Object coque;
+            coque.traceType = 0;
+            CHECK(!sweepConvertTo(profil3, coque), "B3 : refus - chemin non trace (type 0)");
+            /* persistence : le balayage survit au save/load (profil + chemin) */
+            {
+                std::string err;
+                const std::string pth = tmpPath("balayage.s3projet");
+                CHECK(saveProject(pth, err), err.c_str());
+                const size_t nAvant = g_objs.size();
+                const std::vector<Vec3> chAvant = g_objs[ip].traceChemin;
+                const std::vector<Vec3> vAvant = g_objs[ip].v;
+                g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+                CHECK(loadProject(pth, err), err.c_str());
+                const bool ok = g_objs.size() == nAvant && g_objs[ip].traceType == 9
+                      && g_objs[ip].traceChemin.size() == chAvant.size();
+                CHECK(ok, "B3 : type 9 + chemin survivent au save/load");
+                bool identique = false;
+                if (ok) {
+                    traceRegen(g_objs[ip]);
+                    identique = g_objs[ip].v.size() == vAvant.size();
+                    for (size_t i = 0; identique && i < vAvant.size(); ++i)
+                        identique = (g_objs[ip].v[i] - vAvant[i]).norm() < 1e-9;
+                }
+                CHECK(identique, "B3 : geometrie du balayage regeneree identique apres save/load");
+            }
+        }
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts.clear(); g_lineMode = false; lineReset();
     }

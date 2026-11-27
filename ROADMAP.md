@@ -307,6 +307,12 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
     regen par les MEMES fonctions (principe B2.7e generalise) ;
   - persistence : entete trace etendue au type 9 (profil + chemin),
     vieux projets relisibles ;
+  B3 LOT 1 FAIT (build B3.1) : type 9 + traceRegenSweep (transport
+  parallele projete, volume signe = orientation globale), outil Maj+W
+  (2 clics : face puis fil, chemin consomme), bouton "Balayer", menu
+  Outils, bandeau dedie, persistence etendue, refus explicites ;
+  edition du balayage (poignees profil + chemin) = lot 2 (gardes
+  "prochain lot" en attendant) ; +17 verifications = 411, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec

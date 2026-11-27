@@ -917,6 +917,26 @@ et se regenere par SA construction d'origine :
 - persistence : entete trace etendue (profil + vecteur) ; vieux
   projets relisibles.
 
+### B3 : balayage (extrusion le long d'un chemin) - lot 1
+
+- **Maj+W / bouton "Balayer" / menu Outils** : clic 1 = la FACE a balayer
+  (feuille tracee), clic 2 = le FIL chemin (ligne, spline, arc) ;
+  Echap ou clic droit = annulation ;
+- type 9 : l'objet porte le profil (sous-type + points, comme type 8)
+  ET le chemin (sous-type + points) ; le fil chemin est **consomme**
+  (retire de la scene, ses points restent dans les parametres - une
+  fonction "extraire le chemin" est notee backlog B5+) ;
+- regen = anneaux du profil transportes le long du chemin (transport
+  parallele projete : pas de torsion en v1) ; profil perpendiculaire
+  au depart du chemin ; caps aux extremites si le profil est plein ;
+  chemin ferme (boucle) = solide torique sans caps ; orientation
+globale corrigee par le volume signe (normales exterieures) ;
+- refus explicites : face non tracee/coque, chemin non fil, meme
+  objet, fil trop court ;
+- persistence : entete trace etendue au type 9 (profil + normale +
+  chemin), vieux projets relisibles ; edition du balayage = lot 2
+  (message dedie en attendant) ; total **411, 0 echec**.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils

@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.7e3c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.1";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -140,12 +140,17 @@ struct Object {
        MEMES fonctions que le trace (un seul chemin de code). tracePts sont
        LOCAUX (pos + scl*p = monde), comme v. */
     int traceType = 0;          /* 0 = aucun ; 1 = LIGNE ; 2 = SPLINE passage ; 3 = SPLINE controle ;
-                                   4 = RECT ; 5 = CERCLE ; 6 = ARC ; 7 = POLY ; 8 = EXTRUSION */
+                                   4 = RECT ; 5 = CERCLE ; 6 = ARC ; 7 = POLY ;
+                                   8 = EXTRUSION ; 9 = BALAYAGE (sweep, B3) */
     int traceFerme = 0;         /* 1 = boucle fermee */
     int traceSurface = 0;       /* 1 = feuille fermee en surface (fan, ligne B2.5) */
     std::vector<Vec3> tracePts; /* points de definition */
-    int traceProfil = 0;        /* B2.7e E3 : type 8 = sous-type du profil extrude (1..7) */
-    Vec3 traceVec{0, 0, 0};     /* B2.7e E3 : type 8 = vecteur d extrusion (LOCALE, comme v) */
+    int traceProfil = 0;        /* B2.7e E3 : type 8/9 = sous-type du profil (1..7) */
+    Vec3 traceVec{0, 0, 0};     /* B2.7e E3 : type 8 = vecteur d extrusion ; type 9 = normale
+                                   de la face au balayage (roll) (LOCALES, comme v) */
+    int traceCheminType = 0;    /* B3 : type 9 = sous-type du CHEMIN (1, 2/3, 6) */
+    int traceCheminFerme = 0;   /* B3 : chemin boucle = solide torique (sans caps) */
+    std::vector<Vec3> traceChemin; /* B3 : points de definition du chemin (LOCALES) */
 };
 
 static std::vector<Object> g_objs;
@@ -1308,8 +1313,14 @@ static bool saveProject(const std::string& path, std::string& err) {
             if (o.traceType == 8)                       /* E3 : profil + vecteur d extrusion */
                 f << " " << o.traceProfil << " " << o.traceVec.x << " " << o.traceVec.y
                   << " " << o.traceVec.z;
+            if (o.traceType == 9)                       /* B3 : profil + normale (roll) + chemin */
+                f << " " << o.traceProfil << " " << o.traceVec.x << " " << o.traceVec.y
+                  << " " << o.traceVec.z << " " << o.traceCheminType << " "
+                  << o.traceCheminFerme << " " << o.traceChemin.size();
             f << "\n";
             for (const Vec3& p : o.tracePts) f << p.x << " " << p.y << " " << p.z << "\n";
+            if (o.traceType == 9)
+                for (const Vec3& p : o.traceChemin) f << p.x << " " << p.y << " " << p.z << "\n";
         }
     }
     if (!f) { err = "ecriture interrompue"; return false; }
@@ -1371,12 +1382,15 @@ static bool loadProject(const std::string& path, std::string& err) {
                 std::istringstream is(probe);
                 std::string tag;
                 if (!(is >> tag >> o.traceType >> o.traceFerme >> o.traceSurface)
-                    || o.traceType < 0 || o.traceType > 8) {
+                    || o.traceType < 0 || o.traceType > 9) {
                     err = "fichier corrompu (entete de trace)"; return false;
                 }
                 o.traceProfil = 0;
                 o.traceVec = Vec3();
-                size_t ntp = 0;
+                o.traceCheminType = 0;
+                o.traceCheminFerme = 0;
+                o.traceChemin.clear();
+                size_t ntp = 0, nch = 0;
                 if (!(is >> ntp) || ntp > 20000000ull) { err = "fichier corrompu (compteur de trace)"; return false; }
                 if (o.traceType == 8) {                 /* E3 : sous-type + vecteur */
                     if (!(is >> o.traceProfil) || o.traceProfil < 1 || o.traceProfil > 7
@@ -1384,9 +1398,24 @@ static bool loadProject(const std::string& path, std::string& err) {
                         err = "fichier corrompu (entete d extrusion)"; return false;
                     }
                 }
+                if (o.traceType == 9) {                 /* B3 : profil + normale + chemin */
+                    if (!(is >> o.traceProfil) || o.traceProfil < 1 || o.traceProfil > 7
+                        || !(is >> o.traceVec.x >> o.traceVec.y >> o.traceVec.z)
+                        || !(is >> o.traceCheminType) || o.traceCheminType < 1
+                        || o.traceCheminType > 7
+                        || !(is >> o.traceCheminFerme)
+                        || !(is >> nch) || nch > 20000000ull) {
+                        err = "fichier corrompu (entete de balayage)"; return false;
+                    }
+                }
                 o.tracePts.resize(ntp);
                 for (Vec3& p : o.tracePts)
                     if (!(f >> p.x >> p.y >> p.z)) { err = "fichier corrompu (points du trace)"; return false; }
+                if (o.traceType == 9) {
+                    o.traceChemin.resize(nch);
+                    for (Vec3& p : o.traceChemin)
+                        if (!(f >> p.x >> p.y >> p.z)) { err = "fichier corrompu (points du chemin)"; return false; }
+                }
             } else {
                 f.clear();                          /* lever eof/fail avant le retour arriere */
                 f.seekg(avant);                     /* le jeton "objet" suivant reste a lire */
@@ -1460,6 +1489,7 @@ enum {
     IDM_TOOL_SPL,
     IDM_TOOL_SPLC,
     IDM_TOOL_EDIT,             /* B2.7e : edition des traces apres coup (E) */
+    IDM_TOOL_SWEEP,            /* B3 : balayage le long d'un chemin (Maj+W) */
 };
 
 /* Homogeneite ("UN SEUL CHEMIN DE CODE", regle systematique) : tous les
@@ -1673,7 +1703,7 @@ static void drawText2D(float x, float y, const char* s) {
    Tout est persiste dans la section [outils] du sketch3d.ini. */
 static HWND g_toolWin = nullptr;
 static HWND g_mainHwnd = nullptr;    /* fenetre principale : suivi + aimantation */
-static HWND g_toolBtn[15];   /* B2.4b : dimension = nombre de boutons (l'ancien [9] debordait = corruption memoire) ; B2.7e : 15 */
+static HWND g_toolBtn[16];   /* B2.4b : dimension = nombre de boutons (l'ancien [9] debordait = corruption memoire) ; B3 : 16 */
 static HMENU g_viewMenu = nullptr;   /* menu Affichage : coches tenus a jour */
 static HMENU g_prefSceneMenu = nullptr;  /* menu Preferences : export scene */
 static HMENU g_prefSelMenu = nullptr;    /* menu Preferences : export selection */
@@ -1805,9 +1835,9 @@ static void attachToolbar(HWND mainHwnd) {
     const HWND tw = CreateWindowExA(WS_EX_TOOLWINDOW, cls, "Outils",
         kToolStyle, o.x + g_setup.toolX, o.y + g_setup.toolY, 0, 0,
         mainHwnd, nullptr, GetModuleHandleA(nullptr), nullptr);
-    static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller", "Ligne", "Rectangle", "Cercle", "Arc", "Polygone", "Spline", "Spline ctrl", "Editer" };
+    static const char* labels[] = { "Selection", "P", "R", "F cadrer", "H origine", "Copier", "Coller", "Ligne", "Rectangle", "Cercle", "Arc", "Polygone", "Spline", "Spline ctrl", "Editer", "Balayer" };
     static const int ids[] = { IDM_TOOL_SELECT, IDM_TOOL_PP, IDM_TOOL_ROT, IDM_TOOL_FRAME,
-                               IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE, IDM_TOOL_LINE, IDM_TOOL_RECT, IDM_TOOL_CERCLE, IDM_TOOL_ARC, IDM_TOOL_POLY, IDM_TOOL_SPL, IDM_TOOL_SPLC, IDM_TOOL_EDIT };
+                               IDM_TOOL_HOME, IDM_TOOL_COPY, IDM_TOOL_PASTE, IDM_TOOL_LINE, IDM_TOOL_RECT, IDM_TOOL_CERCLE, IDM_TOOL_ARC, IDM_TOOL_POLY, IDM_TOOL_SPL, IDM_TOOL_SPLC, IDM_TOOL_EDIT, IDM_TOOL_SWEEP };
     for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); ++i) {
         g_toolBtn[i] = CreateWindowExA(0, "BUTTON", labels[i],
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -1931,6 +1961,7 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);   /* B2.7c : groupes de variantes separes */
     AppendMenuA(outils, MF_STRING, IDM_TOOL_PP, "&Extraire une face\tP");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_ROT, "&Tourner\tR");
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_SWEEP, "Bal&ayer le long d'un chemin\tMaj+W");   /* B3 */
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(outils, MF_STRING, IDM_TOOL_LINE, "&Ligne (fermee en surface)\tL");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_LIGNE_FIL, "Ligne (&fil ouvert)\tMaj+L");
@@ -2415,6 +2446,96 @@ static bool extrudeConvertTo(Object& o, const Extrude& dd, double d) {
     o.traceVec = dd.normal * (d / o.scl);
     traceRegen(o);
     return true;
+}
+
+/* B3 : BALAYAGE (extrusion le long d'un chemin) - une feuille a TraceData
+   balayee le long d'un fil (ligne, spline, arc). Chemin CONSUMME (comme le
+   profil en E3) : ses points sont absorbes dans les parametres (l'info
+   reste dans l'objet - extraire le chemin = backlog B5+). */
+static int g_sweepStage = 0;            /* 0 = inactif ; 1 = attend la FACE ; 2 = attend le FIL */
+static int g_sweepProfil = -1;          /* index de l'objet face (clic 1) */
+static void sweepCancel() {
+    g_sweepStage = 0;
+    g_sweepProfil = -1;
+    std::printf("\nmode selection\n");
+}
+static bool sweepConvertTo(Object& profil, Object& chemin) {
+    if (&profil == &chemin) {
+        std::printf("balayage : le chemin doit etre un AUTRE objet (un fil)\n");
+        return false;
+    }
+    if (profil.traceType == 0 || profil.traceType == 8 || profil.traceType == 9
+        || profil.tri.empty()) {
+        std::printf("balayage : la face visee n'est pas une feuille tracee (ligne, rect, cercle, arc, polygone, spline)\n");
+        return false;
+    }
+    if (chemin.traceType != 1 && chemin.traceType != 2 && chemin.traceType != 3
+        && chemin.traceType != 6) {
+        std::printf("balayage : le chemin doit etre un fil (ligne, spline ou arc)\n");
+        return false;
+    }
+    if (chemin.tracePts.size() < (chemin.traceType == 6 ? (size_t)3 : (size_t)2)) {
+        std::printf("balayage : le fil chemin est vide ou trop court\n");
+        return false;
+    }
+    /* le chemin est absorbe : locales du fil -> locales du profil (pos + scl*v = monde) */
+    std::vector<Vec3> chem;
+    chem.reserve(chemin.tracePts.size());
+    for (const Vec3& p : chemin.tracePts)
+        chem.push_back((chemin.pos + p * chemin.scl - profil.pos) * (1.0 / profil.scl));
+    profil.traceProfil = profil.traceType;
+    profil.traceCheminType = chemin.traceType;
+    profil.traceCheminFerme = (chemin.traceType == 1) ? chemin.traceFerme : 0;
+    profil.traceChemin = std::move(chem);
+    profil.traceVec = profil.n.empty() ? Vec3(0, 1, 0) : profil.n[0];   /* roll : normale de la face */
+    profil.traceType = 9;
+    traceRegen(profil);
+    return true;
+}
+/* clic gauche pendant le mode Balayage : clic 1 = la face, clic 2 = le fil */
+static void sweepClick(GLFWwindow* w) {
+    Vec3 org, dir;
+    if (!rayFromMouse(w, org, dir)) return;
+    if (g_sweepStage == 1) {
+        int hit = -1;
+        double bestT = 1e300;
+        for (size_t i = 0; i < g_objs.size(); ++i) {
+            double t; size_t ti;
+            if (rayObjectTri(org, dir, g_objs[i], t, &ti) && t < bestT) { bestT = t; hit = (int)i; }
+        }
+        if (hit < 0) {
+            std::printf("balayage : cliquez une face (l'objet vise doit etre une feuille tracee)\n");
+            return;
+        }
+        g_sweepProfil = hit;
+        g_sweepStage = 2;
+        std::printf("balayage : %s capte - cliquez le FIL chemin (ligne, spline, arc) ; Echap = annuler\n",
+                    g_objs[(size_t)hit].name.c_str());
+        return;
+    }
+    /* stage 2 : le fil chemin */
+    double bestT = 1e300;
+    int hit = -1;
+    for (size_t i = 0; i < g_objs.size(); ++i) {
+        if (i == (size_t)g_sweepProfil) continue;
+        const double t = filRayHit(org, dir, g_objs[i], filPickTol());
+        if (t >= 0.0 && t < bestT) { bestT = t; hit = (int)i; }
+    }
+    if (hit < 0) {
+        std::printf("balayage : aucun fil vise - cliquez un fil (ligne, spline, arc) ; Echap = annuler\n");
+        return;
+    }
+    const int ip = g_sweepProfil;
+    Object& profil = g_objs[(size_t)ip];
+    if (!sweepConvertTo(profil, g_objs[(size_t)hit])) return;
+    const std::string nomFil = g_objs[(size_t)hit].name;
+    g_objs.erase(g_objs.begin() + hit);            /* chemin consomme */
+    selectOnly(ip < hit ? ip : ip - 1);
+    g_sweepStage = 0;
+    g_sweepProfil = -1;
+    std::printf("balayage pose : %s (le fil \"%s\" est consomme - ses points restent dans les parametres)\n",
+                profil.name.c_str(), nomFil.c_str());
+    std::printf("mode selection\n");
 }
 
 static void ppCommit() {
@@ -3654,8 +3775,10 @@ static void pushFanTri(std::vector<unsigned>& tri, const std::vector<Vec3>& v,
 }
 
 static void traceRegenBase(Object& o);   /* E2 : formes de base (defini plus bas) */
+static void traceRegenSweep(Object& o);  /* B3 : balayage (defini plus bas) */
 static void traceRegen(Object& o) {
     if (o.traceType == 0 || o.tracePts.size() < 2) return;
+    if (o.traceType == 9) { traceRegenSweep(o); return; }  /* B3 : balayage */
     if (o.traceType >= 4) { traceRegenBase(o); return; }   /* E2 : rectangle/cercle/arc/polygone */
     if (o.traceType == 1) {                     /* LIGNE : v = points */
         const bool surface = o.traceFerme && o.traceSurface && !o.tri.empty();
@@ -3746,6 +3869,142 @@ static double traceProfilDist(const Object& o, const Vec3& pLocal) {
         if (d < best) best = d;
     }
     return best;
+}
+
+/* B3 : chaine du CHEMIN d'un balayage (LOCALES) - MEMES constructions que
+   le trace du fil (ligne, spline, arc) */
+static bool traceCheminChain(const Object& o, std::vector<Vec3>& ch) {
+    const int ct = o.traceCheminType;
+    if (ct == 1) {
+        ch = o.traceChemin;
+    } else if (ct == 2 || ct == 3) {
+        g_splPts = o.traceChemin;
+        const bool oldCtrl = g_splCtrl;
+        g_splCtrl = (ct == 3);
+        ch = splSample(o.traceCheminFerme != 0);
+        g_splCtrl = oldCtrl;
+        g_splPts.clear();
+    } else if (ct == 6) {
+        if (o.traceChemin.size() < 3) return false;
+        if (!arcComputePts(o.traceChemin[0], o.traceChemin[1], o.traceChemin[2], ch)) return false;
+    } else {
+        return false;
+    }
+    return ch.size() >= 2;
+}
+
+/* B3 : REGEN du balayage - anneaux du profil transportes le long du chemin
+   (transport parallele projete = pas de torsion, arbitrage v1) ; caps si le
+   chemin est ouvert et le profil plein ; chemin ferme = solide torique sans
+   caps ; orientation globale corrigee par le volume signe (normales
+   exterieures, quel que soit le sens du profil ou du chemin) */
+static void traceRegenSweep(Object& o) {
+    std::vector<Vec3> prof, chem;
+    if (!traceProfilChain(o, prof) || !traceCheminChain(o, chem)) return;
+    const size_t n = prof.size();
+    const bool aCentre = (o.traceProfil == 5);
+    const bool profFerme = o.traceFerme != 0 || o.traceProfil == 4
+                        || o.traceProfil == 5 || o.traceProfil == 7;
+    const bool plein = profFerme && ((o.traceFerme != 0 && o.traceSurface != 0)
+                    || o.traceProfil == 4 || o.traceProfil == 5 || o.traceProfil == 7);
+    const size_t rimBase = aCentre ? 1 : 0;
+    const size_t nBase = aCentre ? n + 1 : n;
+    const size_t nRings = chem.size();
+    const bool boucle = o.traceCheminFerme != 0;
+    const size_t nsegPath = boucle ? nRings : nRings - 1;
+    /* repere 2D du profil dans son plan (normale = traceVec) : a sur u0,
+       b sur v0 ; reconstruit a chaque station par les frames transportees */
+    Vec3 Nv = o.traceVec;
+    if (Nv.norm() < 1e-9) Nv = Vec3(0, 1, 0);
+    Nv = Nv * (1.0 / Nv.norm());
+    Vec3 c{0, 0, 0};
+    for (const Vec3& p : prof) c = c + p;
+    c = c * (1.0 / (double)n);
+    Vec3 u0 = prof[0] - c;
+    if (u0.norm() < 1e-9) u0 = Vec3(1, 0, 0);
+    u0 = u0 * (1.0 / u0.norm());
+    Vec3 v0 = cross(Nv, u0);
+    if (v0.norm() < 1e-9) return;                   /* profil degenere : garder la geometrie */
+    v0 = v0 * (1.0 / v0.norm());
+    /* tangentes (differences centrees, repli aux bouts et sur points doubles) */
+    std::vector<Vec3> Tv(nRings), Nn(nRings), Bb(nRings);
+    for (size_t i = 0; i < nRings; ++i) {
+        Vec3 t = ((i + 1 < nRings) ? chem[i + 1] : (boucle ? chem[0] : chem[i]))
+               - ((i > 0) ? chem[i - 1] : (boucle ? chem[nRings - 1] : chem[i]));
+        if (t.norm() < 1e-12) t = (i > 0) ? Tv[i - 1] : Vec3(0, 0, 1);
+        if (t.norm() < 1e-12) return;
+        Tv[i] = t * (1.0 / t.norm());
+    }
+    Vec3 n0 = Nv - Tv[0] * dot(Nv, Tv[0]);
+    if (n0.norm() < 1e-9) {                         /* face parallele au depart du chemin : repli */
+        n0 = (std::fabs(Tv[0].y) < 0.9) ? Vec3(0, 1, 0) : Vec3(1, 0, 0);
+        n0 = n0 - Tv[0] * dot(n0, Tv[0]);
+    }
+    if (n0.norm() < 1e-9) return;
+    n0 = n0 * (1.0 / n0.norm());
+    Nn[0] = n0;
+    Bb[0] = cross(Tv[0], n0);
+    for (size_t i = 1; i < nRings; ++i) {           /* transport parallele (projete) */
+        Vec3 ni = Nn[i - 1] - Tv[i] * dot(Nn[i - 1], Tv[i]);
+        if (ni.norm() < 1e-12) ni = Nn[i - 1];      /* tangente retournee : garder la frame */
+        ni = ni * (1.0 / ni.norm());
+        Nn[i] = ni;
+        Bb[i] = cross(Tv[i], ni);
+    }
+    o.v.clear(); o.tri.clear(); o.n.clear();
+    o.v.reserve(nBase * nRings);
+    for (size_t r = 0; r < nRings; ++r) {
+        if (aCentre) o.v.push_back(chem[r]);
+        for (size_t k = 0; k < n; ++k) {
+            const double a2 = dot(prof[k] - c, u0);
+            const double b2 = dot(prof[k] - c, v0);
+            o.v.push_back(chem[r] + Nn[r] * a2 + Bb[r] * b2);
+        }
+    }
+    /* murs : quads entre anneaux consecutifs (segments du profil, cloture incluse si ferme) */
+    const size_t nsegProf = profFerme ? n : n - 1;
+    for (size_t r = 0; r < nsegPath; ++r) {
+        const size_t r2 = (r + 1) % nRings;
+        const size_t b0 = r * nBase, t0 = r2 * nBase;
+        for (size_t k = 0; k < nsegProf; ++k) {
+            const unsigned bi = (unsigned)(b0 + rimBase + k);
+            const unsigned bj = (unsigned)(b0 + rimBase + (k + 1) % n);
+            const unsigned ti = (unsigned)(t0 + rimBase + k);
+            const unsigned tj = (unsigned)(t0 + rimBase + (k + 1) % n);
+            o.tri.push_back(bi); o.tri.push_back(bj); o.tri.push_back(tj);
+            o.tri.push_back(bi); o.tri.push_back(tj); o.tri.push_back(ti);
+        }
+    }
+    /* caps : chemin OUVERT et profil plein seulement (pushFanTri ecarte les
+       tris degenere - meme garde que E3c) */
+    if (plein && !boucle) {
+        const unsigned rf = (unsigned)((nRings - 1) * nBase);
+        if (aCentre) {
+            for (size_t k = 0; k < n; ++k) {
+                const unsigned s0 = (unsigned)(rimBase + k);
+                const unsigned s1 = (unsigned)(rimBase + (k + 1) % n);
+                pushFanTri(o.tri, o.v, 0, s1, s0);                                  /* cap depart (inverse) */
+                pushFanTri(o.tri, o.v, rf, (unsigned)(rf + s0), (unsigned)(rf + s1));  /* cap fin (direct) */
+            }
+        } else {
+            for (size_t k = 1; k + 1 < n; ++k) {
+                const unsigned a0 = (unsigned)k, a1 = (unsigned)(k + 1);
+                pushFanTri(o.tri, o.v, 0, a1, a0);
+                pushFanTri(o.tri, o.v, rf, (unsigned)(rf + a0), (unsigned)(rf + a1));
+            }
+        }
+    }
+    /* orientation globale : volume signe >= 0 (normales exterieures) */
+    double v6 = 0.0;
+    for (size_t i = 0; i + 2 < o.tri.size(); i += 3) {
+        const Vec3& a = o.v[o.tri[i]];
+        const Vec3& b = o.v[o.tri[i + 1]];
+        const Vec3& cc = o.v[o.tri[i + 2]];
+        v6 += dot(a, cross(b, cc));
+    }
+    if (v6 < 0.0)
+        for (size_t i = 0; i + 2 < o.tri.size(); i += 3) std::swap(o.tri[i + 1], o.tri[i + 2]);
+    computeObjectDerived(o);
 }
 
 /* E2 (B2.7e) : formes de base - MEMES constructions que les poses
@@ -3996,6 +4255,10 @@ static int traceAddPoint(Object& o, const Vec3& monde, bool gardeProfil = false)
         std::printf("edition : cette forme a des points fixes (rectangle, cercle, arc) - deplacez les poignees\n");
         return -1;
     }
+    if (o.traceType == 9) {
+        std::printf("edition : l'edition du balayage arrive dans le prochain lot\n");
+        return -1;
+    }
     const Vec3 pLocal = (monde - o.pos) * (1.0 / o.scl);
     /* E3 (retour test) : sur une extrusion, un clic-sol LOIN du profil ne doit
        rien ajouter (fini les points parasites sur les murs) */
@@ -4016,6 +4279,10 @@ static bool traceDelPoint(Object& o, int idx) {
     if (o.traceType == 0 || idx < 0 || idx >= (int)o.tracePts.size()) return false;
     if (tracePointsFixes(o)) {
         std::printf("edition : cette forme a des points fixes (rectangle, cercle, arc) - deplacez les poignees\n");
+        return false;
+    }
+    if (o.traceType == 9) {
+        std::printf("edition : l'edition du balayage arrive dans le prochain lot\n");
         return false;
     }
     if (o.tracePts.size() <= traceMinPoints(o)) {
@@ -4246,6 +4513,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_polyMode) { polyFinish(); return; }   /* B2.6b : clic droit = valide (ferme la surface) */
         if (g_splMode) { splFinish(); return; }   /* B2.7 : clic droit = valide (courbe ouverte) */
         if (g_editMode) { editExit(); return; }   /* B2.7e : clic droit = quitter l'edition */
+        if (g_sweepStage) { sweepCancel(); return; }   /* B3 : clic droit = annule le balayage */
         if (g_lineMode) { lineFinish(); return; }   /* B2.1 : le clic droit FINIT (segments deja cliques poses) */
         if (g_ppActive) {
             ppCancel();                 /* restaure la piece */
@@ -4275,6 +4543,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_arcMode) { arcTakePoint(w); return; }         /* B2.4 : clic depart, clic fin, clic bombement pose */
         if (g_polyMode) { polyTakePoint(w); return; }       /* B2.6 : chaque clic pose un sommet ; clic sur le depart = ferme */
         if (g_splMode) { splTakePoint(w); return; }       /* B2.7 : chaque clic pose un point ; clic sur le depart = boucle */
+        if (g_sweepStage) { sweepClick(w); return; }   /* B3 : clic 1 = la face, clic 2 = le fil */
         if (g_editMode) { editClick(w); return; }   /* B2.7e : poignee = drag ; sinon clic sur la courbe = ajouter un point */
         if (g_ppActive) { ppCommit(); return; }   /* second clic gauche : pose la face */
         if (g_rotActive) { rotCommit(); return; }  /* clic gauche : pose la rotation */
@@ -4685,6 +4954,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
                puis deselection) ; Echap ne ferme JAMAIS l'application (rebonds de
                clavier) : fermeture volontaire par Fichier > Quitter uniquement. */
             if (g_editMode) { editExit(); return; }   /* B2.7e : Echap = quitter l'edition */
+            if (g_sweepStage) { sweepCancel(); return; }   /* B3 : Echap = annule le balayage */
             if (g_lineMode) { lineCancel("dessin annule"); return; }   /* B2.1 */
             if (g_rectMode) { rectCancel("dessin annule"); return; }   /* B2.2 */
             if (g_cercleMode) { cercleCancel("dessin annule"); return; }   /* B2.3 */
@@ -4729,6 +4999,10 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         }
         if (keyIsLetter(key, scancode, 'B') && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineActive && !g_rectActive) {
             runToolCommand(IDM_TOOL_SPLC);     /* B2.7b : Maj+B = spline par points de controle */
+            return;
+        }
+        if (keyIsLetter(key, scancode, 'W') && (mods & GLFW_MOD_SHIFT) && g_mode == M_None && !g_dupPending && !g_lineActive && !g_rectActive) {
+            runToolCommand(IDM_TOOL_SWEEP);    /* B3 : Maj+W = balayage le long d'un chemin */
             return;
         }
         if (keyIsLetter(key, scancode, 'L') && g_mode == M_None && !g_dupPending && !g_lineActive)
@@ -4893,6 +5167,21 @@ static void runToolCommand(int id) {
             std::printf("spline : terminez d'abord le mode en cours (Echap)\n");
         }
         return;
+    case IDM_TOOL_SWEEP:       /* = Maj+W (B3) : balayage le long d'un chemin */
+        if (g_sweepStage) {
+            sweepCancel();
+        } else if (g_mode == M_None && !g_dupPending && !g_lineMode && !g_rectMode
+                   && !g_cercleMode && !g_arcMode && !g_polyMode && !g_splMode
+                   && !g_ppMode && !g_rotMode && !g_editMode && !g_ppActive && !g_rotActive) {
+            g_sweepStage = 1;
+            g_sweepProfil = -1;
+            g_ppMode = false;
+            g_rotMode = false;
+            std::printf("mode Balayage : cliquez la FACE a extruder le long d'un chemin (feuille tracee) ; Echap = annuler\n");
+        } else {
+            std::printf("balayage : terminez d'abord le mode en cours (Echap)\n");
+        }
+        return;
     case IDM_TOOL_EDIT:        /* = E (B2.7e) : edition du trace selectionne */
         if (g_editMode) {
             editExit();
@@ -4900,6 +5189,11 @@ static void runToolCommand(int id) {
                    && !g_cercleMode && !g_arcMode && !g_polyMode && !g_splMode
                    && !g_ppMode && !g_rotMode) {
             const int idx = (selectedCount() == 1 && g_selected >= 0) ? g_selected : -1;
+            if (idx >= 0 && g_objs[(size_t)idx].traceType == 9) {
+                flashBand("Balayage : edition a venir (prochain lot)");
+                std::printf("editer : l'edition du balayage arrive dans le prochain lot\n");
+                return;
+            }
             if (idx < 0 || g_objs[(size_t)idx].traceType == 0) {
                 flashBand("Editer : selectionnez d'abord UNE forme tracee (E)");
                 std::printf("editer : selectionnez d'abord UNE forme tracee (ligne, spline, rectangle, cercle, arc, polygone)\n");
@@ -5070,6 +5364,10 @@ static std::string statusPrompt() {
             return "Edition de l extrusion : glissez une poignee (bleue = hauteur) | clic sur une face = ajouter un point au profil | Echap ou clic droit = quitter";
         return "Edition du trace : glissez une poignee | clic sur la courbe = ajouter un point (ligne, spline, polygone) | poignee + Suppr = supprimer | Maj+S/Maj+B = variante spline | O = ouvert/ferme | Echap ou clic droit = quitter";
     }
+    if (g_sweepStage == 1)
+        return "Balayage : cliquez la FACE a extruder le long d'un chemin (feuille tracee) | Echap = annuler";
+    if (g_sweepStage == 2)
+        return "Balayage : cliquez le FIL chemin (ligne, spline, arc) | Echap = annuler";
     if (g_lineActive)
         return "Ligne : clic = prolonger | clic droit = fin | chiffres + Entree = longueur exacte | Echap = tout annuler";
     if (g_rectActive)
@@ -5261,7 +5559,7 @@ int main() {
     /* entete console : court, groupe par theme (retour utilisateur : trop de
        verbiage noie les informations importantes) */
     std::printf("Sketch3D - build %s\n", BUILD_VERSION);
-    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart, clic droit ou Entree = ferme) | Maj+S spline (passage) | Maj+B spline (controle, clic depart = boucle) | E editer un trace | Ctrl+C/V | Suppr\n");
+    std::printf("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart, clic droit ou Entree = ferme) | Maj+S spline (passage) | Maj+B spline (controle, clic depart = boucle) | E editer un trace | Maj+W balayage (face puis fil) | Ctrl+C/V | Suppr\n");
     std::printf("Vue     : orbite = clic gauche dans le vide | zoom = molette | panoramique = molette-clic ou Shift+glisser | C centrer | F cadrer | H origine\n");
     std::printf("Projets : Ctrl+S enregistrer | clic droit = infos objet + duplication | I importer\n");
     std::printf("Formats : export scene/selection = menu Fichier, format defini dans Preferences\n");
