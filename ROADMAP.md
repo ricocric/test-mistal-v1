@@ -622,6 +622,27 @@ Questions ouvertes a trancher avec l'utilisateur :
       toute nouvelle plage contigue va en FIN d'enum ;
     - +6 verifications (projets temoins sur disque : Dupliquer = demande du
       nombre, Supprimer = suppression, slot 0 ouvre, slot 7 ouvre).
+  - **B3.6zb FAIT (suite) - le relachement du clic de capture refermait le
+    geste push/pull** (retour de test : "un seul Ctrl+Z supprime le pull ET
+    le rectangle", sequence exacte : pull, relachement, deselection, Ctrl+Z) :
+    - cause : le bloc commun de relachement gauche (B3.6z) appelait
+      `undoValide()` sans condition ; le push/pull est un geste CLIC (capture)
+      -> deplacement -> CLIC (pose), le relachement du clic de capture
+      refermait donc le geste AVANT qu'il ait mute (sale=0) - le pas
+      d'extrusion n'etait jamais pousse, le Ctrl+Z remontait au pas de la
+      pose = scene vide ;
+    - correctif : le relachement gauche ne valide PAS quand `g_ppActive` /
+      `g_rotActive` (ces gestes se closent a ppCommit / rotCommit) ;
+    - +7 verifications dont le geste pull COMPLET simule (capture,
+      relachement, tirage d=+3, pose, annulation en 2 pas distincts).
+  - **B3.6zb FAIT (suite) - le pull VIDAIT une feuille a winding oppose** :
+    `makeExtrude` oriente la normale du cote de la camera ; la branche
+    "feuille plate" d'`applyExtrude` REJETAIT les triangles a winding oppose
+    (`dot(cr, n) <= 0 -> skip`) : tirer vers le haut un polygone trace
+    clockwise (ou un rectangle aux coins inverses) vidait le mesh (tri = 0,
+    feuille disparue) ; correctif : REWIND du triangle au lieu du rejet (les
+    doublons a deux windings du butee restent dedoublonnes par seenT) ;
+    +1 verification (tirage d'une feuille -Y wound = volume positif).
   - **B3.7+ collage generique 2 objets** (coin/coin, arete/arete) : a cadrer
     separatiment une fois B3.5/B3.6 validees ;
   - les arbitrages restants (interaction exacte du choix d'accroche au

@@ -3143,6 +3143,60 @@ int main() {
             g_setup = Setup{};
         }
 
+        /* 12. B3.6zb : geste push/pull complet clic -> deplacement -> clic =
+           UN pas pousse (avant correctif, le relachement du clic de capture
+           refermait le geste AVANT mutation via le bloc commun de
+           relachement : le pas d'extrusion n'etait jamais pousse et un seul
+           Ctrl+Z enlevait le pull ET le rectangle - retour de test) */
+        {
+            GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+            g_ppActive = false; g_ppMode = false; g_editMode = false; undoVide();
+            g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+            polyPose();                       /* pas 1 : "polygone" */
+            g_ppMode = true;
+            g_cam.target = Vec3(82, 0, 2); g_cam.dist = 20.0;
+            g_cam.theta = 0.0; g_cam.phi = 0.6;
+            double px, py;
+            const double tg = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+            auto pixelDe = [&](const Vec3& c, double& ox, double& oy) {
+                const Vec3 d = normalized(c - g_cam.pos());
+                const double df = dot(d, g_cam.forward());
+                const double aspect = (double)g_winW / (double)g_winH;
+                const double ndcX = dot(d, g_cam.right()) / (df * tg * aspect);
+                const double ndcY = dot(d, g_cam.up()) / (df * tg);
+                ox = (ndcX + 1.0) * 0.5 * (double)g_winW;
+                oy = (1.0 - ndcY) * 0.5 * (double)g_winH;
+            };
+            extern double g_stubCursorX, g_stubCursorY;
+            pixelDe(Vec3(82, 0, 2), px, py);   /* curseur sur la face */
+            g_stubCursorX = px; g_stubCursorY = py;
+            g_lastClickTime = -100.0;
+            onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);    /* capture de la face */
+            CHECK(g_ppActive && g_undoOuvert && !g_undoSale,
+                  "B3.6zb : pull = face capturee, geste ouvert (pas encore sale)");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);  /* relachement du clic de capture */
+            CHECK(g_ppActive && g_undoOuvert,
+                  "B3.6zb : le relachement du clic de capture NE referme PAS le geste");
+            pixelDe(Vec3(82, 3, 2), px, py);   /* 3 unites au-dessus (normale +Y) */
+            g_stubCursorX = px; g_stubCursorY = py;
+            updatePP(W);
+            CHECK(g_undoSale && g_pp.d > 2.0 && g_pp.d < 4.0,
+                  "B3.6zb : le tirage marque le geste sale (d ~ +3)");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);    /* clic de pose */
+            CHECK(g_undoPile.size() == 2 && g_undoPile.back().label == "extrusion (push/pull)",
+                  "B3.6zb : pose du pull = le pas d'extrusion EST pousse");
+            CHECK(signedVolume(g_objs[0]) > 1e-9,
+                  "B3.6zb : le tirage a donne du volume a la feuille (le rectangle reste traceType 0 : conversion parametrique refusee pour les traces, v1)");
+            clearSelection();                 /* sequence exacte du retour de test : deselection */
+            undoAnnule();
+            CHECK(g_objs.size() == 1 && std::fabs(signedVolume(g_objs[0])) < 1e-9,
+                  "B3.6zb : un SEUL Ctrl+Z = extrusion annulee, le rectangle reste (plat)");
+            undoAnnule();
+            CHECK(g_objs.empty(), "B3.6zb : le 2e Ctrl+Z enleve le rectangle (deux pas distincts)");
+            g_ppMode = false;
+        }
+
         undoVide();
         g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
         g_cam = g_camHome;

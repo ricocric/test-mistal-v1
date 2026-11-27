@@ -1115,6 +1115,17 @@ globale corrigee par le volume signe (normales exterieures) ;
   - correctif : base deplacee en fin d'enum, plage recents testee AVANT la
     delegation aux commandes ;
   - +6 verifications = **542, 0 echec** (ASan propre).
+- **B3.6zb suite (retour de test : "un seul Ctrl+Z supprime le pull ET le
+  rectangle", sequence : pull, relachement, deselection, Ctrl+Z)** :
+  - le bloc commun de relachement gauche refermait le geste push/pull AVANT
+    qu'il ait mute (le pull est un geste clic -> deplacement -> clic) : le pas
+    d'extrusion n'etait jamais pousse, Ctrl+Z remontait au pas de la pose =
+    scene vide ; correctif : pas de validation au relachement quand
+    g_ppActive / g_rotActive (cloture a ppCommit / rotCommit) ;
+  - au passage : le pull VIDAIT une feuille a winding oppose a la normale de
+    tirage (polygone trace clockwise = mesh vide) ; rewind au lieu du rejet ;
+  - +8 verifications = **549, 0 echec** (ASan propre), dont le geste pull
+    complet simule (capture, relachement, tirage +3, pose, 2 pas distincts).
 
 ## Organiseur des prochains lots
 

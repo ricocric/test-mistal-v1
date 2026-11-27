@@ -2546,11 +2546,17 @@ static void applyExtrude(Object& o, const Extrude& dd, double d) {
             const double m1 = dot(e1, e1), m2 = dot(e2, e2), m3 = dot(e3, e3);
             const double mm = std::max(m1, std::max(m2, m3));
             if (dot(cr, cr) <= 1e-7 * mm * mm) continue;
-            if (dot(cr, n) <= 0.0) continue;
+            /* B3.6zb : REWIND au lieu de rejeter - makeExtrude oriente la
+               normale du cote de la camera ; une feuille a winding oppose
+               (polygone trace clockwise, rectangle aux coins inverses) etait
+               VIDEE au premier tirage (o.tri = 0, feuille disparue). Au butee,
+               les doublons a deux windings restent dedoublonnes par seenT. */
+            if (dot(cr, n) <= 0.0) std::swap(ids[1], ids[2]);
             std::array<unsigned, 3> key = ids;
             std::sort(key.begin(), key.end());
             if (!seenT.insert(key).second) continue;
-            sgn += dot(cross(e1, e2), dl);
+            const Vec3 q0 = rep[ids[0]], q1 = rep[ids[1]], q2 = rep[ids[2]];
+            sgn += dot(cross(q1 - q0, q2 - q0), dl);   /* winding REWINDUE */
             trisB.push_back(ids);
         }
         if (sgn > 0.0)
@@ -5482,7 +5488,14 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         glfwGetCursorPos(w, &g_prevX, &g_prevY);
     } else {
         if (g_mode == M_Drag) { g_lockAxis = -1; g_dragMulti.clear(); }
-        undoValide();                               /* B3.6z : le geste relache (s'il a mute) devient un pas */
+        /* B3.6zb (retour de test : "un seul Ctrl+Z supprime le pull ET le
+           rectangle") : le push/pull est un geste CLIC (capture) ->
+           deplacement -> CLIC (pose) - le relachement du clic de capture
+           passait ICI et undoValide refermait le geste avant qu'il ait
+           mute : le pas d'extrusion n'etait jamais pousse. Le push/pull
+           se clot a ppCommit (pose) ou ppCancel - pas au relachement. */
+        if (!g_ppActive && !g_rotActive)
+            undoValide();                           /* B3.6z : le geste relache (s'il a mute) devient un pas */
         g_editGrab = -1;                            /* B2.7e : fin du drag de poignee */
         g_rollDrag = false;                         /* B3.6b : fin du drag de roll */
         g_mode = M_None;
