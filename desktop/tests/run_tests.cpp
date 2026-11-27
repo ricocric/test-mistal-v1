@@ -31,7 +31,8 @@ static std::string testsDir() {
         const size_t s = f.find_last_of("/\\");
         const std::string rel = f.substr(0, s);
         if (fs::exists(rel + "/data")) return rel;
-        for (fs::path p = fs::current_path(); !p.empty(); p = p.parent_path()) {
+        for (fs::path p = fs::current_path(); !p.empty() && p != p.parent_path();
+             p = p.parent_path()) {
             const fs::path cand = p / "desktop" / "tests";
             if (fs::exists(cand / "data")) return cand.string();
         }
@@ -2432,6 +2433,19 @@ int main() {
                 }
                 CHECK(connexe, "B3 : connexion - le point de la face le plus proche du fil est pose sur le depart");
             }
+            /* B3.5 : ROLL par defaut = COLLER PLAT - la section a la station 0
+               garde les directions tracees : ses aretes suivent x OU y (le
+               losange incline d avant ne satisfaisait ni l un ni l autre) */
+            {
+                bool aligne = true;
+                for (size_t k = 0; k < 4 && aligne; ++k) {
+                    const Vec3 a = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                    const Vec3 b = g_objs[ip].pos + g_objs[ip].v[(k + 1) % 4] * g_objs[ip].scl;
+                    if (std::fabs(a.x - b.x) > 1e-9 && std::fabs(a.y - b.y) > 1e-9)
+                        aligne = false;
+                }
+                CHECK(aligne, "B3.5 : coller plat - section alignee aux axes (pas de losange incline)");
+            }
             /* chemin ferme = solide torique (sans caps) */
             g_polyPts = { Vec3(70,0,0), Vec3(74,0,0), Vec3(74,0,4), Vec3(70,0,4) };
             polyPose();
@@ -2474,6 +2488,48 @@ int main() {
                         identique = (g_objs[ip].v[i] - vAvant[i]).norm() < 1e-9;
                 }
                 CHECK(identique, "B3 : geometrie du balayage regeneree identique apres save/load");
+            }
+            /* B3.5 : COLLAGE INTELLIGENT - l accroche peut etre un MILIEU de
+               segment : le milieu de l arete (3,0,11)-(-3,0,9) est (0,0,10),
+               EXACTEMENT sur le fil, alors que les sommets en sont a 3.0,
+               3.16 et 12 -> le MILIEU se colle au fil, aucun sommet n y touche
+               (a x constant la distance au fil est lineaire le long d une
+               arete : l arete doit ENJAMBER le fil pour departager) */
+            {
+                g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+                g_polyPts = { Vec3(3,0,11), Vec3(-3,0,9), Vec3(12,0,12) };
+                polyPose();
+                Object ch2;
+                ch2.name = "Ligne";
+                ch2.traceType = 1; ch2.traceFerme = 0;
+                ch2.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+                g_objs.push_back(ch2);
+                const size_t p2 = g_objs.size() - 2, c2 = g_objs.size() - 1;
+                CHECK(sweepConvertTo(g_objs[p2], g_objs[c2]),
+                      "B3.5 : triangle + ligne acceptes (accroche = milieu de segment)");
+                const Vec3 f0(0, 0, 10), f1(0, 0, 20);
+                const Vec3 fb = f1 - f0;
+                auto distFil = [&](const Vec3& p) {
+                    double t = dot(p - f0, fb) / dot(fb, fb);
+                    if (t < 0.0) t = 0.0;
+                    if (t > 1.0) t = 1.0;
+                    return (f0 + fb * t - p).norm();
+                };
+                bool sommetSurFil = false, milieuSurFil = false;
+                if (g_objs[p2].v.size() == 6) {         /* 2 anneaux de 3 */
+                    for (const Vec3& pv : g_objs[p2].v) {
+                        const Vec3 pw = g_objs[p2].pos + pv * g_objs[p2].scl;
+                        if (distFil(pw) < 1e-9) sommetSurFil = true;
+                    }
+                    for (size_t r = 0; r < 2 && !milieuSurFil; ++r)
+                        for (size_t k = 0; k < 3; ++k) {
+                            const Vec3 a = g_objs[p2].pos + g_objs[p2].v[r * 3 + k] * g_objs[p2].scl;
+                            const Vec3 b = g_objs[p2].pos + g_objs[p2].v[r * 3 + (k + 1) % 3] * g_objs[p2].scl;
+                            if (distFil((a + b) * 0.5) < 1e-9) { milieuSurFil = true; break; }
+                        }
+                }
+                CHECK(!sommetSurFil && milieuSurFil,
+                      "B3.5 : le MILIEU de segment se colle au fil (aucun sommet sur le fil)");
             }
         }
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;

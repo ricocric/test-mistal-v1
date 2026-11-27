@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.3i";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.5";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -4049,6 +4049,12 @@ static bool traceCheminChain(const Object& o, std::vector<Vec3>& ch) {
     return ch.size() >= 2;
 }
 
+/* B3.5 : rotation de v d un angle t autour de l axe unitaire ax (Rodrigues) */
+static Vec3 vecRotate(const Vec3& v, const Vec3& ax, double t) {
+    return v * std::cos(t) + cross(ax, v) * std::sin(t)
+         + ax * (dot(ax, v) * (1.0 - std::cos(t)));
+}
+
 /* B3 : REGEN du balayage - anneaux du profil transportes le long du chemin
    (transport parallele projete = pas de torsion, arbitrage v1) ; caps si le
    chemin est ouvert et le profil plein ; chemin ferme = solide torique sans
@@ -4072,17 +4078,6 @@ static void traceRegenSweep(Object& o) {
     Vec3 Nv = o.traceVec;
     if (Nv.norm() < 1e-9) Nv = Vec3(0, 1, 0);
     Nv = Nv * (1.0 / Nv.norm());
-    /* repere 2D du profil dans son plan (u0, v0) - MEMES coordonnees pour
-       toutes les stations (transportees par les frames) */
-    Vec3 c{0, 0, 0};
-    for (const Vec3& p : prof) c = c + p;
-    c = c * (1.0 / (double)n);
-    Vec3 u0 = prof[0] - c;
-    if (u0.norm() < 1e-9) u0 = Vec3(1, 0, 0);
-    u0 = u0 * (1.0 / u0.norm());
-    Vec3 v0 = cross(Nv, u0);
-    if (v0.norm() < 1e-9) return;                   /* profil degenere : garder la geometrie */
-    v0 = v0 * (1.0 / v0.norm());
     /* tangentes (differences centrees, repli aux bouts et sur points doubles) */
     std::vector<Vec3> Tv(nRings), Nn(nRings), Bb(nRings);
     for (size_t i = 0; i < nRings; ++i) {
@@ -4110,25 +4105,70 @@ static void traceRegenSweep(Object& o) {
     }
     o.v.clear(); o.tri.clear(); o.n.clear();
     o.v.reserve(nBase * nRings);
-    /* B3.1b (retour test) : maitrise du point de connexion - l ANCRE est le
-       point du profil le plus proche du DEPART du chemin (fidele Follow Me :
-       si la feuille touche le fil, le point touche se connecte) ; il est
-       pose EXACTEMENT sur le chemin a la premiere station */
-    size_t iAnc = 0;
-    double dAnc = 1e300;
-    for (size_t k = 0; k < n; ++k) {
-        const double d = (prof[k] - chem[0]).norm();
-        if (d < dAnc) { dAnc = d; iAnc = k; }
+    /* B3.5 (retours test, conception B3.4) : COLLAGE INTELLIGENT - l ACCROCHE
+       du profil (sommets + MILIEUX de segments) la plus proche du fil (TOUT le
+       fil, cloture incluse) est posee SUR le fil ; elle suit le chemin a
+       toutes les stations (la forme glisse le long du fil par son point de
+       connexion, fidele Follow Me). L'ancienne regle (point du profil le plus
+       proche du DEPART du chemin) imposait le point de connexion. */
+    std::vector<Vec3> acc;
+    acc.reserve(2 * n);
+    for (size_t k = 0; k < n; ++k) acc.push_back(prof[k]);
+    const size_t nsegA = profFerme ? n : n - 1;
+    for (size_t k = 0; k < nsegA; ++k)
+        acc.push_back((prof[k] + prof[(k + 1) % n]) * 0.5);
+    Vec3 A = acc[0];
+    double dA = 1e300;
+    const size_t nch = chem.size();
+    const size_t nsegC = boucle ? nch : nch - 1;
+    for (size_t j = 0; j < acc.size(); ++j) {
+        for (size_t i = 0; i < nsegC; ++i) {
+            const Vec3 p0 = chem[i], p1 = chem[(i + 1) % nch];
+            const Vec3 ab = p1 - p0;
+            const double l2 = dot(ab, ab);
+            double t = l2 > 1e-18 ? dot(acc[j] - p0, ab) / l2 : 0.0;
+            if (t < 0.0) t = 0.0;
+            if (t > 1.0) t = 1.0;
+            const double d = (p0 + ab * t - acc[j]).norm();
+            if (d < dA) { dA = d; A = acc[j]; }
+        }
     }
-    const double aC = aCentre ? dot(o.tracePts[0] - prof[iAnc], u0) : 0.0;
-    const double bC = aCentre ? dot(o.tracePts[0] - prof[iAnc], v0) : 0.0;
+    /* B3.5 : ROLL par defaut = COLLER PLAT - la face garde son orientation
+       tracee et se releve du PLUS COURT chemin pour faire face au depart du
+       chemin (rotation minimale amenant la normale de la face sur la
+       tangente) : les directions de la face tracee sont conservees, plus
+       d'inclinaison arbitraire (avant, le repere 2D partait de prof[0],
+       un coin quelconque : un carre pose devenait un losange incline) */
+    Vec3 ax = cross(Nv, Tv[0]);
+    const double sn = ax.norm();
+    double ang = 0.0;
+    if (sn > 1e-12) {
+        ax = ax * (1.0 / sn);
+        ang = std::atan2(sn, dot(Nv, Tv[0]));
+    } else if (dot(Nv, Tv[0]) < 0.0) {
+        /* face opposee a la tangente : rotation a 180 deg autour d un axe
+           perpendiculaire (repli canonique) */
+        ax = cross(Nv, Vec3(0, 1, 0));
+        if (ax.norm() < 1e-12) ax = Vec3(1, 0, 0);
+        ax = ax * (1.0 / ax.norm());
+        ang = 3.14159265358979;
+    }
+    std::vector<double> aa(n), bb(n);
+    for (size_t k = 0; k < n; ++k) {
+        const Vec3 wv = vecRotate(prof[k] - A, ax, ang);
+        aa[k] = dot(wv, Nn[0]);
+        bb[k] = dot(wv, Bb[0]);
+    }
+    double aC = 0.0, bC = 0.0;
+    if (aCentre) {
+        const Vec3 wv = vecRotate(o.tracePts[0] - A, ax, ang);
+        aC = dot(wv, Nn[0]);
+        bC = dot(wv, Bb[0]);
+    }
     for (size_t r = 0; r < nRings; ++r) {
         if (aCentre) o.v.push_back(chem[r] + Nn[r] * aC + Bb[r] * bC);
-        for (size_t k = 0; k < n; ++k) {
-            const double a2 = dot(prof[k] - prof[iAnc], u0);
-            const double b2 = dot(prof[k] - prof[iAnc], v0);
-            o.v.push_back(chem[r] + Nn[r] * a2 + Bb[r] * b2);
-        }
+        for (size_t k = 0; k < n; ++k)
+            o.v.push_back(chem[r] + Nn[r] * aa[k] + Bb[r] * bb[k]);
     }
     /* murs : quads entre anneaux consecutifs (segments du profil, cloture incluse si ferme) */
     const size_t nsegProf = profFerme ? n : n - 1;

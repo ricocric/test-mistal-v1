@@ -463,11 +463,14 @@ Questions ouvertes a trancher avec l'utilisateur :
   - **B3.5 balayage, au trace (clic 2 = fil) - COLLAGE INTELLIGENT** : le
     point d'ACCROCHE du profil (parmi sommets + milieux de segments) le plus
     proche du fil se pose sur le point du fil le plus proche de lui (remplace
-    l'ancre B3.2 qui imposait le point du profil le plus proche du DEPART) ;
+    l'ancre B3.2 qui imposait le point du profil le plus proche du DEPART)
+    - **FAIT (B3.5)** ;
   - **B3.5 ROLL par defaut = COLLER PLAT** : la face est posee a plat sur le
     fil (le bas de la forme suit le chemin, la normale de la face remplacee
     par une orientation deduite du fil + up au depart) - supprime les formes
-    inclinees non souhaitees ;
+    inclinees non souhaitees - **FAIT (B3.5, rotation minimale Rodrigues : la
+    normale de la face est amenee sur la tangente du fil, directions tracees
+    conservees)** ;
   - **B3.6 edition du balayage** : poignee de DEPART (changer le point du fil
     ou le tube commence + choisir l'accroche : angle ou milieu de segment) et
     poignee de ROLL (tourner le profil autour du chemin) ; chiffres possibles

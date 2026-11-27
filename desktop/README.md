@@ -1013,6 +1013,18 @@ globale corrigee par le volume signe (normales exterieures) ;
 - **B3.3i (retour test B3.3h)** : compteurs (xN) **retires** (inutiles) -
   un message deja present ne rajoute pas de ligne, il reanime seulement le
   bandeau ; **449, 0 echec**.
+- **B3.5 (conception B3.4 -> code)** : **COLLAGE INTELLIGENT** - l'ACCROCHE
+  du profil (sommets + **milieux de segments**) la plus proche du fil
+  (projection sur TOUS les segments, cloture incluse) est posee sur le fil
+  (remplace l'ancre B3.2 qui imposait le point du profil le plus proche du
+  depart) ; **ROLL par defaut = COLLER PLAT** - rotation MINIMALE (Rodrigues)
+  amenant la normale de la face sur la tangente du fil : les directions
+  tracees sont conservees (suppression du repere 2D arbitraire qui faisait
+  d'un carre pose un losange incline) ; +3 verifications = **452,
+  0 echec**.
+- **B3.5 correctif moteur de tests** : `testsDir()` bouclait a l'infini si
+  l'executable etait lance hors du depot (`parent_path` de "/" = "/") -
+  arret a la racine ajoute (le binaire rend la main au lieu de se figer).
 
 ## Organiseur des prochains lots
 
