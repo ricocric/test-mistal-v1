@@ -327,6 +327,10 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   calcul derive) - le fil ferme (boucle L) retrouvait PAS son arete de
   cloture apres save/load (fil devenu ouvert) ; corrige ; +3
   verifications = 415, 0 echec ;
+  B3.2c (retour test) : nom de sauvegarde PRE-REMPLI dans le dialogue
+  avec le chemin du dernier projet enregistre/ouvert (persiste INI) ;
+  nouveau/ferme = champ VIDE (jamais le nom d un autre projet) ; +3
+  verifications = 418, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec

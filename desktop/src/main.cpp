@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.2b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.2c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -760,8 +760,13 @@ static bool loadSTL(std::istream& in, Object& o, std::string& err) {
 }
 
 #ifdef _WIN32
-static std::string fileDialog(bool save, const char* filter, const char* defExt, const char* title) {
+static std::string fileDialog(bool save, const char* filter, const char* defExt, const char* title,
+                              const char* defPath = nullptr) {
     char buf[MAX_PATH] = "";
+    /* B3.2c : nom de sauvegarde PRE-REMPLI (dernier projet enregistre/ouvert)
+       - sur un gros projet on sauvegarde souvent, un nom vide pousse a
+       ecraser le mauvais fichier */
+    if (defPath && *defPath) strncpy_s(buf, defPath, _TRUNCATE);
     OPENFILENAMEA of{};
     of.lStructSize = sizeof(of);
     of.lpstrFilter = filter;
@@ -774,7 +779,7 @@ static std::string fileDialog(bool save, const char* filter, const char* defExt,
     return ok ? std::string(buf) : std::string();
 }
 #else
-static std::string fileDialog(bool, const char*, const char*, const char* title) {
+static std::string fileDialog(bool, const char*, const char*, const char* title, const char* = nullptr) {
     std::printf("%s (chemin) : ", title);
     std::string s;
     std::getline(std::cin, s);
@@ -1547,6 +1552,7 @@ static void handleMenuAction(int id) {
     case IDM_NEW_PROJECT:
         g_objs.clear();
         g_editMode = false; g_editObj = -1;   /* B2.7e : defense */
+        g_setup.dernierProjet.clear(); saveSetup();   /* B3.2c : ne pas pre-remplir avec un AUTRE projet */
         clearSelection();
         std::printf("nouveau projet : scene vide\n");
         return;
@@ -1565,7 +1571,7 @@ static void handleMenuAction(int id) {
     case IDM_SAVE_PROJECT: {
         const std::string p = fileDialog(true,
             "Projets (*.s3projet)\0*.s3projet\0Tous (*.*)\0*.*\0\0",
-            "s3projet", "Enregistrer le projet");
+            "s3projet", "Enregistrer le projet", g_setup.dernierProjet.c_str());
         if (p.empty()) return;
         std::string err;
         if (!saveProject(p, err)) std::printf("enregistrement impossible : %s\n", err.c_str());
@@ -1575,6 +1581,7 @@ static void handleMenuAction(int id) {
     case IDM_CLOSE_PROJECT:
         g_objs.clear();
         g_editMode = false; g_editObj = -1;   /* B2.7e : defense */
+        g_setup.dernierProjet.clear(); saveSetup();   /* B3.2c : ne pas pre-remplir avec un AUTRE projet */
         clearSelection();
         std::printf("projet ferme\n");
         return;

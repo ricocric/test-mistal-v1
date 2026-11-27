@@ -1429,6 +1429,20 @@ int main() {
         g_setup = Setup{};
     }
 
+    /* 30b - B3.2c : nom de sauvegarde pre-rempli (dernier projet) */
+    {
+        noteProjectPath("C:/tmp/test_b32c.s3projet");
+        CHECK(g_setup.dernierProjet == "C:/tmp/test_b32c.s3projet",
+              "sauvegarde : le chemin note devient le nom pre-rempli du prochain enregistrement");
+        handleMenuAction(IDM_NEW_PROJECT);
+        CHECK(g_setup.dernierProjet.empty(),
+              "sauvegarde : nouveau projet = nom pre-rempli VIDE (jamais le nom d un autre projet)");
+        noteProjectPath("C:/tmp/test_b32c.s3projet");
+        handleMenuAction(IDM_CLOSE_PROJECT);
+        CHECK(g_setup.dernierProjet.empty(),
+              "sauvegarde : projet ferme = nom pre-rempli VIDE");
+    }
+
     /* 31 - B1.7 : export uni (un seul lieu de choix du format = Preferences) -
        le format reel applique = extension du fichier choisi */
     {

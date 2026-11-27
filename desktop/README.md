@@ -952,6 +952,11 @@ globale corrigee par le volume signe (normales exterieures) ;
   derive) - le fil ferme (boucle L) perdait son arete de cloture apres
   save/load (il redevenait un fil ouvert) ; corrige ; total **415,
   0 echec**.
+- **B3.2c (retour test)** : le dialogue d'enregistrement du projet est
+  PRE-REMPLI avec le chemin du dernier projet enregistre ou ouvert
+  (persiste dans l'INI) ; nouveau projet / projet ferme = champ VIDE
+  (jamais le nom d'un autre projet = risque d'ecraser le mauvais
+  fichier) ; total **418, 0 echec**.
 
 ## Organiseur des prochains lots
 
