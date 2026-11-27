@@ -70,3 +70,5 @@ void glVertex2f(float,float){}
 unsigned int glGenLists(int){return 1000;}
 void glCallList(unsigned int){}
 void glPolygonOffset(GLfloat, GLfloat){}
+void glColor4f(GLfloat,GLfloat,GLfloat,GLfloat){}
+void glBlendFunc(GLenum,GLenum){}

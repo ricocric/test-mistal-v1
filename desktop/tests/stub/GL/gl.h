@@ -20,6 +20,9 @@ typedef double GLdouble;
 #define GL_AMBIENT 0x1200
 #define GL_DIFFUSE 0x1201
 #define GL_DEPTH_TEST 0x0B71
+#define GL_BLEND 0x0BE2
+#define GL_SRC_ALPHA 0x0302
+#define GL_ONE_MINUS_SRC_ALPHA 0x0303
 #define GL_PROJECTION 0x1701
 #define GL_MODELVIEW 0x1700
 void glBegin(GLenum);
@@ -30,6 +33,8 @@ void glNormal3dv(const GLdouble*);
 void glColor3d(GLdouble, GLdouble, GLdouble);
 void glColor3dv(const GLdouble*);
 void glColor3f(GLfloat, GLfloat, GLfloat);
+void glColor4f(GLfloat, GLfloat, GLfloat, GLfloat);
+void glBlendFunc(GLenum, GLenum);
 void glEnable(GLenum);
 void glDisable(GLenum);
 void glClear(GLuint);
