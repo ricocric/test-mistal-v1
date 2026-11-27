@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.6a-ter";   /* fils selectionnables devant un solide + pan robuste + zoom 20% + altitude des poignees */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.6b";   /* poignee de ROLL : tourner le profil du balayage autour du fil */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -154,6 +154,8 @@ struct Object {
     std::vector<Vec3> traceChemin; /* B3 : points de definition du chemin (LOCALES) */
     int traceAccroche = -1;     /* B3.6a : accroche PINCEE (index dans sweepAccroches ;
                                    -1 = collage intelligent au trace) */
+    double traceRoll = 0.0;     /* B3.6b : rotation du profil autour du fil, DEGRES
+                                   (0 = defaut "coller plat" B3.5, persiste "roll N") */
 };
 
 static std::vector<Object> g_objs;
@@ -172,6 +174,13 @@ static bool g_editMode = false;         /* mode edition arme (un seul objet) */
 static int g_editObj = -1;              /* objet edite (index dans g_objs) */
 static bool g_sweepEditChemin = false;  /* B3.3 : cible des ajouts/suppressions sur un balayage (O) */
 static bool g_sweepEditAcc = false;     /* B3.6a : cible ACCROCHE - choisir le point de connexion (O) */
+static bool g_sweepEditRoll = false;    /* B3.6b : cible ROLL - tourner le profil autour du fil (O) */
+static bool g_rollDrag = false;         /* B3.6b : drag de la poignee de roll en cours */
+static double g_rollAng0 = 0.0;         /* B3.6b : roll au debut du drag (deg) */
+static Vec3 g_rollV0;                   /* B3.6b : direction de reference du drag (perp. a l'axe) */
+static Vec3 g_sweepRollAxis;            /* B3.6b : repere du roll POSE PAR LA REGEN (Tv[0]) */
+static Vec3 g_sweepRollCenter;          /* B3.6b : centre du roll (accroche, monde) */
+static Vec3 g_sweepRollHandle;          /* B3.6b : poignee violette (profil le plus loin de l'accoche) */
 
 static bool isSelectedRaw(int i) {
     if (i == g_selected) return true;
@@ -1417,6 +1426,11 @@ static bool saveProject(const std::string& path, std::string& err) {
                 for (const Vec3& p : o.traceChemin) f << p.x << " " << p.y << " " << p.z << "\n";
             if (o.traceType == 9 && o.traceAccroche >= 0)  /* B3.6a : accroche pincee */
                 f << "accroche " << o.traceAccroche << "\n";
+            if (o.traceType == 9 && std::fabs(o.traceRoll) > 1e-9) {   /* B3.6b : roll (deg) */
+                char rl[48];
+                std::snprintf(rl, sizeof(rl), "%.10g", o.traceRoll);
+                f << "roll " << rl << "\n";
+            }
         }
     }
     if (!f) { err = "ecriture interrompue"; return false; }
@@ -1520,7 +1534,10 @@ static bool loadProject(const std::string& path, std::string& err) {
                     std::string finL, probeAcc;
                     std::getline(f, finL);
                     std::getline(f, probeAcc);
+                    bool accLue = false;
                     if (!f.eof() && trimStr(probeAcc).rfind("accroche ", 0) == 0) {
+                        accLue = true;      /* B3.6b : la ligne accroche est CONSUMEE
+                                               (le peek roll doit savoir ou il en est) */
                         std::istringstream ia(probeAcc);
                         std::string tagA;
                         if (!(ia >> tagA >> o.traceAccroche) || o.traceAccroche < -1) {
@@ -1530,6 +1547,28 @@ static bool loadProject(const std::string& path, std::string& err) {
                         f.clear();
                         f.seekg(avantAcc);
                         o.traceAccroche = -1;
+                    }
+                    /* B3.6b : ligne optionnelle "roll N" (degres) - peek APRES
+                       l'eventuel accroche, meme motif : les deux ordres
+                       (roll seul, accroche + roll) fonctionnent */
+                    const std::streampos avantRoll = f.tellg();
+                    std::string finR, probeR;
+                    if (accLue)
+                        std::getline(f, probeR);        /* aligne : la ligne accroche est deja finie */
+                    else {
+                        std::getline(f, finR);          /* milieu de ligne : fin puis peek */
+                        std::getline(f, probeR);
+                    }
+                    if (!f.eof() && trimStr(probeR).rfind("roll ", 0) == 0) {
+                        std::istringstream ir(probeR);
+                        std::string tagR;
+                        if (!(ir >> tagR >> o.traceRoll)) {
+                            err = "fichier corrompu (roll)"; return false;
+                        }
+                    } else {
+                        f.clear();
+                        f.seekg(avantRoll);
+                        o.traceRoll = 0.0;
                     }
                 }
             } else {
@@ -4224,10 +4263,39 @@ static void traceRegenSweep(Object& o) {
         aC = dot(wv, Nn[0]);
         bC = dot(wv, Bb[0]);
     }
+    /* B3.6b : ROLL utilisateur - rotation du profil dans SON PLAN (autour de
+       Tv[0], a l'accoche A) ; 0 degre = collage plat (defaut B3.5 intact) */
+    if (std::fabs(o.traceRoll) > 1e-12) {
+        const double R = o.traceRoll * 3.14159265358979 / 180.0;
+        const double cr = std::cos(R), sr = std::sin(R);
+        for (size_t k = 0; k < n; ++k) {
+            const double na = aa[k] * cr - bb[k] * sr;
+            const double nb = aa[k] * sr + bb[k] * cr;
+            aa[k] = na; bb[k] = nb;
+        }
+        if (aCentre) {
+            const double na = aC * cr - bC * sr;
+            const double nb = aC * sr + bC * cr;
+            aC = na; bC = nb;
+        }
+    }
     for (size_t r = 0; r < nRings; ++r) {
         if (aCentre) o.v.push_back(chem[r] + Nn[r] * aC + Bb[r] * bC);
         for (size_t k = 0; k < n; ++k)
             o.v.push_back(chem[r] + Nn[r] * aa[k] + Bb[r] * bb[k]);
+    }
+    /* B3.6b : la REGEN POSE le repere du roll (UN SEUL CHEMIN DE CODE) -
+       poignee et drag ne font que le lire ; poignee = point du profil le
+       plus LOIN de l'accoche (rayon non nul meme accroche sur un sommet) */
+    g_sweepRollAxis = Tv[0];
+    g_sweepRollCenter = o.pos + chem[0] * o.scl;   /* image de l accroche sur le fil */
+    {
+        double dFar = -1.0; size_t kFar = 0;
+        for (size_t k = 0; k < n; ++k) {
+            const double d = (prof[k] - A).norm();
+            if (d > dFar) { dFar = d; kFar = k; }
+        }
+        g_sweepRollHandle = o.pos + o.v[rimBase + kFar] * o.scl;
     }
     /* murs : quads entre anneaux consecutifs (segments du profil, cloture incluse si ferme) */
     const size_t nsegProf = profFerme ? n : n - 1;
@@ -4679,13 +4747,18 @@ static void traceToggleFerme(Object& o) {
         userMsg("edition : extrusion du profil %s", o.traceFerme ? "FERME" : "ouvert");
         return;
     }
-    if (o.traceType == 9) {         /* B3.3/B3.6a : O = cible PROFIL -> CHEMIN -> ACCROCHE */
+    if (o.traceType == 9) {   /* B3.3/B3.6a/B3.6b : O = PROFIL -> CHEMIN -> ACCROCHE -> ROLL */
         if (g_sweepEditChemin) {
             g_sweepEditChemin = false;
             g_sweepEditAcc = true;
             userMsg("edition balayage : cible ACCROCHE - cliquez un coin, un milieu de segment (ou le centre du cercle) = point colle au fil");
         } else if (g_sweepEditAcc) {
             g_sweepEditAcc = false;
+            g_sweepEditRoll = true;
+            traceRegen(o);      /* la regen repose le repere du roll (UN SEUL CHEMIN DE CODE) */
+            userMsg("edition balayage : cible ROLL - glissez la poignee violette pour tourner le profil autour du fil");
+        } else if (g_sweepEditRoll) {
+            g_sweepEditRoll = false;
             userMsg("edition balayage : ajouts/suppressions sur le PROFIL");
         } else {
             g_sweepEditChemin = true;
@@ -4728,6 +4801,8 @@ static void editExit() {
     g_editGrab = -1;
     g_editSel = -1;
     g_sweepEditAcc = false;                 /* B3.6a */
+    g_sweepEditRoll = false;                /* B3.6b */
+    g_rollDrag = false;                     /* B3.6b */
     userMsg("mode selection");
 }
 /* B3.3c (retour test) : en edition, un clic qui ne saisit aucune poignee et
@@ -4752,6 +4827,23 @@ static void editClick(GLFWwindow* w, int mods) {
     Object& o = g_objs[(size_t)g_editObj];
     Vec3 org, dir;
     if (!rayFromMouse(w, org, dir)) return;
+    /* B3.6b : cible ROLL - clic sur la poignee violette = drag de rotation
+       du profil autour du fil (axe = tangente au depart, pose par la regen) */
+    if (o.traceType == 9 && g_sweepEditRoll) {
+        const double dR = pointRayDist(org, dir, g_sweepRollHandle);
+        if (dR <= filPickTol() * 2.0) {
+            const Vec3 rh = g_sweepRollHandle - g_sweepRollCenter;
+            Vec3 rv = rh - g_sweepRollAxis * dot(rh, g_sweepRollAxis);
+            if (rv.norm() > 1e-9) {
+                g_rollV0 = rv * (1.0 / rv.norm());
+                g_rollAng0 = o.traceRoll;
+                g_rollDrag = true;
+            }
+            return;
+        }
+        editOrbit(w, majClic);                  /* B3.3c/B3.6a-ter : clic sans effet */
+        return;
+    }
     /* B3.6a : cible ACCROCHE - clic sur une poignee orange (sommet, milieu de
        segment, centre du cercle) = elle devient le point de connexion au fil */
     if (o.traceType == 9 && g_sweepEditAcc) {
@@ -4942,6 +5034,39 @@ static void editDrag(GLFWwindow* w) {
     o.tracePts[(size_t)g_editGrab] = (p - o.pos) * (1.0 / o.scl);
     traceRegen(o);
 }
+/* B3.6b : angle (DEGRES) entre deux directions autour d'un axe - helper
+   isole et testable, le drag de roll ne fait que le consommer */
+static double rollDelta(const Vec3& v0, const Vec3& v, const Vec3& axe) {
+    return std::atan2(dot(cross(v0, v), axe), dot(v0, v)) * (180.0 / 3.14159265358979);
+}
+static double rollWrap(double a) {          /* B3.6b : wrap dans [-180, 180[ */
+    a = std::fmod(a + 180.0, 360.0);
+    if (a < 0.0) a += 360.0;
+    return a - 180.0;
+}
+/* B3.6b : drag de la poignee de ROLL - le point du rayon le plus proche de
+   l'AXE (droite par g_sweepRollCenter) donne la direction tournee ; le
+   delta d'angle s'ajoute au roll de depart, regen continue */
+static void rollDragUpdate(GLFWwindow* w) {
+    if (g_editObj < 0 || g_editObj >= (int)g_objs.size()) { g_rollDrag = false; return; }
+    Object& o = g_objs[(size_t)g_editObj];
+    Vec3 org, dir;
+    if (!rayFromMouse(w, org, dir)) return;
+    const Vec3& T = g_sweepRollAxis;
+    const Vec3& C = g_sweepRollCenter;
+    const Vec3 w0 = C - org;
+    const double dT = dot(dir, T);
+    const double den = 1.0 - dT * dT;
+    if (den < 1e-9) return;                     /* rayon presque parallele a l'axe */
+    const double t = (dot(w0, dir) - dot(w0, T) * dT) / den;
+    if (t <= 0.0) return;                       /* point derriere la camera */
+    const Vec3 p = org + dir * t;
+    Vec3 v = (p - C) - T * dot(p - C, T);
+    if (v.norm() < 1e-9) return;
+    v = v * (1.0 / v.norm());
+    o.traceRoll = rollWrap(g_rollAng0 + rollDelta(g_rollV0, v, T));
+    traceRegen(o);
+}
 /* poignees dessinees : petits carres au sol sur les points de definition */
 static void drawEditHandles() {
     if (!g_editMode || g_editObj < 0 || g_editObj >= (int)g_objs.size()) return;
@@ -4950,7 +5075,8 @@ static void drawEditHandles() {
     glDisable(GL_DEPTH_TEST);
     const double s = 0.07;
     const bool accM = (o.traceType == 9 && g_sweepEditAcc);   /* B3.6a */
-    if (!accM)
+    const bool rollM = (o.traceType == 9 && g_sweepEditRoll); /* B3.6b */
+    if (!accM && !rollM)
     for (size_t i = 0; i < o.tracePts.size(); ++i) {
         const Vec3 w = o.pos + o.tracePts[i] * o.scl;
         if ((int)i == g_editSel) glColor3d(0.95, 0.5, 0.2);       /* selectionnee : orange */
@@ -4976,7 +5102,7 @@ static void drawEditHandles() {
         glEnd();
     }
     /* B3.3 : poignees du CHEMIN d'un balayage (cyans) - index = npts + i */
-    if (o.traceType == 9 && !g_sweepEditAcc) {
+    if (o.traceType == 9 && !g_sweepEditAcc && !rollM) {
         for (size_t i = 0; i < o.traceChemin.size(); ++i) {
             const Vec3 w2 = o.pos + o.traceChemin[i] * o.scl;
             const int idx = (int)(o.tracePts.size() + i);
@@ -5007,6 +5133,16 @@ static void drawEditHandles() {
                 glVertex3d(w2.x - s2, w2.y, w2.z + s2);
                 glEnd();
             }
+    }
+    /* B3.6b : poignee de ROLL (violette) - le profil tourne autour du fil */
+    if (rollM) {
+        glColor3d(0.75, 0.3, 0.95);
+        glBegin(GL_QUADS);
+        glVertex3d(g_sweepRollHandle.x - s, g_sweepRollHandle.y, g_sweepRollHandle.z - s);
+        glVertex3d(g_sweepRollHandle.x + s, g_sweepRollHandle.y, g_sweepRollHandle.z - s);
+        glVertex3d(g_sweepRollHandle.x + s, g_sweepRollHandle.y, g_sweepRollHandle.z + s);
+        glVertex3d(g_sweepRollHandle.x - s, g_sweepRollHandle.y, g_sweepRollHandle.z + s);
+        glEnd();
     }
     /* E3 : poignee de HAUTEUR (bleue) au centre du cap superieur */
     if (o.traceType == 8 && !o.tracePts.empty()) {
@@ -5217,6 +5353,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
     } else {
         if (g_mode == M_Drag) { g_lockAxis = -1; g_dragMulti.clear(); }
         g_editGrab = -1;                            /* B2.7e : fin du drag de poignee */
+        g_rollDrag = false;                         /* B3.6b : fin du drag de roll */
         g_mode = M_None;
     }
 }
@@ -5800,8 +5937,9 @@ static void runToolCommand(int id) {
                 g_editSel = -1;
                 g_sweepEditChemin = false;
                 g_sweepEditAcc = false;
+                g_sweepEditRoll = false;
                 if (g_objs[(size_t)idx].traceType == 9) {   /* B3.3/B3.6a */
-                    userMsg("mode Edition : %s - PROFIL (%zu pts, verts) + CHEMIN (%zu pts, cyans) - glissez une poignee ; clic sur le tube = point de chemin ; O = cible (profil, chemin, ACCROCHE = point colle au fil) ; poignee + Suppr = supprimer ; Echap ou clic droit = quitter",
+                    userMsg("mode Edition : %s - PROFIL (%zu pts, verts) + CHEMIN (%zu pts, cyans) - glissez une poignee ; clic sur le tube = point de chemin ; O = cible (profil, chemin, accroche, ROLL = rotation du profil) ; poignee + Suppr = supprimer ; Echap ou clic droit = quitter",
                                 g_objs[(size_t)idx].name.c_str(), g_objs[(size_t)idx].tracePts.size(),
                                 g_objs[(size_t)idx].traceChemin.size());
                     return;
@@ -5975,8 +6113,10 @@ static std::string statusPrompt() {
     if (g_editMode) {
         if (g_editObj >= 0 && g_editObj < (int)g_objs.size()
             && g_objs[(size_t)g_editObj].traceType == 9)
-            return g_sweepEditAcc
-                ? "Edition du balayage : accroche (orange) - cliquez un coin, un milieu de segment ou le centre = point colle au fil | O = cible PROFIL | Echap = quitter"
+            return g_sweepEditRoll
+                ? "Edition du balayage : ROLL - glissez la poignee violette pour tourner le profil autour du fil | O = cible PROFIL | Echap = quitter"
+                : g_sweepEditAcc
+                ? "Edition du balayage : accroche (orange) - cliquez un coin, un milieu de segment ou le centre = point colle au fil | O = cible ROLL | Echap = quitter"
                 : g_sweepEditChemin
                 ? "Edition du balayage : chemin (cyans) - glissez une poignee | clic SUR LE TUBE = nouvelle station | O = cible ACCROCHE | poignee + Suppr = supprimer | Echap = quitter"
                 : "Edition du balayage : profil (verts) - glissez une poignee | clic dans le plan = ajouter | O = cible CHEMIN | poignee + Suppr = supprimer | Echap = quitter";
@@ -6261,6 +6401,8 @@ int main() {
             updateDrag(win);
         } else if (g_editGrab >= 0) {
             editDrag(win);           /* B2.7e : poignee saisie = drag + recalcul continu */
+        } else if (g_rollDrag) {
+            rollDragUpdate(win);     /* B3.6b : poignee de roll = tourner le profil */
         } else if (g_ppActive) {
             updatePP(win);
         } else if (g_rotActive) {

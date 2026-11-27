@@ -2763,6 +2763,152 @@ int main() {
         g_cam = g_camHome;
     }
 
+    { /* B3.6b : poignee de ROLL - tourner le profil du balayage autour du fil */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_winW = 1600; g_winH = 900;
+        g_cam = g_camHome;
+        g_cam.target = Vec3(0, 2, 0); g_cam.dist = 25.0;
+        g_editMode = false; g_editObj = -1; g_editGrab = -1; g_editSel = -1;
+        g_mode = M_None;
+        g_sweepEditChemin = false; g_sweepEditAcc = false; g_sweepEditRoll = false;
+        g_rollDrag = false;
+        auto pixelDe = [](const Vec3& c, double& px, double& py) {
+            const double t = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+            const Vec3 d = normalized(c - g_cam.pos());
+            const double df = dot(d, g_cam.forward());
+            const double aspect = (double)g_winW / (double)g_winH;
+            const double ndcX = dot(d, g_cam.right()) / (df * t * aspect);
+            const double ndcY = dot(d, g_cam.up()) / (df * t);
+            px = (ndcX + 1.0) * 0.5 * (double)g_winW;
+            py = (1.0 - ndcY) * 0.5 * (double)g_winH;
+        };
+        /* rollDelta : angles exacts (helper isole) */
+        CHECK(std::fabs(rollDelta(Vec3(1,0,0), Vec3(0,1,0), Vec3(0,0,1)) - 90.0) < 1e-9,
+              "B3.6b : rollDelta = +90 deg");
+        CHECK(std::fabs(rollDelta(Vec3(1,0,0), Vec3(0,-1,0), Vec3(0,0,1)) + 90.0) < 1e-9,
+              "B3.6b : rollDelta = -90 deg");
+        /* balayage : carre 4x4 + chemin ligne */
+        g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+        polyPose();
+        Object chemin;
+        chemin.name = "Ligne";
+        chemin.traceType = 1; chemin.traceFerme = 0;
+        chemin.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+        g_objs.push_back(chemin);
+        const size_t isp = g_objs.size() - 2;
+        CHECK(sweepConvertTo(g_objs[isp], g_objs[g_objs.size() - 1]),
+              "B3.6b : balayage reconstruit (profil + chemin)");
+        Object& sw = g_objs[isp];
+        CHECK(sw.traceRoll == 0.0, "B3.6b : roll par defaut = 0 (coller plat, B3.5 intact)");
+        traceRegen(sw);
+        const Vec3 axe = g_sweepRollAxis;
+        CHECK(std::fabs(axe.norm() - 1.0) < 1e-9,
+              "B3.6b : axe du roll = tangente au depart (pose par la regen)");
+        const Vec3 hv = g_sweepRollHandle - g_sweepRollCenter;
+        CHECK(hv.norm() > 1e-9 && std::fabs(dot(normalized(hv), axe)) < 1e-9,
+              "B3.6b : poignee violette perpendiculaire a l'axe (rayon non nul)");
+        /* O = cycle PROFIL -> CHEMIN -> ACCROCHE -> ROLL */
+        g_editMode = true; g_editObj = (int)isp; g_editGrab = -1; g_editSel = -1;
+        traceToggleFerme(sw);
+        CHECK(g_sweepEditChemin && !g_sweepEditAcc && !g_sweepEditRoll, "B3.6b : O 1/4 = cible CHEMIN");
+        traceToggleFerme(sw);
+        CHECK(!g_sweepEditChemin && g_sweepEditAcc && !g_sweepEditRoll, "B3.6b : O 2/4 = cible ACCROCHE");
+        traceToggleFerme(sw);
+        CHECK(!g_sweepEditChemin && !g_sweepEditAcc && g_sweepEditRoll, "B3.6b : O 3/4 = cible ROLL");
+        traceToggleFerme(sw);
+        CHECK(!g_sweepEditChemin && !g_sweepEditAcc && !g_sweepEditRoll, "B3.6b : O 4/4 = retour PROFIL");
+        traceToggleFerme(sw); traceToggleFerme(sw); traceToggleFerme(sw);
+        CHECK(g_sweepEditRoll, "B3.6b : cycle complet, ROLL rearme");
+        /* invariance des rayons d'anneaux sous un roll quelconque */
+        const size_t nBase = sw.v.size() / sw.traceChemin.size();
+        auto rayons = [&]() {
+            std::vector<double> r;
+            for (size_t rr = 0; rr < sw.traceChemin.size(); ++rr)
+                for (size_t k = 0; k < nBase; ++k)
+                    r.push_back((sw.v[rr * nBase + k] - sw.traceChemin[rr]).norm());
+            return r;
+        };
+        sw.traceRoll = 0.0; traceRegen(sw);
+        const std::vector<Vec3> v0 = sw.v;
+        const std::vector<double> r0 = rayons();
+        sw.traceRoll = 37.5; traceRegen(sw);
+        const std::vector<double> r1 = rayons();
+        bool rayOk = r0.size() == r1.size();
+        for (size_t i = 0; rayOk && i < r0.size(); ++i)
+            if (std::fabs(r0[i] - r1[i]) > 1e-9) rayOk = false;
+        CHECK(rayOk, "B3.6b : roll 37.5 = rayons d'anneaux INVARIANTS (rotation dans le plan)");
+        for (int q = 1; q <= 4; ++q) { sw.traceRoll = 90.0 * q; traceRegen(sw); }
+        bool per = v0.size() == sw.v.size();
+        for (size_t i = 0; per && i < v0.size(); ++i)
+            if ((v0[i] - sw.v[i]).norm() > 1e-9) per = false;
+        CHECK(per, "B3.6b : 4 x +90 deg = roll 0 (periodicite)");
+        sw.traceRoll = 0.0; traceRegen(sw);
+        bool id0 = v0.size() == sw.v.size();
+        for (size_t i = 0; id0 && i < v0.size(); ++i)
+            if ((v0[i] - sw.v[i]).norm() > 1e-9) id0 = false;
+        CHECK(id0, "B3.6b : roll 0 = geometrie identique au defaut");
+        /* simulation du drag : clic sur la poignee violette, deplacement de
+           90 deg autour de l'axe (pixelDe = inverse de rayFromMouse) */
+        {
+            extern double g_stubCursorX, g_stubCursorY;
+            double px, py;
+            const Vec3 cible = g_sweepRollCenter
+                + vecRotate(g_sweepRollHandle - g_sweepRollCenter, g_sweepRollAxis,
+                            1.5707963267948966);
+            /* camera visee sur la cible avec un rayon viseur perpendiculaire
+               au rayon-vecteur ET a l'axe : le point du rayon le plus proche
+               de l'axe est alors EXACTEMENT le point vise */
+            const Vec3 rad = cible - g_sweepRollCenter;
+            g_cam.target = cible; g_cam.dist = 25.0;
+            g_cam.phi = std::atan2(rad.y, -rad.x);   /* offset cam = (rad.y, -rad.x, 0) */
+            g_cam.theta = 0.0;
+            pixelDe(g_sweepRollHandle, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            editClick(W, 0);                       /* saisit la poignee violette */
+            CHECK(g_rollDrag, "B3.6b : clic sur la poignee violette = drag de roll arme");
+            pixelDe(cible, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            rollDragUpdate(W);
+            CHECK(g_rollDrag && std::fabs(std::fabs(sw.traceRoll) - 90.0) < 1.0,
+                  "B3.6b : drag de 90 deg autour de l'axe = roll a +-90 (simulation pixelDe)");
+            g_rollDrag = false;
+        }
+        /* persistance : accroche + roll survivent au save/load (peek en cascade) */
+        {
+            std::string err;
+            const std::string p = tmpPath("b36b_roll.s3projet");
+            sw.traceAccroche = 0; sw.traceRoll = 37.5; traceRegen(sw);
+            const std::vector<Vec3> v37 = sw.v;
+            CHECK(saveProject(p, err), "B3.6b : enregistrement (accroche + roll 37.5)");
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), "B3.6b : relecture (accroche + roll)");
+            Object& s2 = g_objs[isp];
+            CHECK(s2.traceAccroche == 0 && std::fabs(s2.traceRoll - 37.5) < 1e-6,
+                  "B3.6b : accroche ET roll relus (peek en cascade)");
+            bool vb = v37.size() == s2.v.size();
+            for (size_t i = 0; vb && i < v37.size(); ++i)
+                if ((v37[i] - s2.v[i]).norm() > 1e-6) vb = false;
+            CHECK(vb, "B3.6b : geometrie relue = roll 37.5 applique par la regen au chargement");
+            /* vieux projet SANS ligne roll = 0 */
+            s2.traceRoll = 0.0; traceRegen(s2);
+            CHECK(saveProject(p, err), "B3.6b : enregistrement SANS ligne roll");
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), "B3.6b : relecture sans ligne roll");
+            CHECK(std::fabs(g_objs[isp].traceRoll) < 1e-12,
+                  "B3.6b : roll absent du fichier = 0 (retrocompatible)");
+        }
+        /* sortie d'edition : flags ROLL remis a zero */
+        g_sweepEditRoll = true; g_rollDrag = true;
+        editExit();
+        CHECK(!g_sweepEditRoll && !g_rollDrag, "B3.6b : editExit remet les flags ROLL a zero");
+        g_editMode = false; g_editObj = -1; g_editGrab = -1; g_editSel = -1;
+        g_sweepEditChemin = false; g_sweepEditAcc = false; g_sweepEditRoll = false;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_mode = M_None;
+        g_cam = g_camHome;
+    }
+
     { /* B3.3 : edition du balayage - poignees profil + chemin, O = cible */
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };

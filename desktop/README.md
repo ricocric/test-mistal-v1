@@ -1062,6 +1062,27 @@ globale corrigee par le volume signe (normales exterieures) ;
     petite) avec plan proche ADAPTATIF (0.005 sous dist 5, 0.05 au-dela :
     precision conservee a distance) ;
   - +2 verifications = **481, 0 echec** (ASan propre).
+- **B3.6b (poignee de ROLL)** : tourner le profil du balayage autour du fil.
+  - **parametre de construction** `traceRoll` (DEGRES, 0 = defaut "coller
+    plat" B3.5, comportement par defaut intact), persiste : ligne
+    optionnelle `roll N` (format %.10g), lue par peek APRES le peek
+    accroche (les deux ordres roll/accroche fonctionnent, vieux projets
+    relisibles) ;
+  - **application dans la regen** : rotation du profil dans SON PLAN
+    (autour de la tangente Tv[0], a l'image de l'accroche sur le fil) ;
+    les rayons d'anneaux sont INVARIANTS (rotation dans le plan de la
+    section) ;
+  - **repere pose par la REGEN (UN SEUL CHEMIN DE CODE)** : `g_sweepRollAxis`
+    (tangente au depart), `g_sweepRollCenter` (image de l'accroche sur le
+    fil = chem[0]), `g_sweepRollHandle` = point du profil le PLUS LOIN de
+    l'accroche (rayon toujours non nul) ;
+  - **edition** : O = cycle a 4 cibles PROFIL -> CHEMIN -> ACCROCHE -> ROLL ;
+    en mode ROLL les autres poignees sont masquees, une poignee VIOLETTE
+    apparait ; glisser = tourner le profil (angle autour de l'axe via
+    `rollDelta`, wrap [-180, 180[) ; clic sans effet = orbite / pan (regles
+    B3.3c/B3.6a-ter) ;
+  - +24 verifications = **505, 0 echec** (ASan propre) ; saisie numerique
+    du roll (chiffres + Entree = degres) : plus tard.
 
 ## Organiseur des prochains lots
 

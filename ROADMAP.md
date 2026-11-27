@@ -508,6 +508,48 @@ Questions ouvertes a trancher avec l'utilisateur :
       tenue = pan, meme regle que la selection ; sans Maj = orbite) ;
       borne de rapprochement 0.1 -> 0.02 (retour test : borne pas assez
       petite) avec plan proche adaptatif (0.005 sous dist 5) ;
+    - **B3.6b FAIT (481 -> 505 verifs) - poignee de ROLL** (conception
+      conception posee ci-dessous, appliquee avec UN rectificatif) :
+      - **parametre** `Object::traceRoll` (DEGRES, 0 = defaut "coller plat
+        B3.5") persiste : ligne optionnelle "roll N" (%.10g), peek APRES
+        le peek accroche ; ATTENTION alignement du flux : accroche lue =
+        ligne deja finie (un seul getline), sinon milieu de ligne (deux
+        getline) - bug détecte au moteur de tests ;
+      - **rectificatif de conception** : le CENTRE du roll est l'IMAGE de
+        l'accroche sur le fil (chem[0], ou le profil est pose), pas le
+        point du profil original - sinon la poignee n'est pas
+        perpendiculaire a l'axe et le drag derape ;
+      - **edition** : O = cycle a 4 cibles PROFIL -> CHEMIN -> ACCROCHE ->
+        ROLL ; poignee VIOLETTE au point du profil le plus loin de
+        l'accroche ; drag = angle autour de l'axe (helper `rollDelta`);
+        +24 verifications = 505, 0 echec (ASan propre) ; saisie numerique
+        PLUS TARD ;
+      - **Parametre** : `Object::traceRoll` (double, DEGRES, 0 = defaut
+        "coller plat" B3.5) persiste : ligne optionnelle "roll N" (ecrite si
+        |roll| > 1e-9, format %.10g) ; lecture par peek APRES le peek
+        accroche (meme motif : les deux ordres roll/accroche fonctionnent) ;
+      - **Application (regen)** : dans `traceRegenSweep`, APRES le calcul
+        aa/bb et aC/bC : rotation du profil dans SON PLAN (autour de Tv[0],
+        a l'accroche A) : aa' = aa*cos(R) - bb*sin(R), bb' = aa*sin(R) +
+        bb*cos(R), R = traceRoll*pi/180 ; meme rotation sur (aC, bC) ;
+      - **Repere pose par la REGEN (UN SEUL CHEMIN DE CODE)** : globals
+        `g_sweepRollAxis` = Tv[0], `g_sweepRollCenter` = pos + A*scl (monde),
+        `g_sweepRollHandle` = point du profil le PLUS LOIN de l'accroche
+        (rayon toujours non nul, meme accroche epinglee sur un sommet) ;
+        poignees et drag ne font que LIRE ;
+      - **Edition** : O = cycle a 4 cibles PROFIL -> CHEMIN -> ACCROCHE ->
+        ROLL ; en mode ROLL : poignees vertes/cyans/oranges masquees (la
+        ligne cyan du chemin reste), poignee VIOLETTE sur g_sweepRollHandle ;
+        clic a portee = drag (g_rollDrag, angle de depart g_rollAng0,
+        direction de reference g_rollV0), sinon orbite / pan (regle
+        B3.6a-ter) ; le drag calcule le point du rayon le plus proche de
+        l'AXE puis l'angle via helper `rollDelta(v0, v, axe)` =
+        atan2(dot(cross(v0,v), axe), dot(v0,v)) en degres ;
+        traceRoll = wrap(g_rollAng0 + delta) dans [-180, 180[ ; regen
+        continue ; relachement gauche = fin du drag ;
+      - **Bandeau** : "Edition du balayage : ROLL - glissez la poignee
+        violette pour tourner le profil autour du fil" ; saisie numerique
+        (chiffres + Entree = degres) PLUS TARD ;
   - **B3.7+ collage generique 2 objets** (coin/coin, arete/arete) : a cadrer
     separatiment une fois B3.5/B3.6 validees ;
   - les arbitrages restants (interaction exacte du choix d'accroche au
