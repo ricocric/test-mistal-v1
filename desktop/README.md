@@ -984,6 +984,13 @@ globale corrigee par le volume signe (normales exterieures) ;
 - **B3.3c (retour test)** : **navigation pendant l'edition** - un clic
   gauche qui ne saisit aucune poignee et n'ajoute aucun point (vide,
   ciel, refus) = ORBITE ; pan molette et zoom deja actifs.
+- **B3.3d (retour test B3.3b/c)** : **piege de creation repare** - au clic 1
+  du balayage, un objet qui n'est pas une feuille tracee (ex. le TUBE d'un
+  balayage deja pose) est REFUSE immediatement (avant : accepte, puis etape 2
+  impossible car le fil etait deja consomme -> "aucun fil vise" en boucle) ;
+  E (edition) refuse de s'armer pendant un balayage en cours (Echap d'abord) ;
+  helper unique `sweepFaceValide` (clic 1 et sweepConvertTo) ; +3
+  verifications = **443, 0 echec**.
 
 ## Organiseur des prochains lots
 

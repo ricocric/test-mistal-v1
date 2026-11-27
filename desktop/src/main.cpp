@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.3c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.3d";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -2563,14 +2563,21 @@ static void sweepCancel() {
     g_sweepProfil = -1;
     std::printf("\nmode selection\n");
 }
+/* B3.3d (retour test) : une FACE de balayage = feuille tracee avec surface.
+   Avant, le clic 1 acceptait N'IMPORTE QUEL solide (ex. le tube d'un balayage
+   deja pose) puis l'etape 2 devenait impossible a satisfaire (le fil etait
+   deja consomme) : l'utilisateur restait piege en attente du fil. */
+static bool sweepFaceValide(const Object& o) {
+    return o.traceType != 0 && o.traceType != 8 && o.traceType != 9
+        && !o.tri.empty();
+}
 static bool sweepConvertTo(Object& profil, Object& chemin) {
     if (&profil == &chemin) {
         flashBand("Balayage : le chemin doit etre un AUTRE objet (un fil)");
         std::printf("balayage : le chemin doit etre un AUTRE objet (un fil)\n");
         return false;
     }
-    if (profil.traceType == 0 || profil.traceType == 8 || profil.traceType == 9
-        || profil.tri.empty()) {
+    if (!sweepFaceValide(profil)) {
         flashBand("Balayage : la face visee n'est pas une feuille tracee");
         std::printf("balayage : la face visee n'est pas une feuille tracee (ligne, rect, cercle, arc, polygone, spline)\n");
         return false;
@@ -2613,6 +2620,14 @@ static void sweepClick(GLFWwindow* w) {
         }
         if (hit < 0) {
             std::printf("balayage : cliquez une face (l'objet vise doit etre une feuille tracee)\n");
+            return;
+        }
+        /* B3.3d : refus IMMEDIAT si l'objet vise n'est pas une feuille tracee
+           (ex. le tube d'un balayage) - on ne passe PAS a l'etape 2 */
+        if (!sweepFaceValide(g_objs[(size_t)hit])) {
+            flashBand("Balayage : la face visee n'est pas une feuille tracee");
+            std::printf("balayage : \"%s\" n'est pas une feuille tracee - cliquez une feuille (ligne, rect, cercle, arc, polygone, spline) ; Echap = annuler\n",
+                        g_objs[(size_t)hit].name.c_str());
             return;
         }
         g_sweepProfil = hit;
@@ -5502,6 +5517,9 @@ static void runToolCommand(int id) {
     case IDM_TOOL_EDIT:        /* = E (B2.7e) : edition du trace selectionne */
         if (g_editMode) {
             editExit();
+        } else if (g_sweepStage) {   /* B3.3d : ne pas armer l'edition pendant
+                                        un balayage arme (Echap d'abord) */
+            std::printf("balayage : terminez d'abord le mode en cours (Echap)\n");
         } else if (g_mode == M_None && !g_dupPending && !g_lineMode && !g_rectMode
                    && !g_cercleMode && !g_arcMode && !g_polyMode && !g_splMode
                    && !g_ppMode && !g_rotMode) {

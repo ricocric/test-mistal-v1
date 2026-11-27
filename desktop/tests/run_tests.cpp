@@ -2517,6 +2517,15 @@ int main() {
             CHECK(traceDelPoint(sw, (int)sw.tracePts.size() + 1), "B3.3b : station ajoutee supprimee");
             CHECK(sw.traceChemin.size() == nch0 && sw.v.size() == 8, "B3.3b : chemin retrouve");
         }
+        /* B3.3d : la FACE visee au clic 1 doit etre une feuille tracee - refus
+           immediat d un solide (avant : tube accepte puis etape 2 impossible) */
+        {
+            Object feuille; feuille.traceType = 2; feuille.tri.push_back(0u);
+            CHECK(sweepFaceValide(feuille), "B3.3d : feuille tracee (tri non vide) = face valide");
+            CHECK(!sweepFaceValide(sw), "B3.3d : un balayage (tube) est REFUSE comme face");
+            Object fil; fil.traceType = 1; fil.traceFerme = 1;
+            CHECK(!sweepFaceValide(fil), "B3.3d : un fil (0 tri) est refuse comme face");
+        }
         /* ajout au PROFIL (O = cible profil) : milieu d un bord de la face */
         g_sweepEditChemin = false;
         const Vec3 milieuPr = sw.pos + ((sw.tracePts[0] + sw.tracePts[1]) * 0.5) * sw.scl;

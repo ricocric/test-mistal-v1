@@ -351,6 +351,10 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   garde ; +3 verifications = 440, 0 echec ;
   B3.3c (retour test) : navigation pendant l'edition - clic sans
   effet (vide, ciel, refus) = orbite ; pan molette + zoom actifs ;
+  B3.3d (retour test) : piege de creation repare - clic 1 du balayage
+  refuse immediatement sur un non-feuille (tube d un balayage deja
+  pose) au lieu de pieger en etape 2 ("aucun fil vise" en boucle) ;
+  E refuse de s'armer pendant un balayage en cours ; +3 = 443, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec
