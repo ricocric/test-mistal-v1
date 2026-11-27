@@ -1471,6 +1471,27 @@ int main() {
         g_setup = Setup{};
     }
 
+    /* 30d - B3.2e : taille de l'historique editable dans l'INI */
+    {
+        const std::string path = tmpPath("recents.ini");
+        g_setupPath = path;
+        {
+            std::ofstream f(path.c_str());
+            f << "[projet]\nrecents = 3\nhistorique = a.s3projet;b.s3projet;c.s3projet;d.s3projet;e.s3projet\n";
+        }
+        loadSetup();
+        CHECK(g_setup.nbRecents == 3 && g_setup.historique.size() == 3
+              && g_setup.historique[0] == "a.s3projet",
+              "recents : taille INI (recents = 3) borne l'historique relu");
+        noteProjectPath("f.s3projet");
+        noteProjectPath("g.s3projet");
+        CHECK(g_setup.historique.size() == 3 && g_setup.historique[0] == "g.s3projet",
+              "recents : la taille INI borne aussi les ajouts (deduplique, borne a 3)");
+        std::remove(path.c_str());
+        g_setupPath = "sketch3d.ini";
+        g_setup = Setup{};
+    }
+
     /* 31 - B1.7 : export uni (un seul lieu de choix du format = Preferences) -
        le format reel applique = extension du fichier choisi */
     {

@@ -336,6 +336,9 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   automatique du dernier projet au demarrage (scene de demo seulement
   si aucun projet ou fichier illisible) ; +3 verifications = 421,
   0 echec ;
+  B3.2e (retour test) : taille de l'historique editable dans l'INI
+  ([projet] recents = N, borne 0..8, defaut 8) ; +2 verifications =
+  423, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec

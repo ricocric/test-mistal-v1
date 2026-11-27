@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.2d";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.2e";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1039,6 +1039,7 @@ struct Setup {
     int maximized = 0;
     std::string dernierProjet;
     std::vector<std::string> historique;   /* B3.2d : les N derniers, les plus recents d'abord */
+    int nbRecents = 8;           /* B3.2e : taille de l'historique, editable dans l'INI (0 = aucun) */
     std::string formatScene = "obj";
     std::string formatSelection = "obj";
     int toolVisible = 1;         /* B1.1 : barre d'outils flottante */
@@ -1082,6 +1083,7 @@ static void saveSetup() {
     for (size_t i = 0; i < g_setup.historique.size(); ++i)
         f << (i ? ";" : "") << g_setup.historique[i];
     f << "\n"
+      << "recents = " << g_setup.nbRecents << "\n"
       << "\n[exports]\n"
       << "format_scene = " << g_setup.formatScene << "\n"
       << "format_selection = " << g_setup.formatSelection << "\n"
@@ -1127,6 +1129,12 @@ static void loadSetup() {
                 if (g_setup.historique.size() > kProjetRecents)
                     g_setup.historique.resize(kProjetRecents);
             }
+            else if (k == "recents") {              /* B3.2e : taille editable, bornee 0..8 */
+                const int n = std::atoi(v.c_str());
+                g_setup.nbRecents = (n < 0) ? 0 : (n > (int)kProjetRecents ? (int)kProjetRecents : n);
+                if (g_setup.historique.size() > (size_t)g_setup.nbRecents)
+                    g_setup.historique.resize((size_t)g_setup.nbRecents);
+            }
         } else if (section == "exports") {
             if (k == "format_scene" && (v == "obj" || v == "stl")) g_setup.formatScene = v;
             else if (k == "format_selection" && (v == "obj" || v == "stl")) g_setup.formatSelection = v;
@@ -1137,6 +1145,10 @@ static void loadSetup() {
             else if (k == "y") g_setup.toolY = std::atoi(v.c_str());
         }
     }
+    /* B3.2e : l'INI peut etre edit a la main dans n'importe quel ordre de
+       cles - l'historique est borne par recents APRES lecture complete */
+    if (g_setup.historique.size() > (size_t)g_setup.nbRecents)
+        g_setup.historique.resize((size_t)g_setup.nbRecents);
 }
 
 #ifdef _WIN32
@@ -1149,8 +1161,8 @@ static void noteProjectPath(const std::string& p) {
     for (size_t i = 0; i < g_setup.historique.size(); ++i)
         if (g_setup.historique[i] == p) { g_setup.historique.erase(g_setup.historique.begin() + i); break; }
     g_setup.historique.insert(g_setup.historique.begin(), p);
-    if (g_setup.historique.size() > kProjetRecents)
-        g_setup.historique.resize(kProjetRecents);
+    if (g_setup.historique.size() > (size_t)g_setup.nbRecents)
+        g_setup.historique.resize((size_t)g_setup.nbRecents);
     if (g_setup.dernierProjet != p) g_setup.dernierProjet = p;
     saveSetup();
 #ifdef _WIN32

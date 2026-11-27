@@ -963,6 +963,9 @@ globale corrigee par le volume signe (normales exterieures) ;
   `historique = p1;p2;...`) ; **rouverture automatique du dernier
   projet au demarrage** (la scene de demo ne revient que si aucun
   projet ou fichier illisible) ; total **421, 0 echec**.
+- **B3.2e (retour test)** : taille de l'historique **editable dans
+  l'INI** (`[projet] recents = N`, borne 0..8, defaut 8 ; 0 = pas
+  d'historique) ; total **423, 0 echec**.
 
 ## Organiseur des prochains lots
 
