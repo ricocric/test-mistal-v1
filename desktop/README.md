@@ -957,6 +957,12 @@ globale corrigee par le volume signe (normales exterieures) ;
   (persiste dans l'INI) ; nouveau projet / projet ferme = champ VIDE
   (jamais le nom d'un autre projet = risque d'ecraser le mauvais
   fichier) ; total **418, 0 echec**.
+- **B3.2d (retour test)** : **historique des projets** - sous-menu
+  Fichier > « Projets recents » (8 slots, les vides grises,
+  deduplique, les plus recents d'abord, persiste dans l'INI :
+  `historique = p1;p2;...`) ; **rouverture automatique du dernier
+  projet au demarrage** (la scene de demo ne revient que si aucun
+  projet ou fichier illisible) ; total **421, 0 echec**.
 
 ## Organiseur des prochains lots
 

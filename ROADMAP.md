@@ -331,6 +331,11 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   avec le chemin du dernier projet enregistre/ouvert (persiste INI) ;
   nouveau/ferme = champ VIDE (jamais le nom d un autre projet) ; +3
   verifications = 418, 0 echec ;
+  B3.2d (retour test) : historique des projets - sous-menu Fichier >
+  Projets recents (8 slots, deduplique, persiste INI) ; rouverture
+  automatique du dernier projet au demarrage (scene de demo seulement
+  si aucun projet ou fichier illisible) ; +3 verifications = 421,
+  0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec
