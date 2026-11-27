@@ -643,8 +643,31 @@ Questions ouvertes a trancher avec l'utilisateur :
     feuille disparue) ; correctif : REWIND du triangle au lieu du rejet (les
     doublons a deux windings du butee restent dedoublonnes par seenT) ;
     +1 verification (tirage d'une feuille -Y wound = volume positif).
-  - **B3.7+ collage generique 2 objets** (coin/coin, arete/arete) : a cadrer
-    separatiment une fois B3.5/B3.6 validees ;
+  - **B3.7 collage generique 2 objets (coin/coin, arete/arete) - CONCEPTION
+    posee avant code (priorite 2 du backlog, apres validation Ctrl+Z)** :
+    - **principe** (generalise de B3.4/B3.5) : chaque forme possede des
+      POINTS D'ACCROCHE = sommets + milieux de segments ; coller A sur B =
+      poser une accroche de A sur une cible de B (point de fil = deja fait
+      au trace du balayage ; B3.7 = les cibles SOLIDES : coin, milieu
+      d'arete, point d'une face) ;
+    - **arbitrages a trancher AVANT code** :
+      1. **armement** : proposition v1 = selectionner A puis menu contextuel
+         "Coller sur..." -> clic sur la cible de B (le meme geste que
+         Supprimer/Dupliquer) ; variante = touche dediee (a definir) ;
+      2. **accroche de A** : collage intelligent (l'accroche de A la plus
+         proche de la cible, comme B3.5) v1, ou choix explicite de
+         l'accroche (poignees orange, comme B3.6a) en v2 ;
+      3. **ce que fait le collage** : v1 = TRANSLATION seule (l'accroche de
+         A arrive sur la cible, orientation de A inchangee) ; l'alignement
+         arete/arete (rotation) = question ouverte ;
+      4. **lien persistant ou pose definitive** : v1 = pose definitive (un
+         simple deplacement) ; un LIEN parametre de construction (A suit B)
+         = plus tard (le principe B2.7e le permet, mais il faut un editeur
+         de liens - a cadrer avec B8 pivot) ;
+      5. **undo** : un pas "collage" (B3.6z, deja pret) ;
+    - cibles v1 proposees : sommet de B, milieu d'arete, point au plus
+      proche d'une arete (tolerance filPickTol), point d'une face
+      (projection au plan) ;
   - les arbitrages restants (interaction exacte du choix d'accroche au
     trace, comportement torique) seront poses au fil des tests utilisateur.
 - B8 pivot intelligent : ETUDE DE CONCEPTION avant code (nombreux cas de
