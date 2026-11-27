@@ -503,6 +503,11 @@ Questions ouvertes a trancher avec l'utilisateur :
       se font dans le plan HORIZONTAL passant par le point (l'altitude est
       conservee ; au sol, comportement strictement identique) ; RESTE :
       B3.6b poignee de ROLL ;
+    - **B3.6a-ter FAIT (479 -> 481 verifs)** - complement retour test :
+      pan aussi a Maj + clic GAUCHE en edition (clic sans effet avec Maj
+      tenue = pan, meme regle que la selection ; sans Maj = orbite) ;
+      borne de rapprochement 0.1 -> 0.02 (retour test : borne pas assez
+      petite) avec plan proche adaptatif (0.005 sous dist 5) ;
   - **B3.7+ collage generique 2 objets** (coin/coin, arete/arete) : a cadrer
     separatiment une fois B3.5/B3.6 validees ;
   - les arbitrages restants (interaction exacte du choix d'accroche au
