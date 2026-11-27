@@ -2480,6 +2480,66 @@ int main() {
         g_polyPts.clear(); g_lineMode = false; lineReset();
     }
 
+    { /* B3.3 : edition du balayage - poignees profil + chemin, O = cible */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+        polyPose();
+        Object chemin;
+        chemin.name = "Ligne";
+        chemin.traceType = 1; chemin.traceFerme = 0;
+        chemin.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+        g_objs.push_back(chemin);
+        const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+        CHECK(sweepConvertTo(g_objs[ip], g_objs[ic]), "B3.3 : balayage reconstruit pour l edition");
+        Object& sw = g_objs[ip];
+        const size_t npts0 = sw.tracePts.size();          /* 4 */
+        const size_t nch0 = sw.traceChemin.size();        /* 2 */
+        /* ajout au CHEMIN (O = cible chemin) : milieu du segment */
+        g_sweepEditChemin = true;
+        const Vec3 milieuCh = sw.pos + ((sw.traceChemin[0] + sw.traceChemin[1]) * 0.5) * sw.scl;
+        const int ich = traceAddPoint(sw, milieuCh);
+        CHECK(ich == (int)(npts0 + 1) && sw.traceChemin.size() == nch0 + 1,
+              "B3.3 : ajout d un point au CHEMIN (index = npts + i)");
+        CHECK(sw.v.size() == 12 && sw.tri.size() == (size_t)(3 * 20)
+              && std::fabs(signedVolume(sw) - 160.0) < 1e-6,
+              "B3.3 : 3 anneaux (12 sommets, 20 tris), volume conserve 160");
+        CHECK(traceAddPoint(sw, sw.pos + Vec3(100, 0, 100)) < 0,
+              "B3.3 : refus - point LOIN du chemin");
+        CHECK(traceDelPoint(sw, ich), "B3.3 : suppression de la poignee du chemin");
+        CHECK(sw.traceChemin.size() == nch0 && sw.v.size() == 8,
+              "B3.3 : chemin retrouve (2 points, 8 sommets)");
+        CHECK(!traceDelPoint(sw, (int)npts0), "B3.3 : garde - minimum 2 points pour le chemin ouvert");
+        /* ajout au PROFIL (O = cible profil) : milieu d un bord de la face */
+        g_sweepEditChemin = false;
+        const Vec3 milieuPr = sw.pos + ((sw.tracePts[0] + sw.tracePts[1]) * 0.5) * sw.scl;
+        const int ipr = traceAddPoint(sw, milieuPr);
+        CHECK(ipr >= 0 && sw.tracePts.size() == npts0 + 1,
+              "B3.3 : ajout d un point au PROFIL (dans le plan de la face)");
+        CHECK(traceDelPoint(sw, ipr) && sw.tracePts.size() == npts0,
+              "B3.3 : suppression de la poignee du profil");
+        /* points fixes par sous-type (mutation de controle) */
+        sw.traceProfil = 5;                                /* cercle = points fixes */
+        CHECK(traceAddPoint(sw, milieuPr) < 0, "B3.3 : profil cercle = points fixes, ajout refuse");
+        sw.traceProfil = 7;
+        sw.traceCheminType = 6;                            /* arc = points fixes */
+        CHECK(traceAddPoint(sw, milieuCh) < 0, "B3.3 : chemin arc = points fixes, ajout refuse");
+        sw.traceCheminType = 1;
+        /* garde de minimum : profil polygone = 3 points */
+        while (sw.tracePts.size() > 3)
+            CHECK(traceDelPoint(sw, 0), "B3.3 : suppression profil (vers le minimum)");
+        CHECK(!traceDelPoint(sw, 0), "B3.3 : garde - minimum 3 points pour le profil polygone");
+        /* drag = modification + regen par les MEMES fonctions : chemin allonge
+           (traceChemin = LOCALES : +20 en z monde = +20 en z local, scl = 1) */
+        sw.tracePts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+        sw.traceChemin[1] = sw.traceChemin[0] + Vec3(0, 0, 20);
+        traceRegen(sw);
+        CHECK(sw.v.size() == 8 && std::fabs(signedVolume(sw) - 320.0) < 1e-6,
+              "B3.3 : drag du chemin (z 20 -> 30) = regen, volume 16 x 20 = 320");
+        g_sweepEditChemin = false;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyPts.clear(); g_lineMode = false; lineReset();
+    }
+
     std::printf("resume : %d echec(s), %d verifications\n", g_fail, g_tot);
     return g_fail ? 1 : 0;
 }

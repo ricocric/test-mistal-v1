@@ -966,6 +966,15 @@ globale corrigee par le volume signe (normales exterieures) ;
 - **B3.2e (retour test)** : taille de l'historique **editable dans
   l'INI** (`[projet] recents = N`, borne 0..8, defaut 8 ; 0 = pas
   d'historique) ; total **423, 0 echec**.
+- **B3.3 (B3 lot 2 : edition du balayage)** : E sur un balayage = poignees
+  du PROFIL (vertes) ET du CHEMIN (cyans) ; drag = chemin au sol, profil
+  DANS son plan (hauteur conservee) ; ajout : clic dans le plan du profil
+  ou pres du chemin (insertion au segment le plus proche, garde de
+  distance) ; **O = bascule de la cible des ajouts/suppressions**
+  (profil/chemin, rien de memorise) ; Suppr = suppression de la poignee
+  saisie avec minimums par sous-type (chemin ouvert 2 / ferme 3 ; profil
+  polygone 3, ouvert 2 / ferme 3) ; rect/cercle/arc = points fixes (drag
+  seul) ; total **437, 0 echec**.
 
 ## Organiseur des prochains lots
 

@@ -339,6 +339,12 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   B3.2e (retour test) : taille de l'historique editable dans l'INI
   ([projet] recents = N, borne 0..8, defaut 8) ; +2 verifications =
   423, 0 echec ;
+  B3 LOT 2 FAIT (build B3.3) : edition du balayage - poignees profil
+  (vertes) + chemin (cyans), drag (chemin au sol, profil dans son
+  plan), ajout au segment le plus proche avec garde de distance,
+  suppression avec minimums par sous-type, O = bascule de la cible
+  (profil/chemin), rect/cercle/arc = points fixes ; +14 verifications
+  = 437, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec
