@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.2c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.2d";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1032,11 +1032,13 @@ static void flashBand(const char* msg) {
    charge au lancement, sauvegarde a la fermeture + a chaque changement de
    preference (choix valide). Contenu v1 : geometrie de fenetre, dernier
    projet, formats d'export reels (memorises au fil des exports). */
+static const size_t kProjetRecents = 8;   /* B3.2d : historique des derniers projets */
 struct Setup {
     int winX = 100, winY = 60;
     int winW = 0, winH = 0;      /* 0 = garder les valeurs par defaut du programme */
     int maximized = 0;
     std::string dernierProjet;
+    std::vector<std::string> historique;   /* B3.2d : les N derniers, les plus recents d'abord */
     std::string formatScene = "obj";
     std::string formatSelection = "obj";
     int toolVisible = 1;         /* B1.1 : barre d'outils flottante */
@@ -1076,6 +1078,10 @@ static void saveSetup() {
       << "max = " << g_setup.maximized << "\n"
       << "\n[projet]\n"
       << "dernier = " << g_setup.dernierProjet << "\n"
+      << "historique = ";
+    for (size_t i = 0; i < g_setup.historique.size(); ++i)
+        f << (i ? ";" : "") << g_setup.historique[i];
+    f << "\n"
       << "\n[exports]\n"
       << "format_scene = " << g_setup.formatScene << "\n"
       << "format_selection = " << g_setup.formatSelection << "\n"
@@ -1107,6 +1113,20 @@ static void loadSetup() {
             else if (k == "max") g_setup.maximized = (std::atoi(v.c_str()) != 0) ? 1 : 0;
         } else if (section == "projet") {
             if (k == "dernier") g_setup.dernierProjet = v;
+            else if (k == "historique") {           /* B3.2d : chemins separes par ';' */
+                g_setup.historique.clear();
+                size_t deb = 0;
+                while (deb <= v.size()) {
+                    const size_t pt = v.find(';', deb);
+                    const std::string morceau = setupTrim(
+                        v.substr(deb, (pt == std::string::npos ? v.size() : pt) - deb));
+                    if (!morceau.empty()) g_setup.historique.push_back(morceau);
+                    if (pt == std::string::npos) break;
+                    deb = pt + 1;
+                }
+                if (g_setup.historique.size() > kProjetRecents)
+                    g_setup.historique.resize(kProjetRecents);
+            }
         } else if (section == "exports") {
             if (k == "format_scene" && (v == "obj" || v == "stl")) g_setup.formatScene = v;
             else if (k == "format_selection" && (v == "obj" || v == "stl")) g_setup.formatSelection = v;
@@ -1119,9 +1139,23 @@ static void loadSetup() {
     }
 }
 
-/* chaque changement de preference : sauvegarde immediate */
+#ifdef _WIN32
+static void recentsMenuRefresh();   /* B3.2d : defini plus bas (menus natifs) - PROTOTYPE AVANT USAGE */
+#endif
+/* chaque changement de preference : sauvegarde immediate ; B3.2d : mise a
+   jour de l'historique (deduplique, les plus recents d'abord, borne a N) */
 static void noteProjectPath(const std::string& p) {
-    if (g_setup.dernierProjet != p) { g_setup.dernierProjet = p; saveSetup(); }
+    if (p.empty()) return;
+    for (size_t i = 0; i < g_setup.historique.size(); ++i)
+        if (g_setup.historique[i] == p) { g_setup.historique.erase(g_setup.historique.begin() + i); break; }
+    g_setup.historique.insert(g_setup.historique.begin(), p);
+    if (g_setup.historique.size() > kProjetRecents)
+        g_setup.historique.resize(kProjetRecents);
+    if (g_setup.dernierProjet != p) g_setup.dernierProjet = p;
+    saveSetup();
+#ifdef _WIN32
+    recentsMenuRefresh();
+#endif
 }
 #ifdef _WIN32
 /* B1.6 : coches du menu Preferences (definies avec la barre d'outils) ;
@@ -1477,6 +1511,7 @@ enum {
     IDM_EXPORT_SCENE,
     IDM_EXPORT_SEL,
     IDM_QUIT,
+    IDM_PROJET_RECENT,         /* B3.2d : base des fichiers recents (+0..7, contigus) */
     IDM_INFO_OBJECT,
     IDM_DUPLICATE,
     IDM_DELETE_OBJECT,
@@ -1548,6 +1583,19 @@ static std::string exportFileChooser(bool scene) {
 static void handleMenuAction(int id) {
     /* commandes (outils/affichage/preferences) : deleguees au dispatcher */
     if (id >= kIdCommandStart) { runToolCommand(id); return; }
+    /* B3.2d : fichiers recents (contigus a partir d'IDM_PROJET_RECENT) */
+    if (id >= IDM_PROJET_RECENT && id < IDM_PROJET_RECENT + (int)kProjetRecents) {
+        const size_t i = (size_t)(id - IDM_PROJET_RECENT);
+        if (i < g_setup.historique.size()) {
+            const std::string p = g_setup.historique[i];
+            std::string err;
+            if (!loadProject(p, err)) { std::printf("ouverture impossible : %s\n", err.c_str()); return; }
+            g_editMode = false; g_editObj = -1;
+            noteProjectPath(p);
+            frameSelected();
+        }
+        return;
+    }
     switch (id) {
     case IDM_NEW_PROJECT:
         g_objs.clear();
@@ -1916,6 +1964,28 @@ static void prefSetExportFormat(bool scene, bool stl) {
 }
 #endif
 
+#ifdef _WIN32
+/* B3.2d : sous-menu Projets recents - 8 slots fixes, les vides grises ;
+   rempli/rafraichi par recentsMenuRefresh (a la creation et a chaque
+   ouverture/enregistrement via noteProjectPath) */
+static HMENU g_recentsMenu = nullptr;
+static void recentsMenuRefresh() {
+    if (!g_recentsMenu) return;
+    for (size_t i = 0; i < kProjetRecents; ++i) {
+        const UINT id = (UINT)(IDM_PROJET_RECENT + (int)i);
+        if (i < g_setup.historique.size()) {
+            std::string echappe;
+            for (char c : g_setup.historique[i]) { if (c == '&') echappe += "&&"; else echappe += c; }
+            char txt[MAX_PATH + 16];
+            std::snprintf(txt, sizeof(txt), "&%zu  %s", i + 1, echappe.c_str());
+            ModifyMenuA(g_recentsMenu, id, MF_BYCOMMAND | MF_STRING, id, txt);
+        } else {
+            ModifyMenuA(g_recentsMenu, id, MF_BYCOMMAND | MF_STRING | MF_GRAYED, id, "(vide)");
+        }
+    }
+}
+#endif
+
 static void attachMenus(GLFWwindow* win) {
     g_mainWin = win;
 #ifdef _WIN32
@@ -1924,6 +1994,11 @@ static void attachMenus(GLFWwindow* win) {
     HMENU file = CreatePopupMenu();
     AppendMenuA(file, MF_STRING, IDM_NEW_PROJECT, "&Nouveau projet");
     AppendMenuA(file, MF_STRING, IDM_OPEN_PROJECT, "&Ouvrir un projet...");
+    g_recentsMenu = CreatePopupMenu();
+    for (size_t i = 0; i < kProjetRecents; ++i)
+        AppendMenuA(g_recentsMenu, MF_STRING | MF_GRAYED, IDM_PROJET_RECENT + (int)i, "(vide)");
+    AppendMenuA(file, MF_POPUP, (UINT_PTR)g_recentsMenu, "Projets &recents");
+    recentsMenuRefresh();
     AppendMenuA(file, MF_STRING, IDM_SAVE_PROJECT, "&Enregistrer le projet...\tCtrl+S");
     AppendMenuA(file, MF_STRING, IDM_CLOSE_PROJECT, "&Fermer le projet");
     AppendMenuA(file, MF_SEPARATOR, 0, nullptr);
@@ -5593,7 +5668,16 @@ int main() {
     loadSetup();                     /* B0 : preferences de la derniere session */
     if (g_setup.winW > 0) g_winW = g_setup.winW;
     if (g_setup.winH > 0) g_winH = g_setup.winH;
-    buildScene();
+    /* B3.2d : persistence du projet en cours - rouvrir le dernier projet ;
+       scene de demo seulement si aucun projet ou fichier illisible */
+    {
+        std::string err;
+        if (g_setup.dernierProjet.empty() || !loadProject(g_setup.dernierProjet, err)) {
+            if (!g_setup.dernierProjet.empty())
+                std::printf("projet precedent illisible (%s) : scene de demo\n", err.c_str());
+            buildScene();
+        }
+    }
     if (!glfwInit()) { std::fprintf(stderr, "glfwInit a echoue\n"); return 1; }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);

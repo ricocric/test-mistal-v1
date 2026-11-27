@@ -1443,6 +1443,34 @@ int main() {
               "sauvegarde : projet ferme = nom pre-rempli VIDE");
     }
 
+    /* 30c - B3.2d : historique des derniers projets (recents) */
+    {
+        g_setup = Setup{};
+        noteProjectPath("a.s3projet");
+        noteProjectPath("b.s3projet");
+        noteProjectPath("a.s3projet");
+        CHECK(g_setup.historique.size() == 2 && g_setup.historique[0] == "a.s3projet"
+              && g_setup.historique[1] == "b.s3projet",
+              "recents : deduplique, le plus recent d'abord");
+        for (int i = 0; i < 9; ++i) {
+            char nm[32]; std::snprintf(nm, sizeof(nm), "p%d.s3projet", i);
+            noteProjectPath(nm);
+        }
+        CHECK(g_setup.historique.size() == 8 && g_setup.historique[0] == "p8.s3projet",
+              "recents : borne a 8, le dernier ouvert devant");
+        /* round-trip INI : l'historique survit au lancement suivant */
+        g_setupPath = tmpPath("hist.ini");
+        saveSetup();
+        g_setup = Setup{};
+        loadSetup();
+        CHECK(g_setup.historique.size() == 8 && g_setup.historique[0] == "p8.s3projet"
+              && g_setup.historique[7] == "p1.s3projet",
+              "recents : historique survit au save/load du setup (ordre garde)");
+        std::remove(g_setupPath.c_str());
+        g_setupPath = "sketch3d.ini";
+        g_setup = Setup{};
+    }
+
     /* 31 - B1.7 : export uni (un seul lieu de choix du format = Preferences) -
        le format reel applique = extension du fichier choisi */
     {
