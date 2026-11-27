@@ -1126,6 +1126,20 @@ globale corrigee par le volume signe (normales exterieures) ;
     tirage (polygone trace clockwise = mesh vide) ; rewind au lieu du rejet ;
   - +8 verifications = **549, 0 echec** (ASan propre), dont le geste pull
     complet simule (capture, relachement, tirage +3, pose, 2 pas distincts).
+- **B3.7 v1 (collage generique)** : menu contextuel "Coller sur..." (apres
+  Dupliquer) -> clic sur la cible d'un AUTRE objet (face, arete, coin, fil) ;
+  l'accroche de l'objet source la plus proche de la cible (sommet ou milieu
+  d'arete) s'y pose exactement ; cible arete = alignement 3b (l'arete
+  incidente la mieux orientee tourne vers l'arete cible, angle <= 90 deg) ;
+  cible coin = snap exact sur le sommet ; pose definitive, un pas undo
+  "collage", Echap / clic droit = annule, toggle au menu ;
+  - correctif collTourne pris au passage : les donnees locales d'un objet
+    tourne autour d'un pivot monde doivent tourner autour de l'ORIGINE du
+    repere local (l'ancienne version ajoutait une erreur de translation
+    R(pos-P) - (pos-P) : l'accroche collee sautait hors de la cible) ;
+  - +14 verifications = **563, 0 echec** (ASan propre) : toggle x3, face +
+    undo/redo, arete avec alignement 30 deg, coin, refus sans selection,
+    clic dans le vide, Echap.
 
 ## Organiseur des prochains lots
 

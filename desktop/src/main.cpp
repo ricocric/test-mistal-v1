@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "Ctrl+Zb";   /* correctif : Dupliquer/Supprimer/Infos du menu contextuel chargeaient un vieux projet (collision ids fichiers recents) */
+static const char* BUILD_VERSION = "B3.7";   /* collage generique 2 objets : menu contextuel Coller sur..., accroche intelligente, alignement arete/arete */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1728,6 +1728,7 @@ enum {
     IDM_VIEW_JOURNAL,          /* B3.3f : journal des messages utilisateur (J) */
     IDM_ANNULER,               /* B3.6z : annuler (Ctrl+Z) */
     IDM_RETABLIR,              /* B3.6z : retablir (Ctrl+Y / Ctrl+Maj+Z) */
+    IDM_COLLER_SUR,            /* B3.7 : collage generique 2 objets (menu contextuel) */
     IDM_PROJET_RECENT,         /* B3.2d : base des fichiers recents (+0..7, contigus) ;
                                   B3.6zb : DEPLACE en fin d'enum - la base etait au
                                   milieu (9) et empietait sur INFO/DUPLICATE/DELETE
@@ -1894,6 +1895,7 @@ static void showContextMenu(GLFWwindow* w) {
     AppendMenuA(m, MF_STRING, IDM_DELETE_OBJECT, "Suppri&mer\tSuppr");
     AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(m, MF_STRING, IDM_DUPLICATE, "&Dupliquer...");
+    AppendMenuA(m, MF_STRING, IDM_COLLER_SUR, "&Coller sur...");   /* B3.7 */
     POINT pt;
     GetCursorPos(&pt);
     SetForegroundWindow(glfwGetWin32Window(w));
@@ -4246,6 +4248,175 @@ static Vec3 vecRotate(const Vec3& v, const Vec3& ax, double t) {
          + ax * (dot(ax, v) * (1.0 - std::cos(t)));
 }
 
+/* ===== B3.7 : collage generique 2 objets (coin/coin, arete/arete) =====
+   Principe (generalise de B3.4/B3.5) : chaque forme possede des POINTS
+   D'ACCROCHE = sommets + milieux d'aretes. Selectionner A (un objet), menu
+   contextuel "Coller sur...", clic sur la cible d'un AUTRE objet B :
+   l'accroche de A la plus proche de la cible (collage intelligent) arrive
+   dessus ; si la cible est sur une arete, A tourne autour de l'accroche
+   pour aligner son arete la mieux orientee (arbitrage 3b). Pose definitive
+   (arbitrage 4a) : un pas "collage" (B3.6z). Cibles : sommet (snap exact),
+   arete (point le plus proche, tolerance filPickTol), point de face.     */
+static int g_collStage = 0;     /* 0 = inactif ; 1 = attend la cible */
+static int g_collSrc = -1;      /* objet A a coller */
+static void collCancel(const char* pourquoi) {
+    g_collStage = 0; g_collSrc = -1;
+    userMsg("%s", pourquoi);
+}
+static void collStart() {
+    if (g_collStage) { collCancel("collage annule"); return; }   /* toggle */
+    if (selectedCount() != 1) { flashBand("collage : selectionnez UN objet a coller (v1)"); return; }
+    g_collSrc = g_selected;
+    g_collStage = 1;
+    userMsg("collage : cliquez la cible sur un AUTRE objet (sommet, arete, face) ; Echap = annuler");
+}
+/* accroches d'un objet (MONDE) : sommets + milieux d'aretes derives */
+struct CollAcc { Vec3 p; int va, vb; };   /* vb < 0 = sommet ; sinon milieu de l'arete va-vb */
+static void collAccroches(const Object& o, std::vector<CollAcc>& out) {
+    out.clear();
+    for (size_t i = 0; i < o.v.size(); ++i)
+        out.push_back({ o.pos + o.v[i] * o.scl, (int)i, -1 });
+    for (const auto& e : o.edges)
+        out.push_back({ o.pos + (o.v[(size_t)e.first] + o.v[(size_t)e.second]) * (0.5 * o.scl),
+                        e.first, e.second });
+}
+/* rotation de l'objet autour de l'accroche (monde) : pos ET donnees locales
+   tournent ensemble (B2.7e : les parametres de construction suivent la
+   geometrie, une regen retrouve la meme forme) */
+static void collTourne(Object& o, const Vec3& pivotW, const Vec3& axe, double ang) {
+    /* rotation rigide autour du pivot monde P : pos tourne autour de P et
+       les donnees LOCALES tournent autour de l'ORIGINE du repere local
+       (p_new = R(p)) : monde_i = pos_new + R(p_i)*scl = P + R(monde_i - P).
+       (une premiere version tournait les locales autour de pl = (P - pos)/scl,
+       ce qui ajoutait une erreur de translation R(pos-P) - (pos-P) : l'accroche
+       collee sautait hors de la cible des que l'objet etait loin du pivot) */
+    o.pos = pivotW + vecRotate(o.pos - pivotW, axe, ang);
+    for (Vec3& p : o.tracePts)    p = vecRotate(p, axe, ang);
+    for (Vec3& p : o.traceChemin) p = vecRotate(p, axe, ang);
+    o.traceVec = vecRotate(o.traceVec, axe, ang);
+    if (o.traceType == 0)         /* mesh pur (import) : les sommets directement */
+        for (Vec3& p : o.v) p = vecRotate(p, axe, ang);
+    computeObjectDerived(o);
+}
+/* clic de cible : face (rayon/tri) en priorite (les solides gagnent, regle
+   de selection B3.6a-bis), sinon fil/arete (point le plus proche du rayon,
+   projete sur le segment) ; puis accroche intelligente + alignement 3b */
+static void collClick(GLFWwindow* w) {
+    Vec3 org, dir;
+    if (!rayFromMouse(w, org, dir)) return;
+    if (g_collSrc < 0 || g_collSrc >= (int)g_objs.size()) { collCancel("collage : objet source perdu"); return; }
+    int hit = -1; double bestT = 1e300;
+    for (size_t i = 0; i < g_objs.size(); ++i) {
+        if ((int)i == g_collSrc) continue;
+        double t; size_t ti;
+        if (rayObjectTri(org, dir, g_objs[i], t, &ti) && t < bestT) { bestT = t; hit = (int)i; }
+    }
+    int hitFil = -1; double bestTf = 1e300;
+    if (hit < 0)
+        for (size_t i = 0; i < g_objs.size(); ++i) {
+            if ((int)i == g_collSrc) continue;
+            const double t = filRayHit(org, dir, g_objs[i], filPickTol());
+            if (t >= 0.0 && t < bestTf) { bestTf = t; hitFil = (int)i; }
+        }
+    if (hit < 0 && hitFil < 0) { flashBand("collage : aucune cible visee - cliquez un autre objet"); return; }
+    /* point cible + arete cible eventuelle (snap sommet, sinon arete dans la tolerance) */
+    Vec3 cible; int cObj; std::pair<int, int> areteB(-1, -1);
+    if (hit >= 0) {
+        cObj = hit; cible = org + dir * bestT;
+        const Object& b = g_objs[(size_t)cObj];
+        const double tol = filPickTol();
+        double dv = 1e300; unsigned iv = 0;
+        for (size_t i = 0; i < b.v.size(); ++i) {
+            const double d = (b.pos + b.v[i] * b.scl - cible).norm();
+            if (d < dv) { dv = d; iv = (unsigned)i; }
+        }
+        double de = 1e300; Vec3 pe = cible;
+        for (const auto& e : b.edges) {
+            const Vec3 a = b.pos + b.v[(size_t)e.first] * b.scl;
+            const Vec3 ab = b.pos + b.v[(size_t)e.second] * b.scl - a;
+            const double L2 = dot(ab, ab);
+            if (L2 < 1e-18) continue;
+            double u = dot(cible - a, ab) / L2;
+            u = u < 0.0 ? 0.0 : (u > 1.0 ? 1.0 : u);
+            const double d = (a + ab * u - cible).norm();
+            if (d < de) { de = d; pe = a + ab * u; areteB = e; }
+        }
+        if (dv <= tol) { cible = b.pos + b.v[iv] * b.scl; areteB = std::make_pair(-1, -1); }   /* coin exact */
+        else if (de <= tol) cible = pe;                                                        /* arete */
+    } else {
+        cObj = hitFil;
+        const Object& f = g_objs[(size_t)cObj];
+        const Vec3 pr = org + dir * bestTf;
+        double de = 1e300; Vec3 pe = pr;
+        for (const auto& e : f.edges) {
+            const Vec3 a = f.pos + f.v[(size_t)e.first] * f.scl;
+            const Vec3 ab = f.pos + f.v[(size_t)e.second] * f.scl - a;
+            const double L2 = dot(ab, ab);
+            if (L2 < 1e-18) continue;
+            double u = dot(pr - a, ab) / L2;
+            u = u < 0.0 ? 0.0 : (u > 1.0 ? 1.0 : u);
+            const double d = (a + ab * u - pr).norm();
+            if (d < de) { de = d; pe = a + ab * u; areteB = e; }
+        }
+        cible = pe;
+    }
+    /* accroche de A la plus proche de la cible (collage intelligent, B3.5) */
+    std::vector<CollAcc> acc;
+    collAccroches(g_objs[(size_t)g_collSrc], acc);
+    if (acc.empty()) { collCancel("collage : l'objet source n'a aucune accroche"); return; }
+    size_t bi = 0; double bd = 1e300;
+    for (size_t i = 0; i < acc.size(); ++i) {
+        const double d = (acc[(size_t)i].p - cible).norm();
+        if (d < bd) { bd = d; bi = i; }
+    }
+    undoSnapshot("collage");
+    Object& o = g_objs[(size_t)g_collSrc];
+    o.pos = o.pos + (cible - acc[bi].p);
+    /* 3b : alignement arete/arete - l'arete de A passant par l'accroche la
+       mieux orientee s'aligne sur l'arete cible (angle <= 90 deg) */
+    bool aligne = false;
+    if (areteB.first >= 0) {
+        const Object& b = g_objs[(size_t)cObj];
+        Vec3 db = (b.v[(size_t)areteB.second] - b.v[(size_t)areteB.first]) * b.scl;
+        const double Lb = db.norm();
+        if (Lb > 1e-12) {
+            db = db * (1.0 / Lb);
+            Vec3 da; double Ld = -1.0;
+            if (acc[bi].vb >= 0) {
+                Vec3 d2 = (o.v[(size_t)acc[bi].vb] - o.v[(size_t)acc[bi].va]) * o.scl;
+                const double L2 = d2.norm();
+                if (L2 > 1e-12) { da = d2 * (1.0 / L2); Ld = 1.0; }
+            } else {
+                for (const auto& e : o.edges) {
+                    if (e.first != acc[bi].va && e.second != acc[bi].va) continue;
+                    Vec3 d2 = (o.v[(size_t)e.second] - o.v[(size_t)e.first]) * o.scl;
+                    const double L2 = d2.norm();
+                    if (L2 < 1e-12) continue;
+                    d2 = d2 * (1.0 / L2);
+                    if (std::fabs(dot(d2, db)) > Ld) { Ld = std::fabs(dot(d2, db)); da = d2; }
+                }
+            }
+            if (Ld > 0.0) {
+                const Vec3 s = da * (dot(da, db) >= 0.0 ? 1.0 : -1.0);   /* angle <= 90 deg */
+                double cd = dot(s, db); cd = cd > 1.0 ? 1.0 : (cd < -1.0 ? -1.0 : cd);
+                const double ang = std::acos(cd);
+                if (ang > 1e-9) {
+                    const Vec3 axe = cross(s, db);
+                    const double Ln = axe.norm();
+                    if (Ln > 1e-12) { collTourne(o, cible, axe * (1.0 / Ln), ang); aligne = true; }
+                }
+            }
+        }
+    }
+    computeObjectDerived(o);
+    selectOnly(g_collSrc);
+    const std::string nomCible = g_objs[(size_t)cObj].name;
+    g_collStage = 0; g_collSrc = -1;
+    userMsg("collage : %s colle sur %s (accroche : %s%s)", o.name.c_str(), nomCible.c_str(),
+                acc[bi].vb < 0 ? "sommet" : "milieu", aligne ? ", arete alignee" : "");
+    userMsg("mode selection");
+}
+
 /* B3.6a : profil FERME d'un balayage (regle commune regen / accroches) */
 static bool sweepProfFerme(const Object& o) {
     return o.traceFerme != 0 || o.traceProfil == 4
@@ -5362,6 +5533,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_splMode) { splFinish(); return; }   /* B2.7 : clic droit = valide (courbe ouverte) */
         if (g_editMode) return;   /* B3.6a-bis : la sortie d'edition passe au relachement (le presse peut devenir un pan si Maj arrive) */
         if (g_sweepStage) { sweepCancel(); return; }   /* B3 : clic droit = annule le balayage */
+        if (g_collStage) { collCancel("collage annule"); return; }   /* B3.7 : clic droit = annule */
         if (g_lineMode) { lineFinish(); return; }   /* B2.1 : le clic droit FINIT (segments deja cliques poses) */
         if (g_ppActive) {
             ppCancel();                 /* restaure la piece */
@@ -5385,6 +5557,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
+        if (g_collStage) { collClick(w); return; }   /* B3.7 : le clic pose la cible du collage */
         if (g_lineMode) { lineTakePoint(w); return; }   /* B2.1 : chaque clic pose un sommet */
         if (g_rectMode) { rectTakePoint(w); return; }   /* B2.2 : clic 1 = coin, clic 2 = coin oppose pose */
         if (g_cercleMode) { cercleTakePoint(w); return; }   /* B2.3 : clic 1 = centre, clic 2 = rayon pose */
@@ -5835,6 +6008,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
                clavier) : fermeture volontaire par Fichier > Quitter uniquement. */
             if (g_editMode) { editExit(); return; }   /* B2.7e : Echap = quitter l'edition */
             if (g_sweepStage) { sweepCancel(); return; }   /* B3 : Echap = annule le balayage */
+            if (g_collStage) { collCancel("collage annule"); return; }   /* B3.7 : Echap = annule */
             if (g_lineMode) { lineCancel("dessin annule"); return; }   /* B2.1 */
             if (g_rectMode) { rectCancel("dessin annule"); return; }   /* B2.2 */
             if (g_cercleMode) { cercleCancel("dessin annule"); return; }   /* B2.3 */
@@ -6055,6 +6229,15 @@ static void runToolCommand(int id) {
         return;
     case IDM_ANNULER:          /* = Ctrl+Z (B3.6z) */
         undoAnnule();
+        return;
+    case IDM_COLLER_SUR:       /* B3.7 : collage generique 2 objets (toggle) */
+        if (g_collStage) { collCancel("collage annule"); }
+        else if (g_mode == M_None && !g_dupPending && !g_lineMode && !g_rectMode
+                 && !g_cercleMode && !g_arcMode && !g_polyMode && !g_splMode
+                 && !g_ppMode && !g_rotMode && !g_editMode && !g_ppActive
+                 && !g_rotActive && !g_sweepStage) {
+            collStart();
+        }
         return;
     case IDM_RETABLIR:         /* = Ctrl+Y (B3.6z) */
         undoRetablit();
@@ -6288,6 +6471,8 @@ static std::string statusPrompt() {
         return "Balayage : cliquez la FACE a extruder le long d'un chemin (feuille tracee) | Echap = annuler";
     if (g_sweepStage == 2)
         return "Balayage : cliquez le FIL chemin (ligne, spline, arc) | Echap = annuler";
+    if (g_collStage)
+        return "Collage : cliquez la cible sur un AUTRE objet (sommet, arete, face) | Echap ou clic droit = annuler";   /* B3.7 */
     if (g_lineActive)
         return "Ligne : clic = prolonger | clic droit = fin | chiffres + Entree = longueur exacte | Echap = tout annuler";
     if (g_rectActive)

@@ -668,6 +668,32 @@ Questions ouvertes a trancher avec l'utilisateur :
     - cibles v1 proposees : sommet de B, milieu d'arete, point au plus
       proche d'une arete (tolerance filPickTol), point d'une face
       (projection au plan) ;
+  - **B3.7 FAIT v1 (549 -> 563 verifs) - collage generique** (arbitrages
+    retenus, a confirmer apres les premiers essais utilisateur) :
+    1a. armement = menu contextuel "Coller sur..." (toggle, Echap ou
+        clic droit = annule), garde complete (aucun autre mode actif) ;
+    2a. accroche de A = la plus proche de la cible (sommets + milieux
+        d'aretes derives, comme B3.4/B3.5) ;
+    3b. cible ARETE de B = la cible reste sur l'arete ET l'arete de A
+        passant par l'accroche la mieux orientee S'ALIGNE sur l'arete
+        cible (angle <= 90 deg, rotation la plus courte) ; cible
+        sommet/face = translation seule ;
+    4a. pose definitive (pas de lien persistant), un pas undo "collage" ;
+    - cible = face d'abord (rayon/tri, les solides gagnent), fil sinon ;
+      snap : sommet de B si dans la tolerance, sinon point d'arete, sinon
+      impact exact du rayon sur la face ;
+    - **correctif collTourne** : la rotation rigide autour du pivot monde P
+      doit tourner les donnees LOCALES autour de l'ORIGINE du repere local
+      (p_new = R(p)) ; la premiere version tournait les locales autour de
+      pl = (P - pos)/scl, ce qui ajoutait une erreur de translation
+      R(pos-P) - (pos-P) : l'accroche collee sautait hors de la cible des
+      que l'objet source etait loin du pivot (le test l'a attrape avant
+      l'utilisateur) ;
+    - NOTE v1 a confirmer : l'alignement choisit parmi TOUTES les aretes
+      derivees incidentes a l'accroche, DIAGONALES DU FAN comprises (une
+      boite tournee de 45 deg a une diagonale deja parallele a l'arete
+      cible = rien a rattraper) ; si l'usage le demande, on exclura les
+      diagonales (classification propre des aretes = vrai solide B6) ;
   - les arbitrages restants (interaction exacte du choix d'accroche au
     trace, comportement torique) seront poses au fil des tests utilisateur.
 - B8 pivot intelligent : ETUDE DE CONCEPTION avant code (nombreux cas de

@@ -3202,6 +3202,136 @@ int main() {
         g_cam = g_camHome;
     }
 
+    { /* B3.7 : collage generique - menu contextuel, accroche intelligente,
+           alignement arete/arete (3b), snap coin, undo, refus */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        const double colT[3] = {0.6, 0.6, 0.6};
+        g_winW = 1600; g_winH = 900;
+        g_cam.target = Vec3(0, 0.5, 0); g_cam.dist = 20.0;
+        g_cam.theta = 0.0; g_cam.phi = 0.6;
+        double px, py;
+        const double tg = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+        auto pixelDe = [&](const Vec3& c, double& ox, double& oy) {
+            const Vec3 d = normalized(c - g_cam.pos());
+            const double df = dot(d, g_cam.forward());
+            const double aspect = (double)g_winW / (double)g_winH;
+            ox = (dot(d, g_cam.right()) / (df * tg * aspect) + 1.0) * 0.5 * (double)g_winW;
+            oy = (1.0 - dot(d, g_cam.up()) / (df * tg)) * 0.5 * (double)g_winH;
+        };
+        extern double g_stubCursorX, g_stubCursorY;
+        auto resetScene = [&]() {
+            g_objs.clear();
+            /* 2x1x2 posee au sol : face superieure a y = 1 (les cibles visees
+               ci-dessous sont des points reels de cette face) */
+            g_objs.push_back(makeBoxObject("Cible", Vec3(0, 0.5, 0), Vec3(1, 0.5, 1), colT));
+            g_objs.push_back(makeBoxObject("Brique", Vec3(10, 0.25, 0), Vec3(0.5, 0.5, 0.5), colT));
+            g_selected = -1; g_selMulti.clear(); undoVide();
+            g_collStage = 0; g_collSrc = -1; g_mode = M_None;
+        };
+        auto distAccrocheCible = [&](const Vec3& c) {
+            std::vector<CollAcc> acc; collAccroches(g_objs[1], acc);
+            double dm = 1e300;
+            for (const CollAcc& a : acc) dm = std::min(dm, (a.p - c).norm());
+            return dm;
+        };
+        /* comme collClick : aretes INCIDENTES a l'accroche collee (la plus
+           proche de la cible) seulement - une boite a TOUJOURS des aretes
+           alignees X, le max global sur toutes les aretes est trivial */
+        auto dirAreteAligne = [&](const Vec3& cible, const Vec3& dirB) {
+            std::vector<CollAcc> acc; collAccroches(g_objs[1], acc);
+            size_t bi = 0; double bd = 1e300;
+            for (size_t i = 0; i < acc.size(); ++i) {
+                const double d = (acc[(size_t)i].p - cible).norm();
+                if (d < bd) { bd = d; bi = i; }
+            }
+            const Object& o = g_objs[1];
+            double best = -1.0;
+            if (acc[bi].vb >= 0) {
+                Vec3 d2 = (o.v[(size_t)acc[bi].vb] - o.v[(size_t)acc[bi].va]) * o.scl;
+                const double L2 = d2.norm();
+                if (L2 > 1e-12) best = std::fabs(dot(d2 * (1.0 / L2), dirB));
+            } else {
+                for (const auto& e : o.edges) {
+                    if (e.first != acc[bi].va && e.second != acc[bi].va) continue;
+                    Vec3 d2 = (o.v[(size_t)e.second] - o.v[(size_t)e.first]) * o.scl;
+                    const double L2 = d2.norm();
+                    if (L2 < 1e-12) continue;
+                    best = std::max(best, std::fabs(dot(d2 * (1.0 / L2), dirB)));
+                }
+            }
+            return best;
+        };
+
+        /* 1. armement via le dispatcher (UN SEUL CHEMIN DE CODE), toggle */
+        resetScene(); selectOnly(1);
+        runToolCommand(IDM_COLLER_SUR);
+        CHECK(g_collStage == 1 && g_collSrc == 1,
+              "B3.7 : Coller sur... arme le collage sur l'objet selectionne");
+        runToolCommand(IDM_COLLER_SUR);
+        CHECK(g_collStage == 0, "B3.7 : 2e appel = desarme (toggle)");
+        runToolCommand(IDM_COLLER_SUR);
+        CHECK(g_collStage == 1, "B3.7 : re-arme");
+
+        /* 2. FACE visee : l'accroche la plus proche arrive sur le point vise
+           (0.5,1,-0.5) : a plus de tol (0.45) de toute arete et de la
+           diagonale du fan -> aucun snap, cible = impact exact du rayon */
+        pixelDe(Vec3(0.5, 1, -0.5), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        g_lastClickTime = -100.0;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_collStage == 0 && distAccrocheCible(Vec3(0.5, 1, -0.5)) < 1e-9,
+              "B3.7 : face visee = l'accroche la plus proche posee exactement sur la cible");
+        CHECK(g_undoPile.size() == 1 && g_undoPile.back().label == "collage",
+              "B3.7 : le collage pousse UN pas labelle");
+        undoAnnule();
+        CHECK((g_objs[1].pos - Vec3(10, 0.25, 0)).norm() < 1e-12, "B3.7 : Ctrl+Z = brique a sa place d'origine");
+        undoRetablit();
+        CHECK(distAccrocheCible(Vec3(0.5, 1, -0.5)) < 1e-9, "B3.7 : Ctrl+Y = collage retabli");
+
+        /* 3. ARETE visee : alignement (3b) - la brique part tournee de 30 deg */
+        resetScene(); selectOnly(1);
+        {
+            std::vector<Vec3> base = g_objs[1].v;
+            applyRotationAt(g_objs[1], base, objectRotationPivot(g_objs[1]), 1, 30.0);
+            /* 30 deg : a 45 deg une DIAGONALE du fan devient parallele a X
+               (dot = 1.0) et l'alignement n'a rien a rattraper ; a 30 deg le
+               max incident = 0.966 (diagonale a 15 deg) -> seuil 0.98 */
+            CHECK(dirAreteAligne(Vec3(0, 1, 1), Vec3(1, 0, 0)) < 0.98, "B3.7 : setup - les aretes incidentes de la brique tournee de 30 deg");
+        }
+        collStart();
+        /* vise pres de l'arete superieure z=1 : impact (0,1,0.9), snap a 0.1
+           -> cible exacte (0,1,1) sur l'arete, direction (1,0,0) */
+        pixelDe(Vec3(0, 1, 0.9), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_collStage == 0 && dirAreteAligne(Vec3(0, 1, 1), Vec3(1, 0, 0)) > 0.999,
+              "B3.7 : arete visee = l'arete de la brique s'aligne sur l'arete cible (30 deg rattrapes)");
+        CHECK(distAccrocheCible(Vec3(0, 1, 1)) < 1e-9,
+              "B3.7 : l'accroche reste exactement sur le point de l'arete apres alignement");
+
+        /* 4. COIN vise : snap exact sur le sommet */
+        resetScene(); selectOnly(1);
+        collStart();
+        /* vise pres du coin (1,1,1) : impact (0.9,1,0.9), snap sommet a 0.14 */
+        pixelDe(Vec3(0.9, 1, 0.9), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(distAccrocheCible(Vec3(1, 1, 1)) < 1e-9,
+              "B3.7 : coin vise = snap exact sur le sommet");
+
+        /* 5. refus et sorties */
+        resetScene();
+        collStart();
+        CHECK(g_collStage == 0, "B3.7 : sans selection = refus");
+        selectOnly(1);
+        collStart();
+        pixelDe(Vec3(50, 5, 50), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_collStage == 1, "B3.7 : clic dans le vide = collage toujours arme (message)");
+        onKey(W, GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
+        CHECK(g_collStage == 0, "B3.7 : Echap = annule");
+
+        resetScene();
+        g_cam = g_camHome;
+    }
+
     { /* B3.3 : edition du balayage - poignees profil + chemin, O = cible */
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
