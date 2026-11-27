@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.3d";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.3e";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -4816,29 +4816,33 @@ static void drawEditHandles() {
 
 static void onScroll(GLFWwindow*, double, double dy) {
     g_cam.dist *= std::pow(0.9, dy);
-    if (g_cam.dist < 0.5) g_cam.dist = 0.5;
-    if (g_cam.dist > 2000.0) g_cam.dist = 2000.0;
+    /* B3.3e : niveaux de zoom DEFINIS - tres pres (0.1, plan proche 0.05)
+       a tres loin (4000, plan lointain 5000) */
+    if (g_cam.dist < 0.1) g_cam.dist = 0.1;
+    if (g_cam.dist > 4000.0) g_cam.dist = 4000.0;
 }
 
 static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
-    if (button == GLFW_MOUSE_BUTTON_MIDDLE) {   /* clic molette + glisser = deplacer la vue (pan) */
-        if (!g_ppActive && !g_rotActive) {
-            if (action == GLFW_PRESS) {
-                if (g_mode == M_None || g_mode == M_Pan) {
-                    g_mode = M_Pan;
-                    glfwGetCursorPos(w, &g_prevX, &g_prevY);
-                }
-            } else if (g_mode == M_Pan) {
-                g_mode = M_None;
-            }
-        }
-        return;
-    }
+    if (button == GLFW_MOUSE_BUTTON_MIDDLE) return;   /* B3.3e : pan = Maj + clic droit (UN seul moyen de se deplacer) */
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-        /* regle generale des transformations : clic droit = retour au neutre.
-           Le deplacement en vol ne peut pas etre annule ainsi (le clic droit
-           exige de relacher le bouton gauche, donc l'objet est deja pose). */
-        if (action != GLFW_PRESS) return;
+        /* B3.3e (retour test) : Maj + clic droit (glisser) = deplacer la vue
+           (pan), DANS TOUS les modes (edition, creation, orbite...) - le meme
+           geste partout, on ne change pas de moyen de deplacement en cours
+           d'execution. Sans Maj : regle generale des transformations, clic
+           droit = retour au neutre (le deplacement en vol ne peut pas etre
+           annule ainsi : le clic droit exige de relacher le bouton gauche). */
+        if (action == GLFW_PRESS && (mods & GLFW_MOD_SHIFT)) {
+            if (!g_ppActive && !g_rotActive
+                && (g_mode == M_None || g_mode == M_Orbit || g_mode == M_Pan)) {
+                g_mode = M_Pan;
+                glfwGetCursorPos(w, &g_prevX, &g_prevY);
+            }
+            return;
+        }
+        if (action != GLFW_PRESS) {
+            if (g_mode == M_Pan) g_mode = M_None;   /* relachement : fin du pan */
+            return;
+        }
         if (g_rectMode) { rectCancel("dessin annule"); return; }   /* B2.2 : clic droit = annule (2 clics suffisent) */
         if (g_cercleMode) { cercleCancel("dessin annule"); return; }   /* B2.3 : clic droit = annule */
         if (g_arcMode) { arcCancel("dessin annule"); return; }      /* B2.4 : clic droit = annule */
@@ -5438,6 +5442,7 @@ static void runToolCommand(int id) {
             g_rotMode = false;
             std::printf("mode Rectangle : clic = premier coin ; clic = coin oppose pose ; chiffres L;H + Entree = dimensions exactes ; Echap = tout annuler\n");
         } else {
+            flashBand("rectangle : terminez d'abord le mode en cours (Echap)");
             std::printf("rectangle : terminez d'abord le mode en cours (Echap)\n");
         }
         return;
@@ -5451,6 +5456,7 @@ static void runToolCommand(int id) {
             g_rotMode = false;
             std::printf("mode Cercle : clic = centre ; clic = rayon pose ; chiffres + Entree = rayon exact ; Echap = tout annuler\n");
         } else {
+            flashBand("cercle : terminez d'abord le mode en cours (Echap)");
             std::printf("cercle : terminez d'abord le mode en cours (Echap)\n");
         }
         return;
@@ -5464,6 +5470,7 @@ static void runToolCommand(int id) {
             g_rotMode = false;
             std::printf("mode Arc : clic = depart ; clic = fin de la corde ; clic = bombement pose ; chiffres + Entree = corde puis fleche ; Echap = tout annuler\n");
         } else {
+            flashBand("arc : terminez d'abord le mode en cours (Echap)");
             std::printf("arc : terminez d'abord le mode en cours (Echap)\n");
         }
         return;
@@ -5478,6 +5485,7 @@ static void runToolCommand(int id) {
             g_rotMode = false;
             std::printf("mode Polygone : clic = sommet ; clic sur le depart, clic droit ou Entree = ferme la surface ; Echap = tout annuler\n");
         } else {
+            flashBand("polygone : terminez d'abord le mode en cours (Echap)");
             std::printf("polygone : terminez d'abord le mode en cours (Echap)\n");
         }
         return;
@@ -5496,6 +5504,7 @@ static void runToolCommand(int id) {
             g_rotMode = false;
             std::printf("mode Spline (points de passage) : clic = point ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler\n");
         } else {
+            flashBand("spline : terminez d'abord le mode en cours (Echap)");
             std::printf("spline : terminez d'abord le mode en cours (Echap)\n");
         }
         return;
@@ -5511,6 +5520,7 @@ static void runToolCommand(int id) {
             g_rotMode = false;
             std::printf("mode Balayage : cliquez la FACE a extruder le long d'un chemin (feuille tracee) ; Echap = annuler\n");
         } else {
+            flashBand("balayage : terminez d'abord le mode en cours (Echap)");
             std::printf("balayage : terminez d'abord le mode en cours (Echap)\n");
         }
         return;
@@ -5519,6 +5529,7 @@ static void runToolCommand(int id) {
             editExit();
         } else if (g_sweepStage) {   /* B3.3d : ne pas armer l'edition pendant
                                         un balayage arme (Echap d'abord) */
+            flashBand("balayage : terminez d'abord le mode en cours (Echap)");
             std::printf("balayage : terminez d'abord le mode en cours (Echap)\n");
         } else if (g_mode == M_None && !g_dupPending && !g_lineMode && !g_rectMode
                    && !g_cercleMode && !g_arcMode && !g_polyMode && !g_splMode
@@ -5559,6 +5570,7 @@ static void runToolCommand(int id) {
             g_rotMode = false;
             std::printf("mode Spline (points de controle) : chaque clic = un COIN du polygone de controle ; la courbe jaune glisse a l'interieur et ne touche que ses extremites ; ajoutez des points pour serrer la courbe ; clic sur le depart = boucle fermee ; clic droit ou Entree = valide (ouverte) ; Echap = tout annuler\n");
         } else {
+            flashBand("spline : terminez d'abord le mode en cours (Echap)");
             std::printf("spline : terminez d'abord le mode en cours (Echap)\n");
         }
         return;

@@ -991,6 +991,12 @@ globale corrigee par le volume signe (normales exterieures) ;
   E (edition) refuse de s'armer pendant un balayage en cours (Echap d'abord) ;
   helper unique `sweepFaceValide` (clic 1 et sweepConvertTo) ; +3
   verifications = **443, 0 echec**.
+- **B3.3e (retours test B3.3d)** : **Maj + clic droit (glisser) = deplacer la
+  vue (pan) DANS TOUS les modes** (edition, creation, orbite) - un seul moyen
+  de se deplacer, le pan molette-clic disparait ; **niveaux de zoom definis**
+  (tres pres 0.1, tres loin 4000) ; **tous les refus "terminez d'abord" passent
+  au pied de page** (la console ne sera pas livree avec le soft) ; +2
+  verifications = **445, 0 echec**.
 
 ## Organiseur des prochains lots
 

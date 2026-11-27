@@ -2526,6 +2526,16 @@ int main() {
             Object fil; fil.traceType = 1; fil.traceFerme = 1;
             CHECK(!sweepFaceValide(fil), "B3.3d : un fil (0 tri) est refuse comme face");
         }
+        /* B3.3e : niveaux de zoom DEFINIS (bornes de la molette) */
+        {
+            const double d0 = g_cam.dist;
+            g_cam.dist = 9.0;
+            onScroll(nullptr, 0, -1000);
+            CHECK(g_cam.dist == 4000.0, "B3.3e : zoom arriere borne a 4000");
+            onScroll(nullptr, 0, 1000);
+            CHECK(g_cam.dist == 0.1, "B3.3e : zoom avant borne a 0.1");
+            g_cam.dist = d0;
+        }
         /* ajout au PROFIL (O = cible profil) : milieu d un bord de la face */
         g_sweepEditChemin = false;
         const Vec3 milieuPr = sw.pos + ((sw.tracePts[0] + sw.tracePts[1]) * 0.5) * sw.scl;
