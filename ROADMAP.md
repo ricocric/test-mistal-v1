@@ -264,7 +264,20 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   les regles du sous-type, O = bascule du profil, Maj+S/Maj+B si
   profil spline ; persistence : entete trace etendue (profil + vecteur,
   validation 0..8, vieux projets relisibles) ; +35 verifications = 385,
-  0 echec ; RESTE : extrusion le long d un CHEMIN = B3.
+  0 echec ;
+  B2.7e3b (retours test) : (1) BUG cercle extrude - le cap etait un fan
+  centre sur un point du BORD (jonction malsaine) : structure CENTRE +
+  bord conservee (comme cerclePose), caps en fans centres ;
+  (2) BUG points parasites - l ajout utilisait la projection sol du
+  rayon sans garde : clic sur une FACE du solide = point ajoute par
+  projection verticale du point touche (mur vertical = projection
+  exacte), clic-sol GARDE par traceProfilDist (<= filPickTol) ;
+  (3) chemin unique traceProfilChain (regen + insertion + garde) ;
+  +3 verifications = 388, 0 echec ;
+  BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
+  le redimensionnement de la fenetre (annexe, cosmétique) ; controle
+  des murs d une extrusion en place non ergonomique (a repenser avec
+  B5 edition de maillage) ; RESTE : extrusion le long d un CHEMIN = B3.
 - B2.2 RECTANGLE (conception avant code, mecanique commune B2) :
   - clic 1 = coin, souris = apercu du rectangle au sol, clic 2 = pose ;
     clic droit ou Echap = annulation SANS objet pose ; Entree vide = rien ;

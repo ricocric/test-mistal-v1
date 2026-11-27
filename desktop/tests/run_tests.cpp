@@ -2184,9 +2184,23 @@ int main() {
             Extrude dd;
             CHECK(makeExtrude(g_objs[1], 0, dd), "E3 : feuille cercle capturable");
             CHECK(extrudeConvertTo(g_objs[1], dd, 2.0), "E3 : cercle extrude (type 8, profil 5)");
-            CHECK(g_objs[1].v.size() == 2 * (size_t)CERCLE_SEG
-                  && g_objs[1].tri.size() == (size_t)(3 * (2 * CERCLE_SEG + 2 * (CERCLE_SEG - 2))),
-                  "E3 : prisme circulaire = 48 sommets, murs 48 tris + caps 44 tris");
+            /* B2.7e3b : structure CENTRE + bord conservee (fan centre, comme
+               cerclePose) - l ancien fan centre sur le bord etait malsain */
+            CHECK(g_objs[1].v.size() == 2 * (size_t)(CERCLE_SEG + 1)
+                  && g_objs[1].tri.size() == (size_t)(3 * (2 * CERCLE_SEG + 2 * CERCLE_SEG)),
+                  "E3 : prisme circulaire = 50 sommets, 48 murs + 2 x 24 caps centres");
+            {
+                const Vec3& ch0 = g_objs[1].v[CERCLE_SEG + 1];   /* centre du cap haut */
+                bool centre = true;
+                double dmin = 1e300;
+                for (size_t i = 0; i < (size_t)CERCLE_SEG; ++i) {
+                    const double d = (ch0 - g_objs[1].v[CERCLE_SEG + 2 + i]).norm();
+                    if (std::fabs(d - 2.0) > 1e-9) centre = false;
+                    dmin = std::min(dmin, d);
+                }
+                CHECK(centre && dmin > 1.9,
+                      "E3 : le cap superieur reste un fan CENTRE (equidistant du bord)");
+            }
             const double vol = signedVolume(g_objs[1]);
             /* aire du polygone INSCRIT a 24 cotes (pas le disque) x hauteur */
             const double attendu = 0.5 * CERCLE_SEG * 4.0
@@ -2222,6 +2236,11 @@ int main() {
             CHECK(traceDelPoint(g_objs[3], 0) && g_objs[3].tracePts.size() == 3,
                   "E3 : suppression a 4 points (-> 3, regles du polygone)");
             CHECK(!traceDelPoint(g_objs[3], 0), "E3 : garde - profil polygone minimum 3 sommets");
+            /* B2.7e3b : garde du clic-sol (retour test : points parasites) */
+            CHECK(traceAddPoint(g_objs[3], Vec3(40, 0, 40), true) < 0,
+                  "E3 : garde - clic-sol LOIN du profil refuse");
+            CHECK(traceAddPoint(g_objs[3], Vec3(24.05, 0, 2), true) >= 0,
+                  "E3 : garde - clic-sol PRES du profil accepte (0.05)");
         }
         /* 8. O sur une extrusion de LIGNE fermee = bande (murs seuls) puis retour */
         g_linePts = { Vec3(30,0,0), Vec3(32,0,0), Vec3(32,0,2), Vec3(30,0,2) };

@@ -906,8 +906,11 @@ et se regenere par SA construction d'origine :
   O (ouvert/ferme) a chaud sur une extrusion de ligne ; ajout/
   suppression de points selon les regles du profil (rect/cercle/arc
   = points fixes, polygone/ligne = garde au minimum) ;
+- clic sur une FACE du solide = point ajoute au profil (projection
+  verticale du point touche) ; clic-sol garde (pres du profil
+  uniquement, fini les points parasites) ; total **388, 0 echec** ;
 - persistence : entete trace etendue (profil + vecteur) ; vieux
-  projets relisibles ; total **385, 0 echec**.
+  projets relisibles.
 
 ## Organiseur des prochains lots
 
