@@ -2531,6 +2531,83 @@ int main() {
                 CHECK(!sommetSurFil && milieuSurFil,
                       "B3.5 : le MILIEU de segment se colle au fil (aucun sommet sur le fil)");
             }
+            /* B3.6a : ACCROCHE PINCEE - choisir LE point de connexion (O =
+               cible ACCROCHE, clic sur une poignee orange) */
+            {
+                g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+                g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+                polyPose();
+                Object ch3;
+                ch3.name = "Ligne";
+                ch3.traceType = 1; ch3.traceFerme = 0;
+                ch3.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+                g_objs.push_back(ch3);
+                const size_t p3 = g_objs.size() - 2, c3 = g_objs.size() - 1;
+                CHECK(sweepConvertTo(g_objs[p3], g_objs[c3]),
+                      "B3.6a : balayage reconstruit pour l accroche");
+                Object& sw3 = g_objs[p3];
+                std::vector<Vec3> acc3;
+                CHECK(sweepAccroches(sw3, acc3) && acc3.size() == 8,
+                      "B3.6a : polygone ferme = 8 accroches (4 sommets + 4 milieux)");
+                sw3.traceAccroche = 0;                  /* sommet (60,0,0) */
+                traceRegen(sw3);
+                const Vec3 w0 = sw3.pos + sw3.v[0] * sw3.scl;
+                CHECK((w0 - Vec3(0,0,10)).norm() < 1e-9,
+                      "B3.6a : accroche PINCEE 0 (sommet) posee sur le depart du fil");
+                sw3.traceAccroche = 2;                  /* coin (64,0,4) */
+                traceRegen(sw3);
+                const Vec3 w2 = sw3.pos + sw3.v[2] * sw3.scl;
+                CHECK((w2 - Vec3(0,0,10)).norm() < 1e-9,
+                      "B3.6a : changer d accroche = le coin (64,0,4) est colle au fil");
+                /* persistance (principe B2.7e : parametre de construction) */
+                {
+                    const std::vector<Vec3> vAv3 = sw3.v;
+                    const std::string pth3 = tmpPath("accroche.s3projet");
+                    std::string err3;
+                    CHECK(saveProject(pth3, err3), err3.c_str());
+                    g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+                    CHECK(loadProject(pth3, err3), err3.c_str());
+                    CHECK(g_objs.size() == 2 && g_objs[0].traceAccroche == 2,
+                          "B3.6a : l accroche pincee survit au save/load");
+                    traceRegen(g_objs[0]);
+                    bool id3 = g_objs[0].v.size() == vAv3.size();
+                    for (size_t i = 0; id3 && i < vAv3.size(); ++i)
+                        id3 = (g_objs[0].v[i] - vAv3[i]).norm() < 1e-9;
+                    CHECK(id3, "B3.6a : geometrie identique apres save/load (accroche pincee)");
+                    g_objs[0].traceAccroche = 999;      /* hors bornes = repli */
+                    traceRegen(g_objs[0]);
+                    bool repli = false;
+                    for (const Vec3& pw : g_objs[0].v) {
+                        const Vec3 ww = g_objs[0].pos + pw * g_objs[0].scl;
+                        if ((ww - Vec3(0,0,10)).norm() < 1e-9) { repli = true; break; }
+                    }
+                    CHECK(repli, "B3.6a : accroche hors bornes = repli collage intelligent");
+                }
+            }
+            /* B3.6a : accroche CENTRE du cercle - le fil passe par l axe du
+               tube (tore) ; le centre est la derniere accroche de la liste */
+            {
+                g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+                g_cercleMode = true; cercleReset();
+                cerclePose(Vec3(10, 0, 10), 2.0);
+                Object ch4;
+                ch4.name = "Ligne";
+                ch4.traceType = 1; ch4.traceFerme = 0;
+                ch4.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+                g_objs.push_back(ch4);
+                const size_t p4 = g_objs.size() - 2, c4 = g_objs.size() - 1;
+                CHECK(sweepConvertTo(g_objs[p4], g_objs[c4]),
+                      "B3.6a : cercle + ligne acceptes");
+                std::vector<Vec3> acc4;
+                CHECK(sweepAccroches(g_objs[p4], acc4)
+                      && acc4.size() == (size_t)(2 * CERCLE_SEG + 1),
+                      "B3.6a : cercle = bord + milieux + CENTRE (derniere accroche)");
+                g_objs[p4].traceAccroche = (int)acc4.size() - 1;
+                traceRegen(g_objs[p4]);
+                const Vec3 wc = g_objs[p4].pos + g_objs[p4].v[0] * g_objs[p4].scl;
+                CHECK((wc - Vec3(0,0,10)).norm() < 1e-9,
+                      "B3.6a : accroche CENTRE = le fil passe dans l axe du tube");
+            }
         }
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts.clear(); g_lineMode = false; lineReset();

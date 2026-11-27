@@ -378,6 +378,10 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   deformations B5+) en deviendront un vrai besoin - a concevoir
   (snapshot d etat par commande ?) avant B5 ;
   RESTE : extrusion le long d un CHEMIN = B3.
+  BACKLOG NOTE (retour test B3.5) : les feuilles tracees (ligne, rectangle,
+  cercle...) ne se dessinent qu A PLAT, paralleles au plan du monde -
+  permettre de tracer sur un plan quelconque / sur une face (a traiter
+  plus tard, avec l inference de pose de B5) ;
 - B2.2 RECTANGLE (conception avant code, mecanique commune B2) :
   - clic 1 = coin, souris = apercu du rectangle au sol, clic 2 = pose ;
     clic droit ou Echap = annulation SANS objet pose ; Entree vide = rien ;
@@ -475,6 +479,15 @@ Questions ouvertes a trancher avec l'utilisateur :
     ou le tube commence + choisir l'accroche : angle ou milieu de segment) et
     poignee de ROLL (tourner le profil autour du chemin) ; chiffres possibles
     plus tard ;
+    - **B3.6a FAIT (452 -> 464 verifs)** : cible ACCROCHE en edition (O =
+      cycle PROFIL -> CHEMIN -> ACCROCHE) : poignees ORANGE = sommets +
+      milieux de segments du profil (+ CENTRE pour le cercle : le fil passe
+      dans l'axe du tube, tore) ; clic sur une poignee = elle devient le
+      point de connexion au fil ; l'accroche pincee est un PARAMETRE DE
+      CONSTRUCTION (`traceAccroche`, -1 = collage intelligent) persiste
+      (ligne optionnelle "accroche N", retrocompatible) ; hors bornes =
+      repli collage intelligent ; helper unique `sweepAccroches` (regen ET
+      poignees, UN SEUL CHEMIN DE CODE) ; RESTE : B3.6b poignee de ROLL ;
   - **B3.7+ collage generique 2 objets** (coin/coin, arete/arete) : a cadrer
     separatiment une fois B3.5/B3.6 validees ;
   - les arbitrages restants (interaction exacte du choix d'accroche au

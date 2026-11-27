@@ -1025,6 +1025,15 @@ globale corrigee par le volume signe (normales exterieures) ;
 - **B3.5 correctif moteur de tests** : `testsDir()` bouclait a l'infini si
   l'executable etait lance hors du depot (`parent_path` de "/" = "/") -
   arret a la racine ajoute (le binaire rend la main au lieu de se figer).
+- **B3.6a (validation B3.5 : "collage ok")** : **ACCROCHE PINCEE** - en
+  edition du balayage, **O = cible PROFIL -> CHEMIN -> ACCROCHE** : poignees
+  **ORANGE** = sommets + milieux de segments du profil (+ **centre du
+  cercle**, pour poser le fil dans l'axe du tube = tore) ; **clic sur une
+  poignee = elle devient le point colle au fil** ; l'accroche est un
+  **parametre de construction** (`traceAccroche`, -1 = collage intelligent),
+  persiste (ligne optionnelle `accroche N`, vieux projets relisibles),
+  hors bornes = repli collage intelligent ; helper unique `sweepAccroches`
+  (regen et poignees) ; +12 verifications = **464, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 

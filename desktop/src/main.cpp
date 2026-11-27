@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.5";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.6a";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -152,6 +152,8 @@ struct Object {
     int traceCheminType = 0;    /* B3 : type 9 = sous-type du CHEMIN (1, 2/3, 6) */
     int traceCheminFerme = 0;   /* B3 : chemin boucle = solide torique (sans caps) */
     std::vector<Vec3> traceChemin; /* B3 : points de definition du chemin (LOCALES) */
+    int traceAccroche = -1;     /* B3.6a : accroche PINCEE (index dans sweepAccroches ;
+                                   -1 = collage intelligent au trace) */
 };
 
 static std::vector<Object> g_objs;
@@ -169,6 +171,7 @@ static std::vector<int> g_selMulti;
 static bool g_editMode = false;         /* mode edition arme (un seul objet) */
 static int g_editObj = -1;              /* objet edite (index dans g_objs) */
 static bool g_sweepEditChemin = false;  /* B3.3 : cible des ajouts/suppressions sur un balayage (O) */
+static bool g_sweepEditAcc = false;     /* B3.6a : cible ACCROCHE - choisir le point de connexion (O) */
 
 static bool isSelectedRaw(int i) {
     if (i == g_selected) return true;
@@ -1410,6 +1413,8 @@ static bool saveProject(const std::string& path, std::string& err) {
             for (const Vec3& p : o.tracePts) f << p.x << " " << p.y << " " << p.z << "\n";
             if (o.traceType == 9)
                 for (const Vec3& p : o.traceChemin) f << p.x << " " << p.y << " " << p.z << "\n";
+            if (o.traceType == 9 && o.traceAccroche >= 0)  /* B3.6a : accroche pincee */
+                f << "accroche " << o.traceAccroche << "\n";
         }
     }
     if (!f) { err = "ecriture interrompue"; return false; }
@@ -1507,6 +1512,23 @@ static bool loadProject(const std::string& path, std::string& err) {
                     o.traceChemin.resize(nch);
                     for (Vec3& p : o.traceChemin)
                         if (!(f >> p.x >> p.y >> p.z)) { err = "fichier corrompu (points du chemin)"; return false; }
+                    /* B3.6a : ligne optionnelle "accroche N" (vieux projets = -1,
+                       collage intelligent) - peek par ligne avec retour arriere */
+                    const std::streampos avantAcc = f.tellg();
+                    std::string finL, probeAcc;
+                    std::getline(f, finL);
+                    std::getline(f, probeAcc);
+                    if (!f.eof() && trimStr(probeAcc).rfind("accroche ", 0) == 0) {
+                        std::istringstream ia(probeAcc);
+                        std::string tagA;
+                        if (!(ia >> tagA >> o.traceAccroche) || o.traceAccroche < -1) {
+                            err = "fichier corrompu (accroche)"; return false;
+                        }
+                    } else {
+                        f.clear();
+                        f.seekg(avantAcc);
+                        o.traceAccroche = -1;
+                    }
                 }
             } else {
                 f.clear();                          /* lever eof/fail avant le retour arriere */
@@ -4055,6 +4077,28 @@ static Vec3 vecRotate(const Vec3& v, const Vec3& ax, double t) {
          + ax * (dot(ax, v) * (1.0 - std::cos(t)));
 }
 
+/* B3.6a : profil FERME d'un balayage (regle commune regen / accroches) */
+static bool sweepProfFerme(const Object& o) {
+    return o.traceFerme != 0 || o.traceProfil == 4
+        || o.traceProfil == 5 || o.traceProfil == 7;
+}
+/* B3.6a : ACCROCHES du profil d'un balayage (LOCALES, chaine du profil) -
+   sommets + MILIEUX de segments (+ centre pour le cercle) ; la MEME liste
+   sert au collage intelligent (regen) et aux poignees d'edition (UN SEUL
+   CHEMIN DE CODE) */
+static bool sweepAccroches(const Object& o, std::vector<Vec3>& acc) {
+    std::vector<Vec3> prof;
+    if (!traceProfilChain(o, prof)) return false;
+    const size_t n = prof.size();
+    for (size_t k = 0; k < n; ++k) acc.push_back(prof[k]);
+    const size_t nsegA = sweepProfFerme(o) ? n : n - 1;
+    for (size_t k = 0; k < nsegA; ++k)
+        acc.push_back((prof[k] + prof[(k + 1) % n]) * 0.5);
+    if (o.traceProfil == 5 && !o.tracePts.empty())
+        acc.push_back(o.tracePts[0]);           /* centre du cercle (tore) */
+    return true;
+}
+
 /* B3 : REGEN du balayage - anneaux du profil transportes le long du chemin
    (transport parallele projete = pas de torsion, arbitrage v1) ; caps si le
    chemin est ouvert et le profil plein ; chemin ferme = solide torique sans
@@ -4065,8 +4109,7 @@ static void traceRegenSweep(Object& o) {
     if (!traceProfilChain(o, prof) || !traceCheminChain(o, chem)) return;
     const size_t n = prof.size();
     const bool aCentre = (o.traceProfil == 5);
-    const bool profFerme = o.traceFerme != 0 || o.traceProfil == 4
-                        || o.traceProfil == 5 || o.traceProfil == 7;
+    const bool profFerme = sweepProfFerme(o);   /* B3.6a : regle commune */
     const bool plein = profFerme && ((o.traceFerme != 0 && o.traceSurface != 0)
                     || o.traceProfil == 4 || o.traceProfil == 5 || o.traceProfil == 7);
     const size_t rimBase = aCentre ? 1 : 0;
@@ -4112,25 +4155,25 @@ static void traceRegenSweep(Object& o) {
        connexion, fidele Follow Me). L'ancienne regle (point du profil le plus
        proche du DEPART du chemin) imposait le point de connexion. */
     std::vector<Vec3> acc;
-    acc.reserve(2 * n);
-    for (size_t k = 0; k < n; ++k) acc.push_back(prof[k]);
-    const size_t nsegA = profFerme ? n : n - 1;
-    for (size_t k = 0; k < nsegA; ++k)
-        acc.push_back((prof[k] + prof[(k + 1) % n]) * 0.5);
+    if (!sweepAccroches(o, acc) || acc.empty()) return;
     Vec3 A = acc[0];
     double dA = 1e300;
     const size_t nch = chem.size();
     const size_t nsegC = boucle ? nch : nch - 1;
-    for (size_t j = 0; j < acc.size(); ++j) {
-        for (size_t i = 0; i < nsegC; ++i) {
-            const Vec3 p0 = chem[i], p1 = chem[(i + 1) % nch];
-            const Vec3 ab = p1 - p0;
-            const double l2 = dot(ab, ab);
-            double t = l2 > 1e-18 ? dot(acc[j] - p0, ab) / l2 : 0.0;
-            if (t < 0.0) t = 0.0;
-            if (t > 1.0) t = 1.0;
-            const double d = (p0 + ab * t - acc[j]).norm();
-            if (d < dA) { dA = d; A = acc[j]; }
+    if (o.traceAccroche >= 0 && (size_t)o.traceAccroche < acc.size()) {
+        A = acc[(size_t)o.traceAccroche];       /* B3.6a : accroche PINCEE */
+    } else {
+        for (size_t j = 0; j < acc.size(); ++j) {
+            for (size_t i = 0; i < nsegC; ++i) {
+                const Vec3 p0 = chem[i], p1 = chem[(i + 1) % nch];
+                const Vec3 ab = p1 - p0;
+                const double l2 = dot(ab, ab);
+                double t = l2 > 1e-18 ? dot(acc[j] - p0, ab) / l2 : 0.0;
+                if (t < 0.0) t = 0.0;
+                if (t > 1.0) t = 1.0;
+                const double d = (p0 + ab * t - acc[j]).norm();
+                if (d < dA) { dA = d; A = acc[j]; }
+            }
         }
     }
     /* B3.5 : ROLL par defaut = COLLER PLAT - la face garde son orientation
@@ -4620,10 +4663,18 @@ static void traceToggleFerme(Object& o) {
         userMsg("edition : extrusion du profil %s", o.traceFerme ? "FERME" : "ouvert");
         return;
     }
-    if (o.traceType == 9) {                     /* B3.3 : O = cible des ajouts/suppressions */
-        g_sweepEditChemin = !g_sweepEditChemin;
-        userMsg("edition balayage : ajouts/suppressions sur le %s",
-                    g_sweepEditChemin ? "CHEMIN" : "PROFIL");
+    if (o.traceType == 9) {         /* B3.3/B3.6a : O = cible PROFIL -> CHEMIN -> ACCROCHE */
+        if (g_sweepEditChemin) {
+            g_sweepEditChemin = false;
+            g_sweepEditAcc = true;
+            userMsg("edition balayage : cible ACCROCHE - cliquez un coin, un milieu de segment (ou le centre du cercle) = point colle au fil");
+        } else if (g_sweepEditAcc) {
+            g_sweepEditAcc = false;
+            userMsg("edition balayage : ajouts/suppressions sur le PROFIL");
+        } else {
+            g_sweepEditChemin = true;
+            userMsg("edition balayage : ajouts/suppressions sur le CHEMIN");
+        }
         return;
     }
     if (o.traceType != 1 && o.traceType != 2 && o.traceType != 3) {
@@ -4660,6 +4711,7 @@ static void editExit() {
     g_editObj = -1;
     g_editGrab = -1;
     g_editSel = -1;
+    g_sweepEditAcc = false;                 /* B3.6a */
     userMsg("mode selection");
 }
 /* B3.3c (retour test) : en edition, un clic qui ne saisit aucune poignee et
@@ -4676,6 +4728,27 @@ static void editClick(GLFWwindow* w) {
     Object& o = g_objs[(size_t)g_editObj];
     Vec3 org, dir;
     if (!rayFromMouse(w, org, dir)) return;
+    /* B3.6a : cible ACCROCHE - clic sur une poignee orange (sommet, milieu de
+       segment, centre du cercle) = elle devient le point de connexion au fil */
+    if (o.traceType == 9 && g_sweepEditAcc) {
+        std::vector<Vec3> acc;
+        if (!sweepAccroches(o, acc) || acc.empty()) return;
+        double bestA = 1e300; int ai = -1;
+        for (size_t j = 0; j < acc.size(); ++j) {
+            const Vec3 wpt = o.pos + acc[j] * o.scl;
+            const double d = pointRayDist(org, dir, wpt);
+            if (d < bestA) { bestA = d; ai = (int)j; }
+        }
+        if (ai >= 0 && bestA <= filPickTol() * 2.0) {
+            o.traceAccroche = ai;
+            traceRegen(o);
+            userMsg("edition balayage : l accroche %d/%d est collee au fil",
+                        ai + 1, (int)acc.size());
+        } else {
+            editOrbit(w);                       /* B3.3c : clic sans effet = orbite */
+        }
+        return;
+    }
     double best = 1e300; int bi = -1;
     for (size_t i = 0; i < o.tracePts.size(); ++i) {
         const Vec3 wpt = o.pos + o.tracePts[i] * o.scl;
@@ -4830,6 +4903,8 @@ static void drawEditHandles() {
     glDisable(GL_LIGHTING);
     glDisable(GL_DEPTH_TEST);
     const double s = 0.07;
+    const bool accM = (o.traceType == 9 && g_sweepEditAcc);   /* B3.6a */
+    if (!accM)
     for (size_t i = 0; i < o.tracePts.size(); ++i) {
         const Vec3 w = o.pos + o.tracePts[i] * o.scl;
         if ((int)i == g_editSel) glColor3d(0.95, 0.5, 0.2);       /* selectionnee : orange */
@@ -4855,7 +4930,7 @@ static void drawEditHandles() {
         glEnd();
     }
     /* B3.3 : poignees du CHEMIN d'un balayage (cyans) - index = npts + i */
-    if (o.traceType == 9) {
+    if (o.traceType == 9 && !g_sweepEditAcc) {
         for (size_t i = 0; i < o.traceChemin.size(); ++i) {
             const Vec3 w2 = o.pos + o.traceChemin[i] * o.scl;
             const int idx = (int)(o.tracePts.size() + i);
@@ -4869,6 +4944,23 @@ static void drawEditHandles() {
             glVertex3d(w2.x - s, w2.y, w2.z + s);
             glEnd();
         }
+    }
+    /* B3.6a : poignees d'ACCROCHE (orange) - sommets + milieux du profil
+       (+ centre du cercle) ; l'accroche collee au fil est dessinee plus grande */
+    if (accM) {
+        std::vector<Vec3> acc;
+        if (sweepAccroches(o, acc))
+            for (size_t j = 0; j < acc.size(); ++j) {
+                const Vec3 w2 = o.pos + acc[j] * o.scl;
+                const double s2 = ((int)j == o.traceAccroche) ? s * 1.8 : s;
+                glColor3d(1.0, 0.55, 0.1);
+                glBegin(GL_QUADS);
+                glVertex3d(w2.x - s2, w2.y, w2.z - s2);
+                glVertex3d(w2.x + s2, w2.y, w2.z - s2);
+                glVertex3d(w2.x + s2, w2.y, w2.z + s2);
+                glVertex3d(w2.x - s2, w2.y, w2.z + s2);
+                glEnd();
+            }
     }
     /* E3 : poignee de HAUTEUR (bleue) au centre du cap superieur */
     if (o.traceType == 8 && !o.tracePts.empty()) {
@@ -5635,8 +5727,9 @@ static void runToolCommand(int id) {
                 g_editGrab = -1;
                 g_editSel = -1;
                 g_sweepEditChemin = false;
-                if (g_objs[(size_t)idx].traceType == 9) {   /* B3.3 */
-                    userMsg("mode Edition : %s - PROFIL (%zu pts, verts) + CHEMIN (%zu pts, cyans) - glissez une poignee ; clic sur le tube = point de chemin ; O = cible des ajouts/suppressions ; poignee + Suppr = supprimer ; Echap ou clic droit = quitter",
+                g_sweepEditAcc = false;
+                if (g_objs[(size_t)idx].traceType == 9) {   /* B3.3/B3.6a */
+                    userMsg("mode Edition : %s - PROFIL (%zu pts, verts) + CHEMIN (%zu pts, cyans) - glissez une poignee ; clic sur le tube = point de chemin ; O = cible (profil, chemin, ACCROCHE = point colle au fil) ; poignee + Suppr = supprimer ; Echap ou clic droit = quitter",
                                 g_objs[(size_t)idx].name.c_str(), g_objs[(size_t)idx].tracePts.size(),
                                 g_objs[(size_t)idx].traceChemin.size());
                     return;
@@ -5806,8 +5899,10 @@ static std::string statusPrompt() {
     if (g_editMode) {
         if (g_editObj >= 0 && g_editObj < (int)g_objs.size()
             && g_objs[(size_t)g_editObj].traceType == 9)
-            return g_sweepEditChemin
-                ? "Edition du balayage : chemin (cyans) - glissez une poignee | clic SUR LE TUBE = nouvelle station | O = cible PROFIL | poignee + Suppr = supprimer | Echap = quitter"
+            return g_sweepEditAcc
+                ? "Edition du balayage : accroche (orange) - cliquez un coin, un milieu de segment ou le centre = point colle au fil | O = cible PROFIL | Echap = quitter"
+                : g_sweepEditChemin
+                ? "Edition du balayage : chemin (cyans) - glissez une poignee | clic SUR LE TUBE = nouvelle station | O = cible ACCROCHE | poignee + Suppr = supprimer | Echap = quitter"
                 : "Edition du balayage : profil (verts) - glissez une poignee | clic dans le plan = ajouter | O = cible CHEMIN | poignee + Suppr = supprimer | Echap = quitter";
         if (g_editObj >= 0 && g_editObj < (int)g_objs.size()
             && g_objs[(size_t)g_editObj].traceType == 8)
