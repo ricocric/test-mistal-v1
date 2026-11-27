@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.7e2";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.7e2b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -3673,8 +3673,9 @@ static void traceRegenBase(Object& o) {
         std::vector<Vec3> pts;
         if (!arcComputePts(o.tracePts[0], o.tracePts[1], o.tracePts[2], pts))
             return;                             /* alignes/arc nul : garder la derniere geometrie */
-        for (Vec3& p : pts) p = p - o.tracePts[0];   /* locales (ancre = depart) */
-        o.v = pts;
+        o.v = pts;   /* B2.7e2b : memes LOCALES que tracePts (pos + v = pos + tracePts[i]
+                        = monde) - rebaser sur tracePts[0] detacherait les poignees du
+                        des que le depart est deplace (tracePts[0] != 0) */
         o.tri.clear();
         o.n.clear();
         computeObjectDerived(o);

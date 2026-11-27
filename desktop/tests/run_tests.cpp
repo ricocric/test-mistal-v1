@@ -2067,13 +2067,30 @@ int main() {
             double dmin = 1e300;
             for (const Vec3& loc : g_objs[2].v) dmin = std::min(dmin, (loc - Vec3(1,0,1)).norm());
             CHECK(dmin < 1e-9, "edition (arc) : l'arc passe EXACTEMENT par le bombement");
-            g_objs[2].tracePts[1] = Vec3(1, 0, -1);   /* bombement deplace (locales, ancre = depart) */
+            g_objs[2].tracePts[1] = Vec3(1, 0, -1);   /* bombement deplace (locales) */
             traceRegen(g_objs[2]);
             dmin = 1e300;
             for (const Vec3& loc : g_objs[2].v) dmin = std::min(dmin, (loc - Vec3(1,0,-1)).norm());
             CHECK(dmin < 1e-9, "edition (arc) : bombe deplace = arc regenere passant par le nouveau point");
             CHECK((g_objs[2].v.front()).norm() < 1e-9 && (g_objs[2].v.back() - Vec3(2,0,0)).norm() < 1e-9,
                   "edition (arc) : depart et fin exacts (ancre locale conservee)");
+        }
+        /* 3b. B2.7e2b : drag du DEPART - l'arc doit rester passe par les 3 poignees
+           (bug corrige : le rebasage sur tracePts[0] detachait l'arc des poignees) */
+        {
+            g_objs[2].tracePts[0] = Vec3(1, 0, 1);   /* depart deplace (locales) */
+            traceRegen(g_objs[2]);
+            bool ok3 = true;
+            for (int i = 0; i < 3 && ok3; ++i) {
+                double dmin = 1e300;
+                for (const Vec3& loc : g_objs[2].v)
+                    dmin = std::min(dmin, (loc - g_objs[2].tracePts[(size_t)i]).norm());
+                ok3 = dmin < 1e-9;
+            }
+            CHECK(ok3, "edition (arc) : drag du DEPART = l'arc passe encore par les 3 poignees");
+            /* retour a l'etat initial pour le bloc suivant (arc degenere) */
+            g_objs[2].tracePts[0] = Vec3(0, 0, 0);
+            traceRegen(g_objs[2]);
         }
         /* 4. ARC degenere (bombement aligne) : la derniere geometrie valide est GARDEE */
         {
