@@ -908,7 +908,12 @@ et se regenere par SA construction d'origine :
   = points fixes, polygone/ligne = garde au minimum) ;
 - clic sur une FACE du solide = point ajoute au profil (projection
   verticale du point touche) ; clic-sol garde (pres du profil
-  uniquement, fini les points parasites) ; total **388, 0 echec** ;
+  uniquement, fini les points parasites) ;
+- B2.7e3c : un point ajoute EXACTEMENT sur un bord du profil (clic
+  sur un mur) rendait un tri de cap COLINEAIRE (normale nulle) et
+  bloquait le Push/Pull ("Face non plane") - pushFanTri ecarte tout
+  tri de fan de surface nulle (fans types 1/7/8, cas plat + caps,
+  les murs ne sont pas concernes) ; total **394, 0 echec** ;
 - persistence : entete trace etendue (profil + vecteur) ; vieux
   projets relisibles.
 

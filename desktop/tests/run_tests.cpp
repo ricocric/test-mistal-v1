@@ -2280,6 +2280,31 @@ int main() {
                 identique = (g_objs[0].v[i] - vAvant[i]).norm() < 1e-9;
             CHECK(identique, "E3 : geometrie regeneree identique apres save/load");
         }
+        /* 10. E3c : point ajoute EXACTEMENT sur un bord du profil (clic sur
+              un mur = projection verticale) -> tri de cap degenere (colineaire)
+              ecarte par pushFanTri, sinon makeExtrude refuse ("Face non plane") */
+        {
+            g_polyPts = { Vec3(50,0,0), Vec3(54,0,0), Vec3(54,0,4), Vec3(50,0,4) };
+            polyPose();
+            Object& poly = g_objs.back();           /* polyPose ajoute a la fin */
+            Extrude dd;
+            CHECK(makeExtrude(poly, 0, dd) && extrudeConvertTo(poly, dd, 2.0),
+                  "E3c : polygone 4x4 extrude (h = 2) avant ajout");
+            const double volAvant = signedVolume(poly);
+            CHECK(std::fabs(volAvant - 32.0) < 1e-6,
+                  "E3c : volume initial = 16 (aire) x 2 (hauteur)");
+            CHECK(traceAddPoint(poly, Vec3(52,0,0), false) >= 0
+                  && poly.tracePts.size() == 5,
+                  "E3c : point insere EXACTEMENT sur le bord (52,0,0) = milieu du cote");
+            bool normalesOk = true;
+            for (const Vec3& nn : poly.n)
+                if (dot(nn, nn) < 0.5) normalesOk = false;
+            CHECK(normalesOk, "E3c : aucune normale nulle apres insertion colineaire");
+            CHECK(std::fabs(signedVolume(poly) - volAvant) < 1e-6,
+                  "E3c : volume conserve par le point colineaire");
+            CHECK(makeExtrude(poly, 0, dd),
+                  "E3c : Push/Pull refonctionne apres l ajout (Face non plane repare)");
+        }
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts.clear(); g_lineMode = false; lineReset();
     }

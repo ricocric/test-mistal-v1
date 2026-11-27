@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.7e3b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.7e3c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -3641,6 +3641,18 @@ static double pointRayDist(const Vec3& org, const Vec3& dir, const Vec3& p) {
    MEMES fonctions que le trace ; tracePts LOCAUX -> v LOCAUX, la convention
    pos + scl*v = monde est preservee (la translation ne change rien aux
    echantillonnages, centripete incluse : longueurs de cordes). */
+/* E3b (retour test) : un point ajoute EXACTEMENT sur un bord (clic sur un
+   mur = projection verticale) est colineaire a ses voisins -> le fan du cap
+   produirait un tri de surface NULLE (normale nulle = "Face non plane" au
+   push/pull). Ce helper pousse le tri seulement s il a une surface. */
+static void pushFanTri(std::vector<unsigned>& tri, const std::vector<Vec3>& v,
+                       unsigned a, unsigned b, unsigned c) {
+    if (a >= v.size() || b >= v.size() || c >= v.size()) return;
+    const Vec3 n = cross(v[b] - v[a], v[c] - v[a]);
+    if (dot(n, n) < 1e-14) return;                  /* colineaire : rien */
+    tri.push_back(a); tri.push_back(b); tri.push_back(c);
+}
+
 static void traceRegenBase(Object& o);   /* E2 : formes de base (defini plus bas) */
 static void traceRegen(Object& o) {
     if (o.traceType == 0 || o.tracePts.size() < 2) return;
@@ -3651,9 +3663,8 @@ static void traceRegen(Object& o) {
         o.tri.clear();
         o.n.clear();
         if (surface)
-            for (size_t i = 1; i + 1 < o.v.size(); ++i) {
-                o.tri.push_back(0); o.tri.push_back((int)i); o.tri.push_back((int)(i + 1));
-            }
+            for (size_t i = 1; i + 1 < o.v.size(); ++i)
+                pushFanTri(o.tri, o.v, 0, (unsigned)i, (unsigned)(i + 1));
         computeObjectDerived(o);
         if (o.traceFerme && o.tri.empty())      /* fil fermé : arete de cloture */
             o.edges.emplace_back((int)o.v.size() - 1, 0);
@@ -3788,9 +3799,8 @@ static void traceRegenBase(Object& o) {
         o.v = o.tracePts;
         o.tri.clear();
         o.n.clear();
-        for (size_t i = 1; i + 1 < o.v.size(); ++i) {
-            o.tri.push_back(0); o.tri.push_back((int)i); o.tri.push_back((int)(i + 1));
-        }
+        for (size_t i = 1; i + 1 < o.v.size(); ++i)
+            pushFanTri(o.tri, o.v, 0, (unsigned)i, (unsigned)(i + 1));
         computeObjectDerived(o);
         return;
     }
@@ -3825,15 +3835,11 @@ static void traceRegenBase(Object& o) {
         if (o.v.size() == nBase) {              /* hauteur nulle : feuille (ou fil) */
             if (plein) {
                 if (aCentre)
-                    for (size_t i = 0; i < n; ++i) {
-                        o.tri.push_back(0);
-                        o.tri.push_back((unsigned)(rimBase + i));
-                        o.tri.push_back((unsigned)(rimBase + (i + 1) % n));
-                    }
+                    for (size_t i = 0; i < n; ++i)
+                        pushFanTri(o.tri, o.v, 0, (unsigned)(rimBase + i), (unsigned)(rimBase + (i + 1) % n));
                 else
-                    for (size_t i = 1; i + 1 < n; ++i) {
-                        o.tri.push_back(0); o.tri.push_back((unsigned)i); o.tri.push_back((unsigned)(i + 1));
-                    }
+                    for (size_t i = 1; i + 1 < n; ++i)
+                        pushFanTri(o.tri, o.v, 0, (unsigned)i, (unsigned)(i + 1));
             }
             computeObjectDerived(o);
             if (ferme && o.tri.empty())
@@ -3868,22 +3874,22 @@ static void traceRegenBase(Object& o) {
                 for (size_t i = 0; i < n; ++i) {
                     const unsigned r0 = (unsigned)(rimBase + i), r1 = (unsigned)(rimBase + (i + 1) % n);
                     if (flip) {
-                        o.tri.push_back((unsigned)nBase); o.tri.push_back((unsigned)(nBase + r0)); o.tri.push_back((unsigned)(nBase + r1));
-                        o.tri.push_back(0); o.tri.push_back(r1); o.tri.push_back(r0);
+                        pushFanTri(o.tri, o.v, (unsigned)nBase, (unsigned)(nBase + r0), (unsigned)(nBase + r1));
+                        pushFanTri(o.tri, o.v, 0, r1, r0);
                     } else {
-                        o.tri.push_back((unsigned)nBase); o.tri.push_back((unsigned)(nBase + r1)); o.tri.push_back((unsigned)(nBase + r0));
-                        o.tri.push_back(0); o.tri.push_back(r0); o.tri.push_back(r1);
+                        pushFanTri(o.tri, o.v, (unsigned)nBase, (unsigned)(nBase + r1), (unsigned)(nBase + r0));
+                        pushFanTri(o.tri, o.v, 0, r0, r1);
                     }
                 }
             } else {
                 for (size_t i = 1; i + 1 < n; ++i) {
                     const unsigned a0 = (unsigned)i, a1 = (unsigned)(i + 1);
                     if (flip) {   /* cap haut = fan direct translate, cap bas = inverse */
-                        o.tri.push_back((unsigned)nBase); o.tri.push_back((unsigned)(nBase + a0)); o.tri.push_back((unsigned)(nBase + a1));
-                        o.tri.push_back(0); o.tri.push_back(a1); o.tri.push_back(a0);
+                        pushFanTri(o.tri, o.v, (unsigned)nBase, (unsigned)(nBase + a0), (unsigned)(nBase + a1));
+                        pushFanTri(o.tri, o.v, 0, a1, a0);
                     } else {
-                        o.tri.push_back((unsigned)nBase); o.tri.push_back((unsigned)(nBase + a1)); o.tri.push_back((unsigned)(nBase + a0));
-                        o.tri.push_back(0); o.tri.push_back(a0); o.tri.push_back(a1);
+                        pushFanTri(o.tri, o.v, (unsigned)nBase, (unsigned)(nBase + a1), (unsigned)(nBase + a0));
+                        pushFanTri(o.tri, o.v, 0, a0, a1);
                     }
                 }
             }

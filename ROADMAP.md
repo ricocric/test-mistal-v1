@@ -274,6 +274,13 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   exacte), clic-sol GARDE par traceProfilDist (<= filPickTol) ;
   (3) chemin unique traceProfilChain (regen + insertion + garde) ;
   +3 verifications = 388, 0 echec ;
+  B2.7e3c (retour test) : BUG "Face non plane - Push/Pull indisponible"
+  apres un clic sur un mur - le point insere EXACTEMENT sur le bord du
+  profil (projection verticale, voulu) est colineaire aux voisins ->
+  tri de cap degenere (normale nulle) -> makeExtrude refusait ;
+  correctif : helper pushFanTri (tri pousse sauf si surface nulle)
+  applique a TOUS les fans (types 1/7/8 : cas plat + caps, les 2
+  variantes flip) - murs inchanges ; +6 verifications = 394, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec
