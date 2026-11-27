@@ -847,6 +847,243 @@ a la souris). Echap/clic droit = annulation sans objet (mecanique B2).
   plaque contre ce point) ; le polygone n'est PAS pose - seule la courbe
   discretisee devient l'objet fil.
 
+## B2.7e : edition des traces apres coup (E1 : ligne + spline)
+
+Tout objet porte ses PARAMETRES DE CONSTRUCTION (source de verite), la
+geometrie n'est qu'un derive regenerable par les MEMES fonctions que le
+trace (un seul chemin de code). Generalise plus tard a toutes les formes
+(rectangle, cercle, arc, polygone, extrusions - phases E2/E3).
+
+- **E** (ou bouton « Editer ») : entre/sort du mode edition du trace
+  selectionne (une ligne ou une spline - sinon message) ;
+- poignees : petits carres verts sur les points de definition ; clic =
+  saisie (orange), drag au sol = deplacement avec recalcul CONTINU ;
+- clic sur la courbe (hors poignee) = ajouter un point de definition a
+  l'intervalle le plus proche ; poignee + **Suppr** = supprimer (garde :
+  minimum 2 points ouvert, 3 ferme) ;
+- **O** = bascule ouvert/ferme a chaud (la ligne fermee retrouve sa
+  feuille si elle en avait une) ; **Maj+S/Maj+B** = bascule variante
+  spline passage/controle a chaud, points conserves (regle des variantes) ;
+- Echap ou clic droit = quitter (mode exclusif : les autres touches sont
+  avalees) ;
+- persistence : bloc optionnel `trace type ferme surface npts` dans le
+  .s3projet (peek par ligne avec retour arriere du flux = vieux projets
+  relisibles) ; total **330, 0 echec**.
+
+### B2.7e E2 : formes de base editables (rectangle, cercle, arc, polygone)
+
+Les MEMES poignees, les MEMES regles - chaque forme porte ses parametres
+et se regenere par SA construction d'origine :
+
+- **Rectangle** : 2 poignees = les coins ; les coins canoniques (min/max)
+  sont recalcules, la feuille reste normale +y ;
+- **Cercle** : 2 poignees = centre + point du rayon (toujours SUR le
+  cercle, angle 0) ; le rayon suit la distance centre -> poignee ;
+- **Arc** : 3 poignees = depart, fin, bombement ; l'arc regenere passe
+  EXACTEMENT par les 3 ; si le bombement est amene sur la corde (arc
+  degenere), la DERNIERE geometrie valide est conservee ;
+- **Polygone** : poignees sur les sommets ; clic sur un bord = sommet
+  ajoute, poignee + Suppr = supprime (garde : minimum 3 sommets) ;
+  ouvert/ferme sans effet (surface seule, choix B2.6) ;
+- rectangle, cercle et arc = points FIXES : ni ajout ni suppression
+  (message explicite), seuls les deplacements sont permis ;
+- round-trip save/load verifie pour les 4 formes ; total **350,
+  0 echec**.
+
+### B2.7e E3 : extrusions editables (profil + hauteur)
+
+- **P sur une feuille issue d un profil = extrusion PARAMETRIQUE** :
+  l objet passe en type 8 (EXTRUSION) - il garde le profil (sous-type
+  + points de definition + ferme/surface) et le vecteur d extrusion ;
+  la feuille est consommee (la face devient le solide, fidele SketchUp) ;
+- regen par les MEMES fonctions que le trace (chaines rectangle/cercle/
+  arc/spline, fan) puis prismatage : murs + caps bas/haut, normales
+  exterieures quel que soit le sens du vecteur (tirer OU pousser) ;
+- edition (E) : poignees du profil au sol (drag = le solide suit) +
+  poignee de HAUTEUR (bleue) au centre du cap superieur - drag dans un
+  plan vertical face camera ; chiffres non necessaires ;
+- profils ouverts extrudes = bande (murs seuls) : accessible par
+  O (ouvert/ferme) a chaud sur une extrusion de ligne ; ajout/
+  suppression de points selon les regles du profil (rect/cercle/arc
+  = points fixes, polygone/ligne = garde au minimum) ;
+- clic sur une FACE du solide = point ajoute au profil (projection
+  verticale du point touche) ; clic-sol garde (pres du profil
+  uniquement, fini les points parasites) ;
+- B2.7e3c : un point ajoute EXACTEMENT sur un bord du profil (clic
+  sur un mur) rendait un tri de cap COLINEAIRE (normale nulle) et
+  bloquait le Push/Pull ("Face non plane") - pushFanTri ecarte tout
+  tri de fan de surface nulle (fans types 1/7/8, cas plat + caps,
+  les murs ne sont pas concernes) ; total **394, 0 echec** ;
+- persistence : entete trace etendue (profil + vecteur) ; vieux
+  projets relisibles.
+
+### B3 : balayage (extrusion le long d'un chemin) - lot 1
+
+- **Maj+W / bouton "Balayer" / menu Outils** : clic 1 = la FACE a balayer
+  (feuille tracee), clic 2 = le FIL chemin (ligne, spline, arc) ;
+  Echap ou clic droit = annulation ;
+- type 9 : l'objet porte le profil (sous-type + points, comme type 8)
+  ET le chemin (sous-type + points) ; le fil chemin est **consomme**
+  (retire de la scene, ses points restent dans les parametres - une
+  fonction "extraire le chemin" est notee backlog B5+) ;
+- regen = anneaux du profil transportes le long du chemin (transport
+  parallele projete : pas de torsion en v1) ; profil perpendiculaire
+  au depart du chemin ; caps aux extremites si le profil est plein ;
+  chemin ferme (boucle) = solide torique sans caps ; orientation
+globale corrigee par le volume signe (normales exterieures) ;
+- refus explicites : face non tracee/coque, chemin non fil, meme
+  objet, fil trop court ;
+- persistence : entete trace etendue au type 9 (profil + normale +
+  chemin), vieux projets relisibles ; edition du balayage = lot 2
+  (message dedie en attendant) ;
+- **B3.2 (retours test)** : (1) **point de connexion maitrise** -
+  l'ancre du balayage = le point de la face le plus proche du DEPART
+  du fil, pose exactement sur le chemin (fidele Follow Me : la
+  feuille ou on la pose decide du resultat) ; (2) les refus du
+  balayage s'affichent AUSSI dans le pied de page (flashBand) ;
+  (3) **la ligne L ferme en BOUCLE (fil), JAMAIS en surface** -
+  fermer en surface est le role du POLYGONE (difference ligne /
+  polygone) ; Maj+L = fil ouvert ; les vieux projets avec feuille de
+  ligne fermee restent lus (regen type 1 conserve la branche
+  surface) ; total **412, 0 echec**.
+- **B3.2b (retour test)** : au **chargement** d'un projet, tout objet
+  portant ses parametres de construction (principe B2.7e) regenere SA
+  geometrie par les MEMES fonctions que le trace (avant : simple calcul
+  derive) - le fil ferme (boucle L) perdait son arete de cloture apres
+  save/load (il redevenait un fil ouvert) ; corrige ; total **415,
+  0 echec**.
+- **B3.2c (retour test)** : le dialogue d'enregistrement du projet est
+  PRE-REMPLI avec le chemin du dernier projet enregistre ou ouvert
+  (persiste dans l'INI) ; nouveau projet / projet ferme = champ VIDE
+  (jamais le nom d'un autre projet = risque d'ecraser le mauvais
+  fichier) ; total **418, 0 echec**.
+- **B3.2d (retour test)** : **historique des projets** - sous-menu
+  Fichier > « Projets recents » (8 slots, les vides grises,
+  deduplique, les plus recents d'abord, persiste dans l'INI :
+  `historique = p1;p2;...`) ; **rouverture automatique du dernier
+  projet au demarrage** (la scene de demo ne revient que si aucun
+  projet ou fichier illisible) ; total **421, 0 echec**.
+- **B3.2e (retour test)** : taille de l'historique **editable dans
+  l'INI** (`[projet] recents = N`, borne 0..8, defaut 8 ; 0 = pas
+  d'historique) ; total **423, 0 echec**.
+- **B3.3 (B3 lot 2 : edition du balayage)** : E sur un balayage = poignees
+  du PROFIL (vertes) ET du CHEMIN (cyans) ; drag = chemin au sol, profil
+  DANS son plan (hauteur conservee) ; ajout : clic dans le plan du profil
+  ou pres du chemin (insertion au segment le plus proche, garde de
+  distance) ; **O = bascule de la cible des ajouts/suppressions**
+  (profil/chemin, rien de memorise) ; Suppr = suppression de la poignee
+  saisie avec minimums par sous-type (chemin ouvert 2 / ferme 3 ; profil
+  polygone 3, ouvert 2 / ferme 3) ; rect/cercle/arc = points fixes (drag
+  seul) ; total **437, 0 echec**.
+- **B3.3b (retour test)** : le chemin du balayage est ENTERRE dans le
+  tube (invisible, surtout en torique) - **dessine en edition** (cyan,
+  visible a travers le solide, boucle fermee = GL_LINE_LOOP) ; ajout :
+  **clic SUR LE TUBE = nouvelle station** au segment le plus proche
+  (sans garde), clic-sol pres du chemin = avec garde (pas d'ajout
+  accidentel) ; total **440, 0 echec**.
+- **B3.3c (retour test)** : **navigation pendant l'edition** - un clic
+  gauche qui ne saisit aucune poignee et n'ajoute aucun point (vide,
+  ciel, refus) = ORBITE ; pan molette et zoom deja actifs.
+- **B3.3d (retour test B3.3b/c)** : **piege de creation repare** - au clic 1
+  du balayage, un objet qui n'est pas une feuille tracee (ex. le TUBE d'un
+  balayage deja pose) est REFUSE immediatement (avant : accepte, puis etape 2
+  impossible car le fil etait deja consomme -> "aucun fil vise" en boucle) ;
+  E (edition) refuse de s'armer pendant un balayage en cours (Echap d'abord) ;
+  helper unique `sweepFaceValide` (clic 1 et sweepConvertTo) ; +3
+  verifications = **443, 0 echec**.
+- **B3.3e (retours test B3.3d)** : **Maj + clic droit (glisser) = deplacer la
+  vue (pan) DANS TOUS les modes** (edition, creation, orbite) - un seul moyen
+  de se deplacer, le pan molette-clic disparait ; **niveaux de zoom definis**
+  (tres pres 0.1, tres loin 4000) ; **tous les refus "terminez d'abord" passent
+  au pied de page** (la console ne sera pas livree avec le soft) ; +2
+  verifications = **445, 0 echec**.
+- **B3.3f (REGLE utilisateur)** : **console = debug uniquement ; tout message
+  utilisateur va DANS LA FENETRE** - les ~200 printf du programme passent par
+  un helper unique `userMsg` (bandeau + **journal consultable**, panneau des
+  200 derniers messages, **touche J** ou menu Affichage > Journal des
+  messages) ; restent en console : l'echo de developpement, les compteurs
+  live (\r) et le repli sans fenetre ; +3 verifications = **448, 0 echec**.
+- **B3.3h (retours test B3.3g)** : journal **ancre en HAUT a gauche**
+  (il etait en bas), **largeur FIXE** (35 % de la fenetre, plus de
+  retrecissement aleatoire), **les clics dans le panneau sont avales**
+  (plus de clic traversant vers la scene), **repetitions dedupliquees**
+  (une seule ligne, compteur xN), **plus d'echo console** (console = debug
+  uniquement, regle B3.3f appliquee a la lettre) ; +1 verification =
+  **449, 0 echec**.
+- **B3.3i (retour test B3.3h)** : compteurs (xN) **retires** (inutiles) -
+  un message deja present ne rajoute pas de ligne, il reanime seulement le
+  bandeau ; **449, 0 echec**.
+- **B3.5 (conception B3.4 -> code)** : **COLLAGE INTELLIGENT** - l'ACCROCHE
+  du profil (sommets + **milieux de segments**) la plus proche du fil
+  (projection sur TOUS les segments, cloture incluse) est posee sur le fil
+  (remplace l'ancre B3.2 qui imposait le point du profil le plus proche du
+  depart) ; **ROLL par defaut = COLLER PLAT** - rotation MINIMALE (Rodrigues)
+  amenant la normale de la face sur la tangente du fil : les directions
+  tracees sont conservees (suppression du repere 2D arbitraire qui faisait
+  d'un carre pose un losange incline) ; +3 verifications = **452,
+  0 echec**.
+- **B3.5 correctif moteur de tests** : `testsDir()` bouclait a l'infini si
+  l'executable etait lance hors du depot (`parent_path` de "/" = "/") -
+  arret a la racine ajoute (le binaire rend la main au lieu de se figer).
+- **B3.6a (validation B3.5 : "collage ok")** : **ACCROCHE PINCEE** - en
+  edition du balayage, **O = cible PROFIL -> CHEMIN -> ACCROCHE** : poignees
+  **ORANGE** = sommets + milieux de segments du profil (+ **centre du
+  cercle**, pour poser le fil dans l'axe du tube = tore) ; **clic sur une
+  poignee = elle devient le point colle au fil** ; l'accroche est un
+  **parametre de construction** (`traceAccroche`, -1 = collage intelligent),
+  persiste (ligne optionnelle `accroche N`, vieux projets relisibles),
+  hors bornes = repli collage intelligent ; helper unique `sweepAccroches`
+  (regen et poignees) ; +12 verifications = **464, 0 echec** (ASan propre).
+- **B3.6a-bis (lot de correctifs retour test B3.6a)** :
+  - **fils selectionnables devant un solide** - CAUSE des splines par
+    controle incaptables : dans `pickAt`, tout solide touche par le rayon
+    gagnait sur TOUS les fils (une spline de controle pres d'un tube etait
+    masquee par le tube derriere elle, meme si la courbe etait visible et
+    plus proche) ; desormais le fil VISIBLE le plus proche gagne sur le
+    solide (marge = tolerance de capture) ; ce n'etait donc PAS une question
+    d'altitude : la courbe captee est exactement la courbe dessinee ;
+  - **pan Maj+clic droit robuste** : l'ordre du geste ne compte plus (Maj
+    pressee pendant le clic droit tenu = pan aussi, etat `g_rightDown`) et
+    la sortie d'edition passe au relachement du clic droit ; bandeau de
+    confirmation a l'armement du pan ;
+  - **zoom plus efficace** : 20 % par cran (0.8 au lieu de 0.9) - x100 en
+    20 crans au lieu de 44 ; bornes 0.1/4000 conservees ;
+  - **altitude des poignees** : le drag d'une poignee et l'ajout d'un point
+    se font dans le plan HORIZONTAL passant par le point (plus de retombee
+    au sol pour les courbes en hauteur) ; au sol, identique a avant ;
+  - +15 verifications = **479, 0 echec** (ASan propre) ; backlog consigne :
+    selection par NOM d'objet (liste de choix, menu contextuel).
+- **B3.6a-ter (complement retour test)** :
+  - **pan aussi a Maj + clic GAUCHE en edition** : un clic sans effet avec
+    Maj tenue = pan (meme regle que la selection : avant, l'orbite d'absence
+    d'effet ignorait Maj) ; sans Maj = orbite (regle B3.3c) ; bandeau de
+    confirmation aussi sur le pan de la selection ;
+  - **borne de rapprochement 0.1 -> 0.02** (retour test : borne pas assez
+    petite) avec plan proche ADAPTATIF (0.005 sous dist 5, 0.05 au-dela :
+    precision conservee a distance) ;
+  - +2 verifications = **481, 0 echec** (ASan propre).
+- **B3.6b (poignee de ROLL)** : tourner le profil du balayage autour du fil.
+  - **parametre de construction** `traceRoll` (DEGRES, 0 = defaut "coller
+    plat" B3.5, comportement par defaut intact), persiste : ligne
+    optionnelle `roll N` (format %.10g), lue par peek APRES le peek
+    accroche (les deux ordres roll/accroche fonctionnent, vieux projets
+    relisibles) ;
+  - **application dans la regen** : rotation du profil dans SON PLAN
+    (autour de la tangente Tv[0], a l'image de l'accroche sur le fil) ;
+    les rayons d'anneaux sont INVARIANTS (rotation dans le plan de la
+    section) ;
+  - **repere pose par la REGEN (UN SEUL CHEMIN DE CODE)** : `g_sweepRollAxis`
+    (tangente au depart), `g_sweepRollCenter` (image de l'accroche sur le
+    fil = chem[0]), `g_sweepRollHandle` = point du profil le PLUS LOIN de
+    l'accroche (rayon toujours non nul) ;
+  - **edition** : O = cycle a 4 cibles PROFIL -> CHEMIN -> ACCROCHE -> ROLL ;
+    en mode ROLL les autres poignees sont masquees, une poignee VIOLETTE
+    apparait ; glisser = tourner le profil (angle autour de l'axe via
+    `rollDelta`, wrap [-180, 180[) ; clic sans effet = orbite / pan (regles
+    B3.3c/B3.6a-ter) ;
+  - +24 verifications = **505, 0 echec** (ASan propre) ; saisie numerique
+    du roll (chiffres + Entree = degres) : plus tard.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils

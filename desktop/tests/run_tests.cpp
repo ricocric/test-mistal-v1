@@ -31,7 +31,8 @@ static std::string testsDir() {
         const size_t s = f.find_last_of("/\\");
         const std::string rel = f.substr(0, s);
         if (fs::exists(rel + "/data")) return rel;
-        for (fs::path p = fs::current_path(); !p.empty(); p = p.parent_path()) {
+        for (fs::path p = fs::current_path(); !p.empty() && p != p.parent_path();
+             p = p.parent_path()) {
             const fs::path cand = p / "desktop" / "tests";
             if (fs::exists(cand / "data")) return cand.string();
         }
@@ -1429,6 +1430,69 @@ int main() {
         g_setup = Setup{};
     }
 
+    /* 30b - B3.2c : nom de sauvegarde pre-rempli (dernier projet) */
+    {
+        noteProjectPath("C:/tmp/test_b32c.s3projet");
+        CHECK(g_setup.dernierProjet == "C:/tmp/test_b32c.s3projet",
+              "sauvegarde : le chemin note devient le nom pre-rempli du prochain enregistrement");
+        handleMenuAction(IDM_NEW_PROJECT);
+        CHECK(g_setup.dernierProjet.empty(),
+              "sauvegarde : nouveau projet = nom pre-rempli VIDE (jamais le nom d un autre projet)");
+        noteProjectPath("C:/tmp/test_b32c.s3projet");
+        handleMenuAction(IDM_CLOSE_PROJECT);
+        CHECK(g_setup.dernierProjet.empty(),
+              "sauvegarde : projet ferme = nom pre-rempli VIDE");
+    }
+
+    /* 30c - B3.2d : historique des derniers projets (recents) */
+    {
+        g_setup = Setup{};
+        noteProjectPath("a.s3projet");
+        noteProjectPath("b.s3projet");
+        noteProjectPath("a.s3projet");
+        CHECK(g_setup.historique.size() == 2 && g_setup.historique[0] == "a.s3projet"
+              && g_setup.historique[1] == "b.s3projet",
+              "recents : deduplique, le plus recent d'abord");
+        for (int i = 0; i < 9; ++i) {
+            char nm[32]; std::snprintf(nm, sizeof(nm), "p%d.s3projet", i);
+            noteProjectPath(nm);
+        }
+        CHECK(g_setup.historique.size() == 8 && g_setup.historique[0] == "p8.s3projet",
+              "recents : borne a 8, le dernier ouvert devant");
+        /* round-trip INI : l'historique survit au lancement suivant */
+        g_setupPath = tmpPath("hist.ini");
+        saveSetup();
+        g_setup = Setup{};
+        loadSetup();
+        CHECK(g_setup.historique.size() == 8 && g_setup.historique[0] == "p8.s3projet"
+              && g_setup.historique[7] == "p1.s3projet",
+              "recents : historique survit au save/load du setup (ordre garde)");
+        std::remove(g_setupPath.c_str());
+        g_setupPath = "sketch3d.ini";
+        g_setup = Setup{};
+    }
+
+    /* 30d - B3.2e : taille de l'historique editable dans l'INI */
+    {
+        const std::string path = tmpPath("recents.ini");
+        g_setupPath = path;
+        {
+            std::ofstream f(path.c_str());
+            f << "[projet]\nrecents = 3\nhistorique = a.s3projet;b.s3projet;c.s3projet;d.s3projet;e.s3projet\n";
+        }
+        loadSetup();
+        CHECK(g_setup.nbRecents == 3 && g_setup.historique.size() == 3
+              && g_setup.historique[0] == "a.s3projet",
+              "recents : taille INI (recents = 3) borne l'historique relu");
+        noteProjectPath("f.s3projet");
+        noteProjectPath("g.s3projet");
+        CHECK(g_setup.historique.size() == 3 && g_setup.historique[0] == "g.s3projet",
+              "recents : la taille INI borne aussi les ajouts (deduplique, borne a 3)");
+        std::remove(path.c_str());
+        g_setupPath = "sketch3d.ini";
+        g_setup = Setup{};
+    }
+
     /* 31 - B1.7 : export uni (un seul lieu de choix du format = Preferences) -
        le format reel applique = extension du fichier choisi */
     {
@@ -1537,15 +1601,16 @@ int main() {
               "ligne : Maj+L arme le mode, fil ouvert (meme outil, autre commande)");
         lineCancel("fin du test d'armement");
         g_lineMode = false;
-        g_lineFerme = true;                          /* defaut : surface fermee */
+        g_lineFerme = true;                          /* defaut : boucle fermee (B3.1b : jamais de surface) */
         g_linePts = { Vec3(0, 0, 0), Vec3(2, 0, 0), Vec3(2, 0, 2), Vec3(0, 0, 2) };
         g_lineActive = true;
         g_lineMode = true;
         lineCloseLoop();
-        CHECK(g_objs.size() == 1 && g_objs[0].tri.size() == 6 && g_objs[0].edges.size() == 5,
-              "ligne : fermeture en surface = feuille FUSEE au fil (2 tris) ; aretes derivees = 4 bords + 1 diagonale du fan (v1)");
-        CHECK(std::fabs(signedVolume(g_objs[0])) < 1e-12 && g_objs[0].v.size() == 4,
-              "ligne : feuille fermee = 4 sommets (pas de doublon du depart), volume plat nul");
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.empty() && g_objs[0].edges.size() == 4,
+              "ligne : fermeture = fil en BOUCLE sans surface (4 aretes, 0 tri ; fermer en surface = le polygone)");
+        CHECK(g_objs[0].v.size() == 4 && g_objs[0].traceSurface == 0
+              && std::fabs(signedVolume(g_objs[0])) < 1e-12,
+              "ligne : boucle fermee = 4 sommets (pas de doublon du depart), pas de surface");
         CHECK(!g_lineMode && !g_lineActive && g_linePts.empty(),
               "ligne : fermeture = pose + sortie du mode");
 
@@ -1558,6 +1623,21 @@ int main() {
               "ligne : fil ouvert = boucle fermee sans surface (4 aretes, 0 tri)");
         CHECK(g_objs[1].name != g_objs[0].name, "ligne : noms uniques aux deux poses");
         g_lineFerme = true;                          /* retour au defaut */
+
+        /* B3.2b (retour test) : round-trip d un fil ferme - l arete de
+           cloture survit au save/load SANS regen manuelle (la regen des
+           parametres de construction fait partie du CHARGEMENT) */
+        {
+            std::string err;
+            const std::string p = tmpPath("boucle_ligne.s3projet");
+            CHECK(saveProject(p, err), err.c_str());
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), err.c_str());
+            CHECK(g_objs.size() == 2 && g_objs[0].traceFerme == 1
+                  && g_objs[0].tri.empty() && g_objs[0].edges.size() == 4
+                  && g_objs[1].edges.size() == 4,
+                  "ligne : fil ferme relu = boucle complete (arete de cloture survivante, 0 tri)");
+        }
 
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_lineMode = false;
@@ -1924,6 +2004,1015 @@ int main() {
               "spline (controle) fermee : boucle = dernier sommet = premier");
         g_splMode = false; g_splCtrl = false; splReset();
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* B2.7e : EDITION DES TRACES APRES COUP - source de verite TraceData, */
+    /* regeneration par les MEMES fonctions que le trace, ajout/suppression */
+    /* de points, ouvert/ferme, persistence save/load                       */
+    /* ------------------------------------------------------------------ */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        /* 1. LIGNE posee : traceType + points de definition survivent a la pose */
+        g_linePts = { Vec3(0,0,0), Vec3(2,0,0), Vec3(2,0,2) };
+        linePose();
+        CHECK(g_objs.size() == 1 && g_objs[0].traceType == 1 && !g_objs[0].traceFerme,
+              "edition (ligne) : TraceData rempli a la pose (type = LIGNE, ouvert)");
+        CHECK(g_objs[0].tracePts.size() == 3 && (g_objs[0].tracePts[1] - Vec3(2,0,0)).norm() < 1e-12,
+              "edition (ligne) : points de definition = sommets du fil");
+        /* 2. drag d'une poignee : la geometrie suit (source de verite) */
+        g_objs[0].tracePts[1] = Vec3(4,0,1);
+        traceRegen(g_objs[0]);
+        CHECK(g_objs[0].v.size() == 3 && (g_objs[0].v[1] - Vec3(4,0,1)).norm() < 1e-12,
+              "edition (ligne) : poignee deplacee = fil regenere (un seul chemin de code)");
+        /* 3. ajout d'un point : clic au milieu d'un segment -> insertion a l'intervalle */
+        const int ia = traceAddPoint(g_objs[0], Vec3(1,0,1) + g_objs[0].pos);
+        CHECK(ia > 0 && g_objs[0].tracePts.size() == 4,
+              "edition (ligne) : clic sur la courbe = point de definition ajoute");
+        CHECK((g_objs[0].tracePts[(size_t)ia] - Vec3(1,0,1)).norm() < 1e-12,
+              "edition (ligne) : le point ajoute est au bon intervalle");
+        /* 4. suppression + garde du minimum (2 points pour une ligne ouverte) :
+              4 -> 3 -> 2 points ok, puis refus a 2 (minimum atteint) */
+        CHECK(traceDelPoint(g_objs[0], ia), "edition (ligne) : poignee + Suppr = point supprime (4 -> 3)");
+        CHECK(traceDelPoint(g_objs[0], 0) && g_objs[0].tracePts.size() == 2,
+              "edition (ligne) : suppression a 3 points (-> 2)");
+        CHECK(!traceDelPoint(g_objs[0], 0) && g_objs[0].tracePts.size() == 2,
+              "edition (ligne) : garde - minimum 2 points (refus sous le minimum)");
+        /* 5. ouvert/ferme : O bascule (arete de cloture pour le fil) -
+              re-ajout d'un point d'abord (3 points requis pour fermer) */
+        CHECK(traceAddPoint(g_objs[0], Vec3(0,0,2) + g_objs[0].pos) >= 0
+              && g_objs[0].tracePts.size() == 3,
+              "edition (ligne) : re-ajout d'un point (clic sur la courbe)");
+        traceToggleFerme(g_objs[0]);
+        CHECK(g_objs[0].traceFerme == 1 && g_objs[0].edges.size() == 3,
+              "edition (ligne) : O = ferme (arete de cloture derivee)");
+        traceToggleFerme(g_objs[0]);
+        CHECK(g_objs[0].traceFerme == 0 && g_objs[0].edges.size() == 2,
+              "edition (ligne) : O = re-ouvre (chaine simple)");
+        /* 6. SPLINE passage posee, poignee deplacee : la courbe passe par le nouveau point */
+        g_splPts = { Vec3(0,0,0), Vec3(2,0,0), Vec3(4,0,1), Vec3(6,0,0) };
+        g_splMode = true; g_splCtrl = false;
+        splPose(false);
+        g_splMode = false;
+        CHECK(g_objs.size() == 2 && g_objs[1].traceType == 2,
+              "edition (spline) : TraceData rempli a la pose (type = SPLINE passage)");
+        {
+            Object& sp = g_objs[1];
+            const Vec3 nouveau(3, 0, -1);            /* nouveau point de passage (monde) */
+            sp.tracePts[2] = (nouveau - sp.pos) * (1.0 / sp.scl);
+            traceRegen(sp);
+            double dmin = 1e300;
+            for (const Vec3& loc : sp.v) dmin = std::min(dmin, (sp.pos + loc - nouveau).norm());
+            CHECK(dmin < 1e-9, "edition (spline passage) : la courbe regeneree passe par la poignee deplacee");
+            /* extremes exacts conserves (noeuds serres) */
+            CHECK((sp.pos + sp.v.front() - Vec3(0,0,0)).norm() < 1e-9
+                  && (sp.pos + sp.v.back() - Vec3(6,0,0)).norm() < 1e-9,
+                  "edition (spline passage) : extremes exacts apres edition");
+            /* 7. bascule variante a chaud : points conserves, courbe interieure */
+            traceSetVariante(sp, true);
+            CHECK(sp.traceType == 3 && sp.tracePts.size() == 4,
+                  "edition (spline) : Maj+B = variante controle A CHAUD (points conserves)");
+            double dmin2 = 1e300;
+            for (const Vec3& loc : sp.v)
+                dmin2 = std::min(dmin2, (sp.pos + loc - Vec3(3,0,2)).norm());
+            CHECK(dmin2 > 0.05, "edition (spline controle) : la courbe reste interieure au polygone");
+            /* 8. fermeture spline + garde */
+            traceToggleFerme(sp);
+            CHECK(sp.traceFerme == 1 && (sp.v.front() - sp.v.back()).norm() < 1e-12,
+                  "edition (spline) : O = boucle fermee (dernier sommet = premier)");
+            CHECK(traceDelPoint(sp, 3) && sp.tracePts.size() == 3,
+                  "edition (spline fermee) : suppression a 4 points (-> 3)");
+            CHECK(!traceDelPoint(sp, 0), "edition (spline fermee) : garde - minimum 3 points");
+        }
+        /* 9. persistence : TraceData survit au save/load (round-trip) */
+        {
+            std::string err;
+            const std::string p = tmpPath("edition.s3projet");
+            CHECK(saveProject(p, err), err.c_str());
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), err.c_str());
+            CHECK(g_objs.size() == 2 && g_objs[1].traceType == 3 && g_objs[1].traceFerme == 1
+                  && g_objs[1].tracePts.size() == 3,
+                  "edition : persistence - type/ouvert-ferme/points survivent au save/load");
+            /* la geometrie relue est IDENTIQUE (regenerable a l'identique) */
+            traceRegen(g_objs[1]);
+            CHECK(g_objs[1].v.size() == g_objs[1].v.size(), "edition : relue (sanity)");
+        }
+        /* 10. vieux projets (sans bloc trace) restent relisibles : retrocompatibilite */
+        {
+            std::string err;
+            const std::string p = tmpPath("sans_trace.s3projet");
+            std::ofstream f(p);
+            f << "s3projet 1\nobjet Cube\npos 0 0 0\nscl 1\ncol 0.5 0.5 0.5\n"
+                 "verts 1\n0 0 0\ntris 0\n";
+            f.close();
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), err.c_str());
+            CHECK(g_objs.size() == 1 && g_objs[0].traceType == 0,
+                  "edition : vieux projet sans bloc trace relisible (traceType = 0)");
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* B2.7e E2 : formes de base editables (rectangle, cercle, arc,        */
+    /* polygone) - memes poignees, regeneration par les MEMES constructions */
+    /* ------------------------------------------------------------------ */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        /* 1. RECTANGLE : TraceData = 2 coins ; drag d'un coin = dimensions suivent */
+        rectPose(Vec3(0,0,0), Vec3(2,0,3));
+        CHECK(g_objs.size() == 1 && g_objs[0].traceType == 4 && g_objs[0].tracePts.size() == 2,
+              "edition (rectangle) : TraceData = 2 coins a la pose");
+        g_objs[0].tracePts[1] = Vec3(5, 0, 1);      /* coin oppose deplace (locales) */
+        traceRegen(g_objs[0]);
+        CHECK(g_objs[0].v.size() == 4 && std::fabs(g_objs[0].v[2].x - 5.0) < 1e-12
+              && std::fabs(g_objs[0].v[2].z - 1.0) < 1e-12,
+              "edition (rectangle) : coins canoniques recalcules (min/max des 2 coins)");
+        CHECK(g_objs[0].tri.size() == 6,
+              "edition (rectangle) : 2 tris regeneres");
+        /* 2. CERCLE : centre + point du rayon ; drag du rayon = 24 tris suivent */
+        cerclePose(Vec3(1,0,1), 2.0);
+        CHECK(g_objs[1].traceType == 5 && g_objs[1].v.size() == 1 + (size_t)CERCLE_SEG,
+              "edition (cercle) : TraceData = centre + point du rayon, 24 segments");
+        g_objs[1].tracePts[1] = Vec3(4, 0, 0);      /* rayon 4 (locales, centre = 0,0,0) */
+        traceRegen(g_objs[1]);
+        CHECK(std::fabs((g_objs[1].v[1] - g_objs[1].tracePts[0]).norm() - 4.0) < 1e-9,
+              "edition (cercle) : rayon regenere = distance centre -> poignee");
+        /* 3. ARC : 3 points de definition ; drag du bombement = arc suit */
+        arcPose(Vec3(0,0,0), Vec3(1,0,1), Vec3(2,0,0));
+        CHECK(g_objs[2].traceType == 6 && g_objs[2].v.size() == (size_t)ARC_SEG + 1,
+              "edition (arc) : TraceData = depart/fin/bombement, 13 sommets");
+        {
+            double dmin = 1e300;
+            for (const Vec3& loc : g_objs[2].v) dmin = std::min(dmin, (loc - Vec3(1,0,1)).norm());
+            CHECK(dmin < 1e-9, "edition (arc) : l'arc passe EXACTEMENT par le bombement");
+            g_objs[2].tracePts[1] = Vec3(1, 0, -1);   /* bombement deplace (locales) */
+            traceRegen(g_objs[2]);
+            dmin = 1e300;
+            for (const Vec3& loc : g_objs[2].v) dmin = std::min(dmin, (loc - Vec3(1,0,-1)).norm());
+            CHECK(dmin < 1e-9, "edition (arc) : bombe deplace = arc regenere passant par le nouveau point");
+            CHECK((g_objs[2].v.front()).norm() < 1e-9 && (g_objs[2].v.back() - Vec3(2,0,0)).norm() < 1e-9,
+                  "edition (arc) : depart et fin exacts (ancre locale conservee)");
+        }
+        /* 3b. B2.7e2b : drag du DEPART - l'arc doit rester passe par les 3 poignees
+           (bug corrige : le rebasage sur tracePts[0] detachait l'arc des poignees) */
+        {
+            g_objs[2].tracePts[0] = Vec3(1, 0, 1);   /* depart deplace (locales) */
+            traceRegen(g_objs[2]);
+            bool ok3 = true;
+            for (int i = 0; i < 3 && ok3; ++i) {
+                double dmin = 1e300;
+                for (const Vec3& loc : g_objs[2].v)
+                    dmin = std::min(dmin, (loc - g_objs[2].tracePts[(size_t)i]).norm());
+                ok3 = dmin < 1e-9;
+            }
+            CHECK(ok3, "edition (arc) : drag du DEPART = l'arc passe encore par les 3 poignees");
+            /* retour a l'etat initial pour le bloc suivant (arc degenere) */
+            g_objs[2].tracePts[0] = Vec3(0, 0, 0);
+            traceRegen(g_objs[2]);
+        }
+        /* 4. ARC degenere (bombement aligne) : la derniere geometrie valide est GARDEE */
+        {
+            const std::vector<Vec3> avant = g_objs[2].v;
+            g_objs[2].tracePts[1] = Vec3(1, 0, 0);    /* aligne avec la corde */
+            traceRegen(g_objs[2]);
+            bool intact = g_objs[2].v.size() == avant.size();
+            for (size_t i = 0; intact && i < avant.size(); ++i)
+                intact = (g_objs[2].v[i] - avant[i]).norm() < 1e-12;
+            CHECK(intact, "edition (arc) : bombe aligne = geometrie precedente conservee");
+        }
+        /* 5. POLYGONE : sommets = TraceData ; ajout sur un bord, suppression, garde a 3 */
+        g_polyPts = { Vec3(0,0,0), Vec3(4,0,0), Vec3(4,0,4), Vec3(0,0,4) };
+        polyPose();
+        CHECK(g_objs[3].traceType == 7 && g_objs[3].traceFerme == 1 && g_objs[3].tri.size() == 6,
+              "edition (polygone) : TraceData = sommets, fan 2 tris");
+        CHECK(traceAddPoint(g_objs[3], Vec3(6,0,2)) >= 0 && g_objs[3].tracePts.size() == 5
+              && g_objs[3].tri.size() == 9,
+              "edition (polygone) : clic sur un bord = sommet ajoute (3 tris)");
+        CHECK(traceDelPoint(g_objs[3], 4) && g_objs[3].tri.size() == 6,
+              "edition (polygone) : point supprime (2 tris)");
+        {
+            Object& pg = g_objs[3];
+            CHECK(traceDelPoint(pg, 3) && pg.tracePts.size() == 3,
+                  "edition (polygone) : suppression a 4 points (-> 3)");
+            CHECK(!traceDelPoint(pg, 0), "edition (polygone) : garde - minimum 3 sommets");
+            traceToggleFerme(pg);
+            CHECK(pg.traceFerme == 1, "edition (polygone) : ouvert/ferme sans effet (surface seule)");
+        }
+        /* 6. persistence : rectangle et cercle round-trip (bloc trace) */
+        {
+            std::string err;
+            const std::string p = tmpPath("edition_e2.s3projet");
+            CHECK(saveProject(p, err), err.c_str());
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), err.c_str());
+            CHECK(g_objs.size() == 4 && g_objs[0].traceType == 4 && g_objs[1].traceType == 5
+                  && g_objs[2].traceType == 6 && g_objs[3].traceType == 7,
+                  "edition E2 : types de trace survivent au save/load (4 formes)");
+            CHECK(g_objs[1].tracePts.size() == 2 && std::fabs(g_objs[1].tracePts[1].x - 4.0) < 1e-12,
+                  "edition E2 : points de definition fideles au save/load");
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyPts.clear();
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* B2.7e E3 : extrusion parametrique (type 8 = profil + vecteur)       */
+    /* ------------------------------------------------------------------ */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        /* 1. pull pose sur une feuille rectangle = conversion en extrusion */
+        rectPose(Vec3(0,0,0), Vec3(4,0,2));
+        CHECK(g_objs.size() == 1 && g_objs[0].traceType == 4 && g_objs[0].tri.size() == 6,
+              "E3 : feuille rectangle posee (2 tris, type 4)");
+        {
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[0], 0, dd), "E3 : la feuille est capturable par P");
+            CHECK(extrudeConvertTo(g_objs[0], dd, 3.0),
+                  "E3 : pull pose = conversion en extrusion parametrique (type 8)");
+            CHECK(g_objs[0].traceType == 8 && g_objs[0].traceProfil == 4,
+                  "E3 : profil rectangle conserve (traceProfil = 4)");
+            CHECK(g_objs[0].v.size() == 8 && g_objs[0].tri.size() == 36,
+                  "E3 : prisme = 8 sommets, 12 tris (8 murs + 2 x 2 caps)");
+            CHECK(std::fabs(signedVolume(g_objs[0]) - 24.0) < 1e-9,
+                  "E3 : volume signe = 4 x 2 x 3 = 24 (normales exterieures)");
+        }
+        /* 2. pousser (vecteur inverse) : windings toujours exterieurs */
+        g_objs[0].traceVec = Vec3(0, -3, 0);
+        traceRegen(g_objs[0]);
+        CHECK(std::fabs(signedVolume(g_objs[0]) - 24.0) < 1e-9,
+              "E3 : pousser (vecteur vers le bas) = volume exterieur conserve");
+        g_objs[0].traceVec = Vec3(0, 3, 0);
+        traceRegen(g_objs[0]);
+        /* 3. edition du profil : drag d'un coin = le prisme suit */
+        g_objs[0].tracePts[1] = Vec3(2, 0, 1);      /* coin oppose deplace (locales) */
+        traceRegen(g_objs[0]);
+        CHECK(g_objs[0].v.size() == 8 && std::fabs(g_objs[0].v[6].x - 2.0) < 1e-12
+              && std::fabs(g_objs[0].v[6].y - 3.0) < 1e-12 && std::fabs(g_objs[0].v[6].z - 1.0) < 1e-12,
+              "E3 : coin du profil deplace = le cap superieur suit (v[6] = coin + h)");
+        CHECK(std::fabs(signedVolume(g_objs[0]) - 6.0) < 1e-9,
+              "E3 : volume = 2 x 1 x 3 = 6 apres le drag du coin");
+        /* 4. edition de la hauteur (traceVec) : volume proportionnel */
+        g_objs[0].traceVec = Vec3(0, 1.5, 0);
+        traceRegen(g_objs[0]);
+        CHECK(std::fabs(signedVolume(g_objs[0]) - 3.0) < 1e-9,
+              "E3 : hauteur 1.5 = volume 3 (poignee bleue = traceVec)");
+        /* 5. cercle extrude : prisme a 24 segments */
+        cerclePose(Vec3(10,0,10), 2.0);
+        {
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[1], 0, dd), "E3 : feuille cercle capturable");
+            CHECK(extrudeConvertTo(g_objs[1], dd, 2.0), "E3 : cercle extrude (type 8, profil 5)");
+            /* B2.7e3b : structure CENTRE + bord conservee (fan centre, comme
+               cerclePose) - l ancien fan centre sur le bord etait malsain */
+            CHECK(g_objs[1].v.size() == 2 * (size_t)(CERCLE_SEG + 1)
+                  && g_objs[1].tri.size() == (size_t)(3 * (2 * CERCLE_SEG + 2 * CERCLE_SEG)),
+                  "E3 : prisme circulaire = 50 sommets, 48 murs + 2 x 24 caps centres");
+            {
+                const Vec3& ch0 = g_objs[1].v[CERCLE_SEG + 1];   /* centre du cap haut */
+                bool centre = true;
+                double dmin = 1e300;
+                for (size_t i = 0; i < (size_t)CERCLE_SEG; ++i) {
+                    const double d = (ch0 - g_objs[1].v[CERCLE_SEG + 2 + i]).norm();
+                    if (std::fabs(d - 2.0) > 1e-9) centre = false;
+                    dmin = std::min(dmin, d);
+                }
+                CHECK(centre && dmin > 1.9,
+                      "E3 : le cap superieur reste un fan CENTRE (equidistant du bord)");
+            }
+            const double vol = signedVolume(g_objs[1]);
+            /* aire du polygone INSCRIT a 24 cotes (pas le disque) x hauteur */
+            const double attendu = 0.5 * CERCLE_SEG * 4.0
+                                 * std::sin(6.283185307179586 / CERCLE_SEG) * 2.0;
+            CHECK(std::fabs(vol - attendu) < 1e-6,
+                  "E3 : volume du prisme circulaire = aire du polygone x hauteur");
+        }
+        /* 6. refus : une coque (cube) n est pas convertible */
+        {
+            const double col[3] = {0.5, 0.5, 0.5};
+            g_objs.push_back(makeBoxObject("Cube", Vec3(0.5,0.5,0.5), Vec3(0.5,0.5,0.5), col));
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[2], 2, dd), "E3 : face du cube capturable");
+            CHECK(!extrudeConvertTo(g_objs[2], dd, 2.0),
+                  "E3 : coque sans TraceData = pas de conversion (patch != tout l objet)");
+            CHECK(g_objs[2].traceType == 0, "E3 : le cube reste non parametrique");
+        }
+        /* 7. polygone extrude : ajout/suppression sur le profil */
+        g_polyPts = { Vec3(20,0,0), Vec3(24,0,0), Vec3(24,0,4), Vec3(20,0,4) };
+        polyPose();
+        {
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[3], 0, dd) && extrudeConvertTo(g_objs[3], dd, 1.0),
+                  "E3 : polygone extrude (type 8, profil 7)");
+            CHECK(g_objs[3].tri.size() == (size_t)(3 * (2 * 4 + 2 * 2)),
+                  "E3 : prisme polygonal = 12 tris (8 murs + 4 caps)");
+            CHECK(traceAddPoint(g_objs[3], Vec3(22,0,2)) >= 0 && g_objs[3].tracePts.size() == 5,
+                  "E3 : point ajoute au profil extrude (regles du polygone)");
+            CHECK(g_objs[3].tri.size() == (size_t)(3 * (2 * 5 + 2 * 3)),
+                  "E3 : profil a 5 sommets = 16 tris (10 murs + 6 caps)");
+            CHECK(traceDelPoint(g_objs[3], 4) && g_objs[3].tri.size() == (size_t)(3 * 12),
+                  "E3 : point supprime du profil extrude = retour a 12 tris");
+            CHECK(traceDelPoint(g_objs[3], 0) && g_objs[3].tracePts.size() == 3,
+                  "E3 : suppression a 4 points (-> 3, regles du polygone)");
+            CHECK(!traceDelPoint(g_objs[3], 0), "E3 : garde - profil polygone minimum 3 sommets");
+            /* B2.7e3b : garde du clic-sol (retour test : points parasites) */
+            CHECK(traceAddPoint(g_objs[3], Vec3(40, 0, 40), true) < 0,
+                  "E3 : garde - clic-sol LOIN du profil refuse");
+            CHECK(traceAddPoint(g_objs[3], Vec3(24.05, 0, 2), true) >= 0,
+                  "E3 : garde - clic-sol PRES du profil accepte (0.05)");
+        }
+        /* 8. O sur une extrusion de LIGNE fermee = bande (murs seuls) puis retour
+           B3.1b : la ligne ne ferme plus en surface - la feuille (ancien format,
+           traceSurface = 1) est construite ici a la main comme dans un vieux projet */
+        {
+            Object feuille;
+            feuille.name = "Ligne";
+            feuille.traceType = 1; feuille.traceFerme = 1; feuille.traceSurface = 1;
+            feuille.tracePts = { Vec3(30,0,0), Vec3(32,0,0), Vec3(32,0,2), Vec3(30,0,2) };
+            feuille.tri = { 0, 1, 2, 0, 2, 3 };      /* fan present = vieux projet (la regen le conserve) */
+            traceRegen(feuille);
+            g_objs.push_back(feuille);
+        }
+        CHECK(g_objs[4].traceType == 1 && g_objs[4].traceFerme == 1 && g_objs[4].traceSurface == 1,
+              "E3 : feuille ligne fermee (ancien format) posee");
+        {
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[4], 0, dd) && extrudeConvertTo(g_objs[4], dd, 2.0),
+                  "E3 : ligne fermee extrudee (type 8, profil 1)");
+            CHECK(g_objs[4].tri.size() == (size_t)(3 * 12),
+                  "E3 : prisme ligne = 12 tris (8 murs + 4 caps)");
+            traceToggleFerme(g_objs[4]);
+            CHECK(g_objs[4].traceFerme == 0 && g_objs[4].tri.size() == (size_t)(3 * 6),
+                  "E3 : O = profil ouvert -> bande (6 tris = 3 murs x 2, sans caps)");
+            traceToggleFerme(g_objs[4]);
+            CHECK(g_objs[4].traceFerme == 1 && g_objs[4].tri.size() == (size_t)(3 * 12),
+                  "E3 : O = retour au prisme ferme (12 tris)");
+        }
+        /* 9. persistence : l extrusion survit au save/load (profil + vecteur) */
+        {
+            std::string err;
+            const std::string p = tmpPath("extrusion.s3projet");
+            CHECK(saveProject(p, err), err.c_str());
+            const size_t nObjAvant = g_objs.size();
+            const std::vector<Vec3> vAvant = g_objs[0].v;
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), err.c_str());
+            CHECK(g_objs.size() == nObjAvant && g_objs[0].traceType == 8 && g_objs[0].traceProfil == 4,
+                  "E3 : type 8 + sous-type survivent au save/load");
+            CHECK(std::fabs(g_objs[0].traceVec.y - 1.5) < 1e-9,
+                  "E3 : vecteur d extrusion fidele au save/load");
+            traceRegen(g_objs[0]);
+            bool identique = g_objs[0].v.size() == vAvant.size();
+            for (size_t i = 0; identique && i < vAvant.size(); ++i)
+                identique = (g_objs[0].v[i] - vAvant[i]).norm() < 1e-9;
+            CHECK(identique, "E3 : geometrie regeneree identique apres save/load");
+        }
+        /* 10. E3c : point ajoute EXACTEMENT sur un bord du profil (clic sur
+              un mur = projection verticale) -> tri de cap degenere (colineaire)
+              ecarte par pushFanTri, sinon makeExtrude refuse ("Face non plane") */
+        {
+            g_polyPts = { Vec3(50,0,0), Vec3(54,0,0), Vec3(54,0,4), Vec3(50,0,4) };
+            polyPose();
+            Object& poly = g_objs.back();           /* polyPose ajoute a la fin */
+            Extrude dd;
+            CHECK(makeExtrude(poly, 0, dd) && extrudeConvertTo(poly, dd, 2.0),
+                  "E3c : polygone 4x4 extrude (h = 2) avant ajout");
+            const double volAvant = signedVolume(poly);
+            CHECK(std::fabs(volAvant - 32.0) < 1e-6,
+                  "E3c : volume initial = 16 (aire) x 2 (hauteur)");
+            CHECK(traceAddPoint(poly, Vec3(52,0,0), false) >= 0
+                  && poly.tracePts.size() == 5,
+                  "E3c : point insere EXACTEMENT sur le bord (52,0,0) = milieu du cote");
+            bool normalesOk = true;
+            for (const Vec3& nn : poly.n)
+                if (dot(nn, nn) < 0.5) normalesOk = false;
+            CHECK(normalesOk, "E3c : aucune normale nulle apres insertion colineaire");
+            CHECK(std::fabs(signedVolume(poly) - volAvant) < 1e-6,
+                  "E3c : volume conserve par le point colineaire");
+            CHECK(makeExtrude(poly, 0, dd),
+                  "E3c : Push/Pull refonctionne apres l ajout (Face non plane repare)");
+        }
+        /* ===== B3 : balayage (extrusion le long d'un chemin) ===== */
+        {
+            /* profil = polygone 4x4 pose, chemin = fil ligne droite (pose a la main) */
+            g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+            polyPose();
+            Object chemin;
+            chemin.name = "Ligne";
+            chemin.traceType = 1; chemin.traceFerme = 0;
+            chemin.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            g_objs.push_back(chemin);
+            const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+            CHECK(sweepConvertTo(g_objs[ip], g_objs[ic]),
+                  "B3 : balayage polygone + ligne droite accepte");
+            CHECK(g_objs[ip].traceType == 9 && g_objs[ip].traceProfil == 7,
+                  "B3 : l objet passe en type 9 (profil = polygone)");
+            CHECK(g_objs[ip].traceCheminType == 1 && g_objs[ip].traceChemin.size() == 2,
+                  "B3 : les points du chemin sont absorbes");
+            CHECK(g_objs[ip].v.size() == 8, "B3 : 2 anneaux de 4 sommets");
+            CHECK(g_objs[ip].tri.size() == (size_t)(3 * 12),
+                  "B3 : prisme balaye = 12 tris (8 murs + 4 caps)");
+            CHECK(std::fabs(signedVolume(g_objs[ip]) - 160.0) < 1e-6,
+                  "B3 : volume = aire 16 x longueur 10");
+            /* profil perpendiculaire au chemin : anneaux a z = 10 et 20 exactement (monde) */
+            bool perp = true;
+            for (const Vec3& p : g_objs[ip].v) {
+                const Vec3 pw = g_objs[ip].pos + p * g_objs[ip].scl;
+                if (std::fabs(pw.z - 10.0) > 1e-9 && std::fabs(pw.z - 20.0) > 1e-9) perp = false;
+            }
+            CHECK(perp, "B3 : anneaux PERPENDICULAIRES au chemin (z constant par anneau)");
+            CHECK(signedVolume(g_objs[ip]) > 0.0, "B3 : normales exterieures (volume signe positif)");
+            /* B3.1b : le point de la face le plus proche du depart du fil se
+               connecte EXACTEMENT au depart du chemin (maitrise Follow Me) */
+            {
+                bool connexe = false;
+                for (const Vec3& p : g_objs[ip].v) {
+                    const Vec3 pw = g_objs[ip].pos + p * g_objs[ip].scl;
+                    if ((pw - Vec3(0, 0, 10)).norm() < 1e-9) { connexe = true; break; }
+                }
+                CHECK(connexe, "B3 : connexion - le point de la face le plus proche du fil est pose sur le depart");
+            }
+            /* B3.5 : ROLL par defaut = COLLER PLAT - la section a la station 0
+               garde les directions tracees : ses aretes suivent x OU y (le
+               losange incline d avant ne satisfaisait ni l un ni l autre) */
+            {
+                bool aligne = true;
+                for (size_t k = 0; k < 4 && aligne; ++k) {
+                    const Vec3 a = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                    const Vec3 b = g_objs[ip].pos + g_objs[ip].v[(k + 1) % 4] * g_objs[ip].scl;
+                    if (std::fabs(a.x - b.x) > 1e-9 && std::fabs(a.y - b.y) > 1e-9)
+                        aligne = false;
+                }
+                CHECK(aligne, "B3.5 : coller plat - section alignee aux axes (pas de losange incline)");
+            }
+            /* chemin ferme = solide torique (sans caps) */
+            g_polyPts = { Vec3(70,0,0), Vec3(74,0,0), Vec3(74,0,4), Vec3(70,0,4) };
+            polyPose();
+            Object boucle;
+            boucle.name = "Ligne (2)";
+            boucle.traceType = 1; boucle.traceFerme = 1;
+            boucle.tracePts = { Vec3(0,0,30), Vec3(0,0,36), Vec3(4,0,36), Vec3(4,0,30) };
+            g_objs.push_back(boucle);
+            const size_t jp = g_objs.size() - 2, jc = g_objs.size() - 1;
+            CHECK(sweepConvertTo(g_objs[jp], g_objs[jc]), "B3 : chemin FERME accepte (torique)");
+            CHECK(g_objs[jp].v.size() == 16 && g_objs[jp].tri.size() == (size_t)(3 * 32),
+                  "B3 : torique = 4 anneaux, 32 tris (murs seuls, sans caps)");
+            CHECK(signedVolume(g_objs[jp]) > 0.0, "B3 : torique = normales exterieures");
+            /* refus : chemin non trace, meme objet */
+            g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+            polyPose();
+            Object& profil3 = g_objs.back();
+            CHECK(!sweepConvertTo(profil3, profil3), "B3 : refus - le chemin ne peut pas etre l objet lui-meme");
+            Object coque;
+            coque.traceType = 0;
+            CHECK(!sweepConvertTo(profil3, coque), "B3 : refus - chemin non trace (type 0)");
+            /* persistence : le balayage survit au save/load (profil + chemin) */
+            {
+                std::string err;
+                const std::string pth = tmpPath("balayage.s3projet");
+                CHECK(saveProject(pth, err), err.c_str());
+                const size_t nAvant = g_objs.size();
+                const std::vector<Vec3> chAvant = g_objs[ip].traceChemin;
+                const std::vector<Vec3> vAvant = g_objs[ip].v;
+                g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+                CHECK(loadProject(pth, err), err.c_str());
+                const bool ok = g_objs.size() == nAvant && g_objs[ip].traceType == 9
+                      && g_objs[ip].traceChemin.size() == chAvant.size();
+                CHECK(ok, "B3 : type 9 + chemin survivent au save/load");
+                bool identique = false;
+                if (ok) {
+                    traceRegen(g_objs[ip]);
+                    identique = g_objs[ip].v.size() == vAvant.size();
+                    for (size_t i = 0; identique && i < vAvant.size(); ++i)
+                        identique = (g_objs[ip].v[i] - vAvant[i]).norm() < 1e-9;
+                }
+                CHECK(identique, "B3 : geometrie du balayage regeneree identique apres save/load");
+            }
+            /* B3.5 : COLLAGE INTELLIGENT - l accroche peut etre un MILIEU de
+               segment : le milieu de l arete (3,0,11)-(-3,0,9) est (0,0,10),
+               EXACTEMENT sur le fil, alors que les sommets en sont a 3.0,
+               3.16 et 12 -> le MILIEU se colle au fil, aucun sommet n y touche
+               (a x constant la distance au fil est lineaire le long d une
+               arete : l arete doit ENJAMBER le fil pour departager) */
+            {
+                g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+                g_polyPts = { Vec3(3,0,11), Vec3(-3,0,9), Vec3(12,0,12) };
+                polyPose();
+                Object ch2;
+                ch2.name = "Ligne";
+                ch2.traceType = 1; ch2.traceFerme = 0;
+                ch2.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+                g_objs.push_back(ch2);
+                const size_t p2 = g_objs.size() - 2, c2 = g_objs.size() - 1;
+                CHECK(sweepConvertTo(g_objs[p2], g_objs[c2]),
+                      "B3.5 : triangle + ligne acceptes (accroche = milieu de segment)");
+                const Vec3 f0(0, 0, 10), f1(0, 0, 20);
+                const Vec3 fb = f1 - f0;
+                auto distFil = [&](const Vec3& p) {
+                    double t = dot(p - f0, fb) / dot(fb, fb);
+                    if (t < 0.0) t = 0.0;
+                    if (t > 1.0) t = 1.0;
+                    return (f0 + fb * t - p).norm();
+                };
+                bool sommetSurFil = false, milieuSurFil = false;
+                if (g_objs[p2].v.size() == 6) {         /* 2 anneaux de 3 */
+                    for (const Vec3& pv : g_objs[p2].v) {
+                        const Vec3 pw = g_objs[p2].pos + pv * g_objs[p2].scl;
+                        if (distFil(pw) < 1e-9) sommetSurFil = true;
+                    }
+                    for (size_t r = 0; r < 2 && !milieuSurFil; ++r)
+                        for (size_t k = 0; k < 3; ++k) {
+                            const Vec3 a = g_objs[p2].pos + g_objs[p2].v[r * 3 + k] * g_objs[p2].scl;
+                            const Vec3 b = g_objs[p2].pos + g_objs[p2].v[r * 3 + (k + 1) % 3] * g_objs[p2].scl;
+                            if (distFil((a + b) * 0.5) < 1e-9) { milieuSurFil = true; break; }
+                        }
+                }
+                CHECK(!sommetSurFil && milieuSurFil,
+                      "B3.5 : le MILIEU de segment se colle au fil (aucun sommet sur le fil)");
+            }
+            /* B3.6a : ACCROCHE PINCEE - choisir LE point de connexion (O =
+               cible ACCROCHE, clic sur une poignee orange) */
+            {
+                g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+                g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+                polyPose();
+                Object ch3;
+                ch3.name = "Ligne";
+                ch3.traceType = 1; ch3.traceFerme = 0;
+                ch3.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+                g_objs.push_back(ch3);
+                const size_t p3 = g_objs.size() - 2, c3 = g_objs.size() - 1;
+                CHECK(sweepConvertTo(g_objs[p3], g_objs[c3]),
+                      "B3.6a : balayage reconstruit pour l accroche");
+                Object& sw3 = g_objs[p3];
+                std::vector<Vec3> acc3;
+                CHECK(sweepAccroches(sw3, acc3) && acc3.size() == 8,
+                      "B3.6a : polygone ferme = 8 accroches (4 sommets + 4 milieux)");
+                sw3.traceAccroche = 0;                  /* sommet (60,0,0) */
+                traceRegen(sw3);
+                const Vec3 w0 = sw3.pos + sw3.v[0] * sw3.scl;
+                CHECK((w0 - Vec3(0,0,10)).norm() < 1e-9,
+                      "B3.6a : accroche PINCEE 0 (sommet) posee sur le depart du fil");
+                sw3.traceAccroche = 2;                  /* coin (64,0,4) */
+                traceRegen(sw3);
+                const Vec3 w2 = sw3.pos + sw3.v[2] * sw3.scl;
+                CHECK((w2 - Vec3(0,0,10)).norm() < 1e-9,
+                      "B3.6a : changer d accroche = le coin (64,0,4) est colle au fil");
+                /* persistance (principe B2.7e : parametre de construction) */
+                {
+                    const std::vector<Vec3> vAv3 = sw3.v;
+                    const std::string pth3 = tmpPath("accroche.s3projet");
+                    std::string err3;
+                    CHECK(saveProject(pth3, err3), err3.c_str());
+                    g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+                    CHECK(loadProject(pth3, err3), err3.c_str());
+                    CHECK(g_objs.size() == 2 && g_objs[0].traceAccroche == 2,
+                          "B3.6a : l accroche pincee survit au save/load");
+                    traceRegen(g_objs[0]);
+                    bool id3 = g_objs[0].v.size() == vAv3.size();
+                    for (size_t i = 0; id3 && i < vAv3.size(); ++i)
+                        id3 = (g_objs[0].v[i] - vAv3[i]).norm() < 1e-9;
+                    CHECK(id3, "B3.6a : geometrie identique apres save/load (accroche pincee)");
+                    g_objs[0].traceAccroche = 999;      /* hors bornes = repli */
+                    traceRegen(g_objs[0]);
+                    bool repli = false;
+                    for (const Vec3& pw : g_objs[0].v) {
+                        const Vec3 ww = g_objs[0].pos + pw * g_objs[0].scl;
+                        if ((ww - Vec3(0,0,10)).norm() < 1e-9) { repli = true; break; }
+                    }
+                    CHECK(repli, "B3.6a : accroche hors bornes = repli collage intelligent");
+                }
+            }
+            /* B3.6a : accroche CENTRE du cercle - le fil passe par l axe du
+               tube (tore) ; le centre est la derniere accroche de la liste */
+            {
+                g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+                g_cercleMode = true; cercleReset();
+                cerclePose(Vec3(10, 0, 10), 2.0);
+                Object ch4;
+                ch4.name = "Ligne";
+                ch4.traceType = 1; ch4.traceFerme = 0;
+                ch4.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+                g_objs.push_back(ch4);
+                const size_t p4 = g_objs.size() - 2, c4 = g_objs.size() - 1;
+                CHECK(sweepConvertTo(g_objs[p4], g_objs[c4]),
+                      "B3.6a : cercle + ligne acceptes");
+                std::vector<Vec3> acc4;
+                CHECK(sweepAccroches(g_objs[p4], acc4)
+                      && acc4.size() == (size_t)(2 * CERCLE_SEG + 1),
+                      "B3.6a : cercle = bord + milieux + CENTRE (derniere accroche)");
+                g_objs[p4].traceAccroche = (int)acc4.size() - 1;
+                traceRegen(g_objs[p4]);
+                const Vec3 wc = g_objs[p4].pos + g_objs[p4].v[0] * g_objs[p4].scl;
+                CHECK((wc - Vec3(0,0,10)).norm() < 1e-9,
+                      "B3.6a : accroche CENTRE = le fil passe dans l axe du tube");
+            }
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyPts.clear(); g_lineMode = false; lineReset();
+    }
+
+    { /* B3.6a-bis : fils SELECTIONNABLES devant un solide (splines par
+         controle incaptables, retour test) + pan Maj+clic droit robuste
+         (ordre du geste libre) + ALTITUDE des poignees conservee */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_winW = 1600; g_winH = 900;
+        g_cam = g_camHome;
+        g_cam.target = Vec3(0, 2, 0); g_cam.dist = 25.0;
+        g_editMode = false; g_editObj = -1; g_editGrab = -1;
+        g_rightDown = false; g_mode = M_None;
+        g_sweepEditChemin = false; g_sweepEditAcc = false;
+        auto pixelDe = [](const Vec3& c, double& px, double& py) {
+            const double t = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+            const Vec3 d = normalized(c - g_cam.pos());
+            const double df = dot(d, g_cam.forward());
+            const double aspect = (double)g_winW / (double)g_winH;
+            const double ndcX = dot(d, g_cam.right()) / (df * t * aspect);
+            const double ndcY = dot(d, g_cam.up()) / (df * t);
+            px = (ndcX + 1.0) * 0.5 * (double)g_winW;
+            py = (1.0 - ndcY) * 0.5 * (double)g_winH;
+        };
+        /* solide : boite 10x2x10 (derriere la courbe vue de la camera) */
+        {
+            Object cube; cube.name = "Cube";
+            cube.v = { Vec3(-5,0,-5),Vec3(5,0,-5),Vec3(5,0,5),Vec3(-5,0,5),
+                       Vec3(-5,2,-5),Vec3(5,2,-5),Vec3(5,2,5),Vec3(-5,2,5) };
+            const unsigned t[] = {0,1,2, 0,2,3, 4,6,5, 4,7,6, 0,4,5, 0,5,1,
+                                  1,5,6, 1,6,2, 2,6,7, 2,7,3, 3,7,4, 3,4,0};
+            for (int i = 0; i < 36; ++i) cube.tri.push_back(t[i]);
+            computeObjectDerived(cube);
+            g_objs.push_back(cube);
+        }
+        /* spline PAR CONTROLE (type 3) en pont au-dessus de la boite :
+           4 points de controle = Bezier cubique, milieu exact (0,4,0) */
+        g_splMode = true; g_splCtrl = true; splReset();
+        const std::vector<Vec3> pont = { Vec3(-6,4,0), Vec3(-2,4,0), Vec3(2,4,0), Vec3(6,4,0) };
+        for (const Vec3& q : pont) g_splPts.push_back(q);
+        splFinish();
+        g_splMode = false; g_splCtrl = false;
+        CHECK(g_objs.size() == 2 && g_objs[1].traceType == 3 && g_objs[1].tri.empty(),
+              "B3.6a-bis : spline controle (type 3) posee en pont au-dessus du solide");
+        {
+            extern double g_stubCursorX, g_stubCursorY;
+            double px, py;
+            pixelDe(Vec3(0, 4, 0), px, py);           /* milieu exact de la courbe */
+            g_stubCursorX = px; g_stubCursorY = py;
+            CHECK(pickAt(W) == 1,
+                  "B3.6a-bis : clic sur la courbe (type 3) = la SPLINE gagne (le solide derriere ne masque plus)");
+            pixelDe(Vec3(-4, 2, 3), px, py);          /* face du cube, courbe loin du rayon */
+            g_stubCursorX = px; g_stubCursorY = py;
+            CHECK(pickAt(W) == 0,
+                  "B3.6a-bis : le solide PLUS PROCHE gagne toujours (regression evitee)");
+        }
+        /* pan Maj + clic droit EN EDITION - les deux ordres du geste */
+        {
+            extern double g_stubCursorX, g_stubCursorY;
+            g_editMode = true; g_editObj = -1; g_mode = M_None;
+            g_stubCursorX = 800; g_stubCursorY = 450;
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, GLFW_MOD_SHIFT);
+            CHECK(g_mode == M_Pan && g_editMode,
+                  "B3.6a-bis : pan EN EDITION - Maj + clic droit presse = M_Pan (edition conservee)");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, GLFW_MOD_SHIFT);
+            CHECK(g_mode == M_None && g_editMode,
+                  "B3.6a-bis : relachement = fin du pan, edition toujours active");
+            /* ordre inverse : clic droit presse D'ABORD, Maj ensuite */
+            g_mode = M_None;
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
+            CHECK(g_editMode, "B3.6a-bis : clic droit presse sans Maj = edition NON quittee au presse");
+            onKey(W, GLFW_KEY_LEFT_SHIFT, 0, GLFW_PRESS, 0);
+            CHECK(g_mode == M_Pan,
+                  "B3.6a-bis : Maj pressee PENDANT le clic droit = pan arme (ordre du geste libre)");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, GLFW_MOD_SHIFT);
+            CHECK(g_mode == M_None && g_editMode,
+                  "B3.6a-bis : pan (ordre inverse) fini au relachement, edition conservee");
+            /* regle conservee : clic droit SANS pan (Maj jamais arrivee) = sortie d'edition */
+            g_mode = M_None;
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, 0);
+            CHECK(!g_editMode, "B3.6a-bis : clic droit sans Maj ni pan = sortie d'edition (regle conservee)");
+            /* B3.6a-ter : en edition, Maj tenue au clic sans effet = PAN
+               (meme regle que la selection), sans Maj = orbite */
+            g_editMode = true; g_mode = M_None;
+            editOrbit(W, true);
+            CHECK(g_mode == M_Pan, "B3.6a-ter : edition, clic sans effet AVEC Maj = PAN");
+            editOrbit(W, false);
+            CHECK(g_mode == M_Orbit, "B3.6a-ter : edition, clic sans effet sans Maj = orbite (regle B3.3c)");
+            g_editMode = false; g_mode = M_None;
+        }
+        /* ALTITUDE : drag d'une poignee du chemin d'un tube EN HAUTEUR =
+           l'altitude est conservee (avant : la poignee retombait au sol) */
+        {
+            extern double g_stubCursorX, g_stubCursorY;
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+            polyPose();
+            Object chemin;
+            chemin.name = "Ligne";
+            chemin.traceType = 1; chemin.traceFerme = 0;
+            chemin.tracePts = { Vec3(0,3,10), Vec3(0,3,20) };   /* chemin EN ALTITUDE */
+            g_objs.push_back(chemin);
+            const size_t ip = g_objs.size() - 2;
+            CHECK(sweepConvertTo(g_objs[ip], g_objs[g_objs.size() - 1]),
+                  "B3.6a-bis : tube pose le long d'un chemin en altitude");
+            Object& sw = g_objs[ip];
+            g_editMode = true; g_editObj = (int)ip;
+            g_editGrab = (int)sw.tracePts.size();               /* 1re poignee du CHEMIN */
+            g_cam.target = Vec3(2, 1, 12); g_cam.dist = 25.0;
+            const Vec3 visee = sw.pos + sw.traceChemin[0] * sw.scl + Vec3(2, 0, 2);
+            double px, py;
+            pixelDe(visee, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            const double yAvant = sw.traceChemin[0].y;
+            editDrag(W);
+            CHECK(std::fabs(sw.traceChemin[0].y - yAvant) < 1e-9,
+                  "B3.6a-bis : drag d'une poignee du chemin EN HAUTEUR = altitude conservee");
+            const Vec3 apres = sw.pos + sw.traceChemin[0] * sw.scl;
+            CHECK((apres - visee).norm() < 1e-6,
+                  "B3.6a-bis : la poignee suit le curseur DANS SON PLAN horizontal");
+            /* ajout d'un point sur une courbe en hauteur : meme altitude */
+            g_editGrab = -1;
+            Object sp; sp.name = "Spline"; sp.pos = Vec3(0, 0, 0); sp.scl = 1.0;
+            sp.traceType = 2; sp.traceFerme = 0;
+            sp.tracePts = { Vec3(0,3,40), Vec3(6,3,40) };
+            traceRegen(sp);
+            g_objs.push_back(std::move(sp));
+            const int isp = (int)g_objs.size() - 1;
+            g_editObj = isp; g_editGrab = -1;
+            g_cam.target = Vec3(3, 1, 40); g_cam.dist = 25.0;
+            pixelDe(Vec3(3, 3, 40), px, py);                    /* milieu de la courbe */
+            g_stubCursorX = px; g_stubCursorY = py;
+            g_editSel = -1;
+            editClick(W, 0);
+            CHECK(g_objs[(size_t)isp].tracePts.size() == 3
+                  && std::fabs(g_objs[(size_t)isp].tracePts.back().y - 3.0) < 1e-9,
+                  "B3.6a-bis : point ajoute sur une courbe en hauteur = meme altitude");
+            g_editMode = false; g_editObj = -1; g_editGrab = -1; g_editSel = -1;
+        }
+        /* zoom : pas par cran porte a 20 % (0.8) - "toujours tres insuffisant" */
+        {
+            g_cam.dist = 9.0;
+            onScroll(nullptr, 0, 10);
+            CHECK(g_cam.dist < 1.2, "B3.6a-bis : zoom avant 10 crans = x9 plus pres (0.8 par cran)");
+            onScroll(nullptr, 0, 1000);
+            CHECK(g_cam.dist == 0.02, "B3.6a-bis : borne de zoom avant 0.02 (5 fois plus pres)");
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_rightDown = false; g_mode = M_None;
+        g_cam = g_camHome;
+    }
+
+    { /* B3.6b : poignee de ROLL - tourner le profil du balayage autour du fil */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_winW = 1600; g_winH = 900;
+        g_cam = g_camHome;
+        g_cam.target = Vec3(0, 2, 0); g_cam.dist = 25.0;
+        g_editMode = false; g_editObj = -1; g_editGrab = -1; g_editSel = -1;
+        g_mode = M_None;
+        g_sweepEditChemin = false; g_sweepEditAcc = false; g_sweepEditRoll = false;
+        g_rollDrag = false;
+        auto pixelDe = [](const Vec3& c, double& px, double& py) {
+            const double t = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+            const Vec3 d = normalized(c - g_cam.pos());
+            const double df = dot(d, g_cam.forward());
+            const double aspect = (double)g_winW / (double)g_winH;
+            const double ndcX = dot(d, g_cam.right()) / (df * t * aspect);
+            const double ndcY = dot(d, g_cam.up()) / (df * t);
+            px = (ndcX + 1.0) * 0.5 * (double)g_winW;
+            py = (1.0 - ndcY) * 0.5 * (double)g_winH;
+        };
+        /* rollDelta : angles exacts (helper isole) */
+        CHECK(std::fabs(rollDelta(Vec3(1,0,0), Vec3(0,1,0), Vec3(0,0,1)) - 90.0) < 1e-9,
+              "B3.6b : rollDelta = +90 deg");
+        CHECK(std::fabs(rollDelta(Vec3(1,0,0), Vec3(0,-1,0), Vec3(0,0,1)) + 90.0) < 1e-9,
+              "B3.6b : rollDelta = -90 deg");
+        /* balayage : carre 4x4 + chemin ligne */
+        g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+        polyPose();
+        Object chemin;
+        chemin.name = "Ligne";
+        chemin.traceType = 1; chemin.traceFerme = 0;
+        chemin.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+        g_objs.push_back(chemin);
+        const size_t isp = g_objs.size() - 2;
+        CHECK(sweepConvertTo(g_objs[isp], g_objs[g_objs.size() - 1]),
+              "B3.6b : balayage reconstruit (profil + chemin)");
+        Object& sw = g_objs[isp];
+        CHECK(sw.traceRoll == 0.0, "B3.6b : roll par defaut = 0 (coller plat, B3.5 intact)");
+        traceRegen(sw);
+        const Vec3 axe = g_sweepRollAxis;
+        CHECK(std::fabs(axe.norm() - 1.0) < 1e-9,
+              "B3.6b : axe du roll = tangente au depart (pose par la regen)");
+        const Vec3 hv = g_sweepRollHandle - g_sweepRollCenter;
+        CHECK(hv.norm() > 1e-9 && std::fabs(dot(normalized(hv), axe)) < 1e-9,
+              "B3.6b : poignee violette perpendiculaire a l'axe (rayon non nul)");
+        /* O = cycle PROFIL -> CHEMIN -> ACCROCHE -> ROLL */
+        g_editMode = true; g_editObj = (int)isp; g_editGrab = -1; g_editSel = -1;
+        traceToggleFerme(sw);
+        CHECK(g_sweepEditChemin && !g_sweepEditAcc && !g_sweepEditRoll, "B3.6b : O 1/4 = cible CHEMIN");
+        traceToggleFerme(sw);
+        CHECK(!g_sweepEditChemin && g_sweepEditAcc && !g_sweepEditRoll, "B3.6b : O 2/4 = cible ACCROCHE");
+        traceToggleFerme(sw);
+        CHECK(!g_sweepEditChemin && !g_sweepEditAcc && g_sweepEditRoll, "B3.6b : O 3/4 = cible ROLL");
+        traceToggleFerme(sw);
+        CHECK(!g_sweepEditChemin && !g_sweepEditAcc && !g_sweepEditRoll, "B3.6b : O 4/4 = retour PROFIL");
+        traceToggleFerme(sw); traceToggleFerme(sw); traceToggleFerme(sw);
+        CHECK(g_sweepEditRoll, "B3.6b : cycle complet, ROLL rearme");
+        /* invariance des rayons d'anneaux sous un roll quelconque */
+        const size_t nBase = sw.v.size() / sw.traceChemin.size();
+        auto rayons = [&]() {
+            std::vector<double> r;
+            for (size_t rr = 0; rr < sw.traceChemin.size(); ++rr)
+                for (size_t k = 0; k < nBase; ++k)
+                    r.push_back((sw.v[rr * nBase + k] - sw.traceChemin[rr]).norm());
+            return r;
+        };
+        sw.traceRoll = 0.0; traceRegen(sw);
+        const std::vector<Vec3> v0 = sw.v;
+        const std::vector<double> r0 = rayons();
+        sw.traceRoll = 37.5; traceRegen(sw);
+        const std::vector<double> r1 = rayons();
+        bool rayOk = r0.size() == r1.size();
+        for (size_t i = 0; rayOk && i < r0.size(); ++i)
+            if (std::fabs(r0[i] - r1[i]) > 1e-9) rayOk = false;
+        CHECK(rayOk, "B3.6b : roll 37.5 = rayons d'anneaux INVARIANTS (rotation dans le plan)");
+        for (int q = 1; q <= 4; ++q) { sw.traceRoll = 90.0 * q; traceRegen(sw); }
+        bool per = v0.size() == sw.v.size();
+        for (size_t i = 0; per && i < v0.size(); ++i)
+            if ((v0[i] - sw.v[i]).norm() > 1e-9) per = false;
+        CHECK(per, "B3.6b : 4 x +90 deg = roll 0 (periodicite)");
+        sw.traceRoll = 0.0; traceRegen(sw);
+        bool id0 = v0.size() == sw.v.size();
+        for (size_t i = 0; id0 && i < v0.size(); ++i)
+            if ((v0[i] - sw.v[i]).norm() > 1e-9) id0 = false;
+        CHECK(id0, "B3.6b : roll 0 = geometrie identique au defaut");
+        /* simulation du drag : clic sur la poignee violette, deplacement de
+           90 deg autour de l'axe (pixelDe = inverse de rayFromMouse) */
+        {
+            extern double g_stubCursorX, g_stubCursorY;
+            double px, py;
+            const Vec3 cible = g_sweepRollCenter
+                + vecRotate(g_sweepRollHandle - g_sweepRollCenter, g_sweepRollAxis,
+                            1.5707963267948966);
+            /* camera visee sur la cible avec un rayon viseur perpendiculaire
+               au rayon-vecteur ET a l'axe : le point du rayon le plus proche
+               de l'axe est alors EXACTEMENT le point vise */
+            const Vec3 rad = cible - g_sweepRollCenter;
+            g_cam.target = cible; g_cam.dist = 25.0;
+            g_cam.phi = std::atan2(rad.y, -rad.x);   /* offset cam = (rad.y, -rad.x, 0) */
+            g_cam.theta = 0.0;
+            pixelDe(g_sweepRollHandle, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            editClick(W, 0);                       /* saisit la poignee violette */
+            CHECK(g_rollDrag, "B3.6b : clic sur la poignee violette = drag de roll arme");
+            pixelDe(cible, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            rollDragUpdate(W);
+            CHECK(g_rollDrag && std::fabs(std::fabs(sw.traceRoll) - 90.0) < 1.0,
+                  "B3.6b : drag de 90 deg autour de l'axe = roll a +-90 (simulation pixelDe)");
+            g_rollDrag = false;
+        }
+        /* persistance : accroche + roll survivent au save/load (peek en cascade) */
+        {
+            std::string err;
+            const std::string p = tmpPath("b36b_roll.s3projet");
+            sw.traceAccroche = 0; sw.traceRoll = 37.5; traceRegen(sw);
+            const std::vector<Vec3> v37 = sw.v;
+            CHECK(saveProject(p, err), "B3.6b : enregistrement (accroche + roll 37.5)");
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), "B3.6b : relecture (accroche + roll)");
+            Object& s2 = g_objs[isp];
+            CHECK(s2.traceAccroche == 0 && std::fabs(s2.traceRoll - 37.5) < 1e-6,
+                  "B3.6b : accroche ET roll relus (peek en cascade)");
+            bool vb = v37.size() == s2.v.size();
+            for (size_t i = 0; vb && i < v37.size(); ++i)
+                if ((v37[i] - s2.v[i]).norm() > 1e-6) vb = false;
+            CHECK(vb, "B3.6b : geometrie relue = roll 37.5 applique par la regen au chargement");
+            /* vieux projet SANS ligne roll = 0 */
+            s2.traceRoll = 0.0; traceRegen(s2);
+            CHECK(saveProject(p, err), "B3.6b : enregistrement SANS ligne roll");
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), "B3.6b : relecture sans ligne roll");
+            CHECK(std::fabs(g_objs[isp].traceRoll) < 1e-12,
+                  "B3.6b : roll absent du fichier = 0 (retrocompatible)");
+        }
+        /* sortie d'edition : flags ROLL remis a zero */
+        g_sweepEditRoll = true; g_rollDrag = true;
+        editExit();
+        CHECK(!g_sweepEditRoll && !g_rollDrag, "B3.6b : editExit remet les flags ROLL a zero");
+        g_editMode = false; g_editObj = -1; g_editGrab = -1; g_editSel = -1;
+        g_sweepEditChemin = false; g_sweepEditAcc = false; g_sweepEditRoll = false;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_mode = M_None;
+        g_cam = g_camHome;
+    }
+
+    { /* B3.3 : edition du balayage - poignees profil + chemin, O = cible */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+        polyPose();
+        Object chemin;
+        chemin.name = "Ligne";
+        chemin.traceType = 1; chemin.traceFerme = 0;
+        chemin.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+        g_objs.push_back(chemin);
+        const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+        CHECK(sweepConvertTo(g_objs[ip], g_objs[ic]), "B3.3 : balayage reconstruit pour l edition");
+        Object& sw = g_objs[ip];
+        const size_t npts0 = sw.tracePts.size();          /* 4 */
+        const size_t nch0 = sw.traceChemin.size();        /* 2 */
+        /* ajout au CHEMIN (O = cible chemin) : milieu du segment */
+        g_sweepEditChemin = true;
+        const Vec3 milieuCh = sw.pos + ((sw.traceChemin[0] + sw.traceChemin[1]) * 0.5) * sw.scl;
+        const int ich = traceAddPoint(sw, milieuCh);
+        CHECK(ich == (int)(npts0 + 1) && sw.traceChemin.size() == nch0 + 1,
+              "B3.3 : ajout d un point au CHEMIN (index = npts + i)");
+        CHECK(sw.v.size() == 12 && sw.tri.size() == (size_t)(3 * 20)
+              && std::fabs(signedVolume(sw) - 160.0) < 1e-6,
+              "B3.3 : 3 anneaux (12 sommets, 20 tris), volume conserve 160");
+        CHECK(traceAddPoint(sw, sw.pos + Vec3(100, 0, 100), true) < 0,
+              "B3.3 : refus - clic-sol LOIN du chemin (avec garde)");
+        CHECK(traceDelPoint(sw, ich), "B3.3 : suppression de la poignee du chemin");
+        CHECK(sw.traceChemin.size() == nch0 && sw.v.size() == 8,
+              "B3.3 : chemin retrouve (2 points, 8 sommets)");
+        CHECK(!traceDelPoint(sw, (int)npts0), "B3.3 : garde - minimum 2 points pour le chemin ouvert");
+        /* B3.3b : clic SUR le tube (sans garde) = insertion a la station la plus proche */
+        {
+            CHECK(traceAddPoint(sw, sw.pos + Vec3(100, 0, 100), false) == (int)(npts0 + 1)
+                  && sw.traceChemin.size() == nch0 + 1 && sw.v.size() == 12,
+                  "B3.3b : clic sur le tube = station ajoutee au segment le plus proche (sans garde)");
+            CHECK(traceDelPoint(sw, (int)sw.tracePts.size() + 1), "B3.3b : station ajoutee supprimee");
+            CHECK(sw.traceChemin.size() == nch0 && sw.v.size() == 8, "B3.3b : chemin retrouve");
+        }
+        /* B3.3d : la FACE visee au clic 1 doit etre une feuille tracee - refus
+           immediat d un solide (avant : tube accepte puis etape 2 impossible) */
+        {
+            Object feuille; feuille.traceType = 2; feuille.tri.push_back(0u);
+            CHECK(sweepFaceValide(feuille), "B3.3d : feuille tracee (tri non vide) = face valide");
+            CHECK(!sweepFaceValide(sw), "B3.3d : un balayage (tube) est REFUSE comme face");
+            Object fil; fil.traceType = 1; fil.traceFerme = 1;
+            CHECK(!sweepFaceValide(fil), "B3.3d : un fil (0 tri) est refuse comme face");
+        }
+        /* B3.3e : niveaux de zoom DEFINIS (bornes de la molette) */
+        {
+            const double d0 = g_cam.dist;
+            g_cam.dist = 9.0;
+            onScroll(nullptr, 0, -1000);
+            CHECK(g_cam.dist == 4000.0, "B3.3e : zoom arriere borne a 4000");
+            onScroll(nullptr, 0, 1000);
+            CHECK(g_cam.dist == 0.02, "B3.3e : zoom avant borne a 0.02 (B3.6a-ter : 5 fois plus pres)");
+            g_cam.dist = d0;
+        }
+        /* B3.3f (regle) : les messages utilisateur vont dans la FENETRE
+           (bandeau + journal consultable), la console garde le debug */
+        {
+            const size_t n0 = g_journal.size();
+            userMsg("essai %d", 42);
+            CHECK(g_journal.size() == n0 + 1 && g_journal.back() == "essai 42",
+                  "B3.3f : userMsg remplit le journal (formate)");
+            CHECK(!g_bandFlash.empty() && g_bandFlash == "essai 42",
+                  "B3.3f : userMsg affiche dans le bandeau");
+            userMsg("plein", 1);
+            for (int i = 0; i < 250; ++i) userMsg("l%d", i);
+            CHECK(g_journal.size() <= 200, "B3.3f : journal borne a 200 messages");
+            /* B3.3i : message repete = aucune nouvelle ligne, sans compteur */
+            const size_t n1 = g_journal.size();
+            userMsg("dup"); userMsg("dup"); userMsg("dup");
+            CHECK(g_journal.size() == n1 && g_journal.back() == "dup",
+                  "B3.3i : message repete = aucune nouvelle ligne (sans compteur)");
+            g_bandFlash.clear();
+        }
+        /* ajout au PROFIL (O = cible profil) : milieu d un bord de la face */
+        g_sweepEditChemin = false;
+        const Vec3 milieuPr = sw.pos + ((sw.tracePts[0] + sw.tracePts[1]) * 0.5) * sw.scl;
+        const int ipr = traceAddPoint(sw, milieuPr);
+        CHECK(ipr >= 0 && sw.tracePts.size() == npts0 + 1,
+              "B3.3 : ajout d un point au PROFIL (dans le plan de la face)");
+        CHECK(traceDelPoint(sw, ipr) && sw.tracePts.size() == npts0,
+              "B3.3 : suppression de la poignee du profil");
+        /* points fixes par sous-type (mutation de controle) */
+        sw.traceProfil = 5;                                /* cercle = points fixes */
+        CHECK(traceAddPoint(sw, milieuPr) < 0, "B3.3 : profil cercle = points fixes, ajout refuse");
+        sw.traceProfil = 7;
+        sw.traceCheminType = 6;                            /* arc = points fixes */
+        CHECK(traceAddPoint(sw, milieuCh) < 0, "B3.3 : chemin arc = points fixes, ajout refuse");
+        sw.traceCheminType = 1;
+        /* garde de minimum : profil polygone = 3 points */
+        while (sw.tracePts.size() > 3)
+            CHECK(traceDelPoint(sw, 0), "B3.3 : suppression profil (vers le minimum)");
+        CHECK(!traceDelPoint(sw, 0), "B3.3 : garde - minimum 3 points pour le profil polygone");
+        /* drag = modification + regen par les MEMES fonctions : chemin allonge
+           (traceChemin = LOCALES : +20 en z monde = +20 en z local, scl = 1) */
+        sw.tracePts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+        sw.traceChemin[1] = sw.traceChemin[0] + Vec3(0, 0, 20);
+        traceRegen(sw);
+        CHECK(sw.v.size() == 8 && std::fabs(signedVolume(sw) - 320.0) < 1e-6,
+              "B3.3 : drag du chemin (z 20 -> 30) = regen, volume 16 x 20 = 320");
+        g_sweepEditChemin = false;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyPts.clear(); g_lineMode = false; lineReset();
     }
 
     std::printf("resume : %d echec(s), %d verifications\n", g_fail, g_tot);
