@@ -283,6 +283,30 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   variantes flip) - murs inchanges ; +6 verifications = 394, 0 echec ;
   VALIDATION UTILISATEUR E3b + E3c (caps centre, garde ajout, pull
   repare) ;
+- B3 EXTRUSION LE LONG D'UN CHEMIN (balayage/sweep, conception avant
+  code, arbitrages tranchés) :
+  - OUTIL DEDIE : clic 1 = la face a balayer, clic 2 = le fil qui sert
+    de chemin (ligne, arc, spline ouverte) ; apercu, clic droit =
+    annulation sans pose ; touche Maj+W (W libre), bouton barre
+    flottante + entree menu Outils ;
+  - CHEMIN CONSUME (comme le profil en E3) : l'extrusion porte les
+    points du chemin dans ses parametres de construction - l'info
+    N'EST PAS PERDUE (remarque utilisateur : le chemin pourra servir
+    ensuite, ex. mouvement de camera) ; une fonction « extraire le
+    chemin » (recree le fil depuis les parametres) est notee backlog
+    pour B5+ ;
+  - PROFIL perpendiculaire au depart du chemin (plan normal au
+    premier segment), anneaux suivant le chemin echantillonne (meme
+    echantillonnage que les splines) ; regen par les MEMES fonctions
+    de chaines + balayage (remplace le prismatage droit de E3) ;
+  - CHEMIN FERME (boucle : ligne fermee, cercle) ACCEPTE en v1 =
+    solide torique (tube ferme, sans caps) ;
+  - PAS de torsion en v1 (orientation naturelle des anneaux) ; un
+    twist saisissable est note pour plus tard ;
+  - EDITION (E) : points du profil ET points du chemin editables,
+    regen par les MEMES fonctions (principe B2.7e generalise) ;
+  - persistence : entete trace etendue au type 9 (profil + chemin),
+    vieux projets relisibles ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec
