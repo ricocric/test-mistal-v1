@@ -550,6 +550,55 @@ Questions ouvertes a trancher avec l'utilisateur :
       - **Bandeau** : "Edition du balayage : ROLL - glissez la poignee
         violette pour tourner le profil autour du fil" ; saisie numerique
         (chiffres + Entree = degres) PLUS TARD ;
+  - **B3.6z FAIT (505 -> 536 verifs) - Ctrl+Z annulation / retablissement**
+    (backlog priorise par l'utilisateur : Ctrl+Z EN PREMIER, collage
+    generique ENSUITE) - conception posee ci-dessous puis appliquee SANS
+    ecart : 25 sites de mutation branches, 4 gestes continus, touches +
+    menu Outils, +31 verifications, ASan propre ;
+    - note de test : `polyPose` (comme les autres poses) VIDE `g_polyPts`
+      au reset - un moteur de tests qui repose 2 fois doit re-remplir ;
+    - note de test : la pose du balayage dans un sous-bloc pousse AUSSI un
+      pas "balayage" (undoSnapshot dans sweepConvertTo) - les comptes de
+      pas des tests l'incluent ;
+    - **modele** : pile d'ETATS AVANT mutation - chaque pas = copie COMPLETE
+      de la scene (vector<Object>) ; les objets portent leurs parametres de
+      construction (principe B2.7e), donc la copie restaure tout (geometrie
+      derivee comprise) ; struct `UndoPas { std::vector<Object> objs;
+      std::string label; }` ;
+    - **2 piles** : `g_undoPile` (borne 100, kUndoMax) et `g_redoPile` ;
+      globals de geste : `g_undoEnCours` (UndoPas en attente), `g_undoOuvert`
+      (un geste continu est capture), `g_undoSale` (le geste a vraiment mute
+      quelque chose) ;
+    - **API (UN SEUL CHEMIN DE CODE)** :
+      `undoPousse(p)` = pousse dans undo (borne + clear redo) ;
+      `undoSnapshot(label)` = one-shot AVANT la mutation (pose, suppression,
+      edition ponctuelle) ;
+      `undoOuvre(label)` = capture au DEBUT d'un geste continu (pending) ;
+      `undoValide()` = au relachement, pousse seulement si sale ;
+      `undoAbandonne()` = annulations qui restaurent deja la base (ppCancel,
+      rotCancel) ;
+      `undoVide()` = nouveau/ouvrir/fermer projet ;
+      `undoAnnule()` / `undoRetablit()` : refus si geste en cours ("terminez
+      d'abord le geste en cours") ; "rien a annuler" si pile vide ; sinon
+      push etat courant sur l'autre pile + restore + clearSelection() + garde
+      edition (g_editObj hors bornes = sortie d'edition) + userMsg
+      "annule : <label>" / "retabli : <label>" ;
+    - **touches** (apres Ctrl+V dans onKey, AVANT les blocs d'edition donc
+      actif en edition) : Ctrl+Z = annuler, Ctrl+Maj+Z = retablir, Ctrl+Y =
+      retablir (via keyIsLetter, regle B2.4f) ; menu Outils : "Annuler
+      Ctrl+Z" / "Retablir Ctrl+Y" en tete (regle B1.7c), IDs IDM_ANNULER /
+      IDM_RETABLIR DERNIERS et contigus + cases dispatcher runToolCommand ;
+    - **dirty flags par geste** (UN pas par GESTE, pas par frame) :
+      deplacement = delta.norm() > 1e-12 ; push/pull = fabs(d) > 1e-12
+      (+ sale dans la pose numerique) ; rotation = fabs(angDeg) > 1e-12 ;
+      drag de poignee = comparaison ancien/nouveau point ; roll =
+      fabs(traceRoll - g_rollAng0) > 1e-12 ; clic sans mouvement = PAS de pas ;
+    - **ne couvre PAS** : vue (camera), selection ; undoVide dans
+      IDM_NEW_PROJECT / IDM_OPEN_PROJECT (apres load OK) / IDM_CLOSE_PROJECT ;
+    - **verifications visees (~15)** : pose + undo/redo, suppression,
+      duplication, clic sans mouvement = pile inchangee, drag reel, edition
+      ajout/suppression de point, roll undo, refus pendant geste, piles vides
+      au nouveau projet, pile vide sans crash, borne 100.
   - **B3.7+ collage generique 2 objets** (coin/coin, arete/arete) : a cadrer
     separatiment une fois B3.5/B3.6 validees ;
   - les arbitrages restants (interaction exacte du choix d'accroche au

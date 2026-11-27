@@ -2909,6 +2909,188 @@ int main() {
         g_cam = g_camHome;
     }
 
+    { /* B3.6z : Ctrl+Z annulation / retablissement - piles, gestes, refus, bornes */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        g_winW = 800; g_winH = 600;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_axisHeld[0] = g_axisHeld[1] = g_axisHeld[2] = false;
+        g_rotActive = false; g_rotMode = false; g_ppActive = false; g_ppMode = false;
+        g_editMode = false; g_editObj = -1; g_editGrab = -1; g_editSel = -1;
+        g_sweepEditChemin = false; g_sweepEditAcc = false; g_sweepEditRoll = false;
+        g_rollDrag = false;
+        extern double g_stubCursorX, g_stubCursorY;
+        undoVide();
+
+        /* 1. pose one-shot = 1 pas, annule, retabli */
+        g_cam.theta = 0.0; g_cam.phi = 0.5; g_cam.dist = 9.0; g_cam.target = Vec3(0, 0.5, 0);
+        g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+        polyPose();
+        CHECK(g_objs.size() == 1 && g_undoPile.size() == 1 && g_undoPile.back().label == "polygone",
+              "B3.6z : pose d'un polygone = 1 pas labelle");
+        undoAnnule();
+        CHECK(g_objs.empty() && g_undoPile.empty() && g_redoPile.size() == 1,
+              "B3.6z : Ctrl+Z = scene d'origine, pas transfere dans redo");
+        undoRetablit();
+        CHECK(g_objs.size() == 1 && g_undoPile.size() == 1 && g_redoPile.empty(),
+              "B3.6z : Ctrl+Y = pose retablie");
+
+        /* 2. suppression annulee */
+        g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };   /* polyPose vide g_polyPts */
+        polyPose();
+        CHECK(g_objs.size() == 2, "B3.6z : 2e pose (2 objets)");
+        deleteObject(0);
+        CHECK(g_objs.size() == 1, "B3.6z : suppression faite");
+        undoAnnule();
+        CHECK(g_objs.size() == 2, "B3.6z : suppression annulee = objet restaure");
+        undoVide();
+
+        /* 3. collage annule/retabli VIA LE DISPATCHER (menu = meme chemin) */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; undoVide();
+        g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+        polyPose();
+        selectOnly(0);
+        copySelected(); pasteClipboard();
+        CHECK(g_objs.size() == 2, "B3.6z : collage fait (2 objets)");
+        runToolCommand(IDM_ANNULER);
+        CHECK(g_objs.size() == 1, "B3.6z : collage annule via le dispatcher (UN SEUL CHEMIN DE CODE)");
+        runToolCommand(IDM_RETABLIR);
+        CHECK(g_objs.size() == 2, "B3.6z : retabli via le dispatcher");
+
+        /* 4. drag mono : capture au debut, PAS de pas sans mouvement, 1 pas apres */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None; undoVide();
+        const double colM[3] = {0.6, 0.6, 0.6};
+        g_cam.theta = 0.0; g_cam.phi = 0.5; g_cam.dist = 9.0; g_cam.target = Vec3(0, 0.5, 0);
+        g_objs.push_back(makeBoxObject("UZ", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
+        selectOnly(0);
+        g_lastClickTime = -100.0;
+        g_stubCursorX = 400.0; g_stubCursorY = 300.0;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_mode == M_Drag && g_undoOuvert && g_undoPile.empty(),
+              "B3.6z : drag arme = geste capture, PAS encore de pas");
+        g_stubCursorX = 440.0;
+        updateDrag(W);
+        CHECK(g_undoSale, "B3.6z : vrai mouvement = geste sale");
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        CHECK(g_undoPile.size() == 1 && !g_undoOuvert && !g_undoSale,
+              "B3.6z : relachement = UN pas (pas par frame)");
+        const Vec3 posD = g_objs[0].pos;
+        undoAnnule();
+        CHECK((g_objs[0].pos - Vec3(0, 0.5, 0)).norm() < 1e-12 && g_selected < 0,
+              "B3.6z : annulation du drag = position d'origine + selection videe");
+        undoRetablit();
+        CHECK((g_objs[0].pos - posD).norm() < 1e-12, "B3.6z : retablir = position deplacee retrouvee");
+
+        /* 5. edition : ajout puis suppression de point = 2 pas annulables */
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; undoVide();
+        {
+            Object fil; fil.name = "L"; fil.pos = Vec3(0,0,0); fil.scl = 1.0;
+            fil.traceType = 1;
+            fil.tracePts = { Vec3(0,0,0), Vec3(10,0,0) };
+            computeObjectDerived(fil);
+            g_objs.push_back(fil);
+            const int idx = traceAddPoint(g_objs[0], Vec3(5,0,0));
+            CHECK(idx >= 0 && g_objs[0].tracePts.size() == 3 && g_undoPile.size() == 1,
+                  "B3.6z : ajout de point en edition = 1 pas");
+            CHECK(traceDelPoint(g_objs[0], idx) && g_objs[0].tracePts.size() == 2
+                  && g_undoPile.size() == 2, "B3.6z : suppression de point = un 2e pas");
+            undoAnnule();
+            CHECK(g_objs[0].tracePts.size() == 3, "B3.6z : annulation de la suppression de point");
+            undoAnnule();
+            CHECK(g_objs[0].tracePts.size() == 2, "B3.6z : annulation de l'ajout de point");
+        }
+
+        /* 6. roll drag = un pas, annulation = roll 0 (etat avant drag) */
+        {
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1; undoVide();
+            g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+            polyPose();
+            Object chemin;
+            chemin.name = "Ligne"; chemin.traceType = 1; chemin.traceFerme = 0;
+            chemin.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            g_objs.push_back(chemin);
+            const size_t isp = g_objs.size() - 2;
+            CHECK(sweepConvertTo(g_objs[isp], g_objs[g_objs.size() - 1]),
+                  "B3.6z : balayage reconstruit pour le test roll");
+            Object& sw = g_objs[isp];
+            g_editMode = true; g_editObj = (int)isp; g_editGrab = -1; g_editSel = -1;
+            traceToggleFerme(sw); traceToggleFerme(sw); traceToggleFerme(sw);
+            CHECK(g_sweepEditRoll, "B3.6z : cible ROLL armee");
+            const Vec3 cible = g_sweepRollCenter
+                + vecRotate(g_sweepRollHandle - g_sweepRollCenter, g_sweepRollAxis,
+                            1.5707963267948966);
+            const Vec3 rad = cible - g_sweepRollCenter;
+            g_cam.target = cible; g_cam.dist = 25.0;
+            g_cam.phi = std::atan2(rad.y, -rad.x);
+            g_cam.theta = 0.0;
+            double px, py;
+            const double t = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+            auto pixelDe = [&](const Vec3& c, double& ox, double& oy) {
+                const Vec3 d = normalized(c - g_cam.pos());
+                const double df = dot(d, g_cam.forward());
+                const double aspect = (double)g_winW / (double)g_winH;
+                const double ndcX = dot(d, g_cam.right()) / (df * t * aspect);
+                const double ndcY = dot(d, g_cam.up()) / (df * t);
+                ox = (ndcX + 1.0) * 0.5 * (double)g_winW;
+                oy = (1.0 - ndcY) * 0.5 * (double)g_winH;
+            };
+            pixelDe(g_sweepRollHandle, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            editClick(W, 0);
+            CHECK(g_rollDrag && g_undoOuvert && !g_undoSale,
+                  "B3.6z : drag de roll arme = geste capture (pas de pas encore)");
+            pixelDe(cible, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            rollDragUpdate(W);
+            CHECK(std::fabs(std::fabs(sw.traceRoll) - 90.0) < 1.0, "B3.6z : roll drague a ~90 deg");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+            CHECK(g_undoPile.size() == 3 && g_undoPile.back().label == "edition : roll",
+                  "B3.6z : relachement = 1 pas de plus (apres les pas polygone et balayage du setup)");
+            undoAnnule();
+            CHECK(std::fabs(sw.traceRoll) < 1e-12, "B3.6z : annulation du roll = roll 0 (coller plat)");
+            editExit();
+        }
+
+        /* 7. refus pendant un geste en cours */
+        undoVide();
+        undoOuvre("essai");
+        g_undoPile.push_back(UndoPas{g_objs, "x"});
+        const size_t n0 = g_undoPile.size();
+        undoAnnule();
+        CHECK(g_undoPile.size() == n0 && g_undoOuvert, "B3.6z : annuler REFUSE pendant un geste");
+        undoRetablit();
+        CHECK(g_undoPile.size() == n0, "B3.6z : retablir REFUSE pendant un geste");
+        undoAbandonne();
+
+        /* 8. piles vides : message, sans crash */
+        undoVide();
+        undoAnnule(); undoRetablit();
+        CHECK(g_undoPile.empty() && g_redoPile.empty(), "B3.6z : piles vides = message, sans crash");
+
+        /* 9. borne de la pile = 100 */
+        for (int i = 0; i < 105; ++i) undoSnapshot("borne");
+        CHECK(g_undoPile.size() == 100, "B3.6z : pile bornee a 100 pas");
+        undoVide();
+
+        /* 10. nouveau projet / fermeture = piles videes */
+        g_setupPath = tmpPath("b36z_undo.ini");
+        std::remove(g_setupPath.c_str());
+        g_setup = Setup{};
+        undoSnapshot("a garder");
+        CHECK(g_undoPile.size() == 1, "B3.6z : 1 pas avant le nouveau projet");
+        handleMenuAction(IDM_NEW_PROJECT);
+        CHECK(g_undoPile.empty() && g_redoPile.empty(), "B3.6z : nouveau projet = piles videes");
+        undoSnapshot("a garder");
+        handleMenuAction(IDM_CLOSE_PROJECT);
+        CHECK(g_undoPile.empty() && g_redoPile.empty(), "B3.6z : projet ferme = piles videes");
+        std::remove(g_setupPath.c_str());
+        g_setupPath = "sketch3d.ini";
+        g_setup = Setup{};
+
+        undoVide();
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_cam = g_camHome;
+    }
+
     { /* B3.3 : edition du balayage - poignees profil + chemin, O = cible */
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };

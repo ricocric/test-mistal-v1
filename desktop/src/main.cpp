@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.6b";   /* poignee de ROLL : tourner le profil du balayage autour du fil */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "Ctrl+Z";   /* poignee de ROLL : tourner le profil du balayage autour du fil */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -347,6 +347,72 @@ static void userMsg(const char* fmt, ...) {
 }
 static Mode g_mode = M_None;
 static bool g_rightDown = false;   /* B3.6a-bis : clic droit tenu (pan armable meme si Maj arrive apres) */
+
+/* ===== B3.6z : Ctrl+Z annulation / retablissement =====
+   Modele : pile d'ETATS AVANT mutation - chaque pas = copie COMPLETE de la
+   scene (les objets portent leurs parametres de construction, principe
+   B2.7e : la copie restaure tout). UN pas par GESTE (pas par frame). */
+struct UndoPas { std::vector<Object> objs; std::string label; };
+static const size_t kUndoMax = 100;
+static std::vector<UndoPas> g_undoPile;
+static std::vector<UndoPas> g_redoPile;
+static UndoPas g_undoEnCours;          /* geste continu : etat capture au debut */
+static bool g_undoOuvert = false;      /* un geste continu est capture */
+static bool g_undoSale = false;        /* le geste ouvert a vraiment mute */
+static void editExit();                /* lecon B1.7b : prototype avant usage */
+
+static void undoPousse(UndoPas p) {
+    g_undoPile.push_back(std::move(p));
+    if (g_undoPile.size() > kUndoMax) g_undoPile.erase(g_undoPile.begin());
+    g_redoPile.clear();
+}
+/* one-shot : APPELER AVANT la mutation (pose, suppression, edition ponctuelle) */
+static void undoSnapshot(const char* label) {
+    UndoPas p; p.objs = g_objs; p.label = label;
+    undoPousse(std::move(p));
+}
+/* geste continu : capture au debut ; valide au relachement seulement si sale */
+static void undoOuvre(const char* label) {
+    if (g_undoOuvert) return;           /* deja capture (double evenement) */
+    g_undoEnCours.objs = g_objs; g_undoEnCours.label = label;
+    g_undoOuvert = true; g_undoSale = false;
+}
+static void undoValide() {
+    if (g_undoOuvert && g_undoSale) undoPousse(std::move(g_undoEnCours));
+    g_undoOuvert = false; g_undoSale = false; g_undoEnCours = UndoPas();
+}
+/* gestes qui RESTAURENT deja la base au cancel (ppCancel, rotCancel) */
+static void undoAbandonne() {
+    g_undoOuvert = false; g_undoSale = false; g_undoEnCours = UndoPas();
+}
+static void undoVide() {
+    g_undoPile.clear(); g_redoPile.clear(); undoAbandonne();
+}
+static void undoRestore(const std::vector<Object>& objs) {
+    g_objs = objs;
+    clearSelection();
+    if (g_editMode && (g_editObj < 0 || g_editObj >= (int)g_objs.size()))
+        editExit();                     /* l'objet edite n'existe plus */
+}
+static void undoAnnule() {
+    if (g_undoOuvert) { flashBand("terminez d'abord le geste en cours"); return; }
+    if (g_undoPile.empty()) { flashBand("rien a annuler"); return; }
+    UndoPas p = std::move(g_undoPile.back()); g_undoPile.pop_back();
+    UndoPas cur; cur.objs = g_objs; cur.label = p.label;
+    g_redoPile.push_back(std::move(cur));
+    undoRestore(p.objs);
+    userMsg("annule : %s", p.label.c_str());
+}
+static void undoRetablit() {
+    if (g_undoOuvert) { flashBand("terminez d'abord le geste en cours"); return; }
+    if (g_redoPile.empty()) { flashBand("rien a retablir"); return; }
+    UndoPas p = std::move(g_redoPile.back()); g_redoPile.pop_back();
+    UndoPas cur; cur.objs = g_objs; cur.label = p.label;
+    g_undoPile.push_back(std::move(cur));
+    undoRestore(p.objs);
+    userMsg("retabli : %s", p.label.c_str());
+}
+/* ===== fin B3.6z ===== */
 static Camera g_cam;
 static Camera g_camHome;
 static double g_prevX = 0, g_prevY = 0;
@@ -601,6 +667,7 @@ static void beginDrag(GLFWwindow* w, int idx) {
     }
     g_lockAxis = -1;
     g_mode = M_Drag;
+    undoOuvre("deplacement");               /* B3.6z : geste continu capture */
 }
 
 static bool g_axisHeld[3] = {false, false, false};
@@ -642,6 +709,7 @@ static void updateDrag(GLFWwindow* w) {
         const Vec3 a = axisVec(g_lockAxis);
         delta = a * dot(delta, a);
     }
+    if (delta.norm() > 1e-12) g_undoSale = true;   /* B3.6z : un vrai mouvement = un pas (clic sans bouger = rien) */
     if (!g_dragMulti.empty()) {
         for (const DragMember& m : g_dragMulti) {
             if (m.idx < 0 || m.idx >= (int)g_objs.size()) continue;
@@ -943,6 +1011,7 @@ static void importFile() {
     if (shifts > 0)
         userMsg("superposition evitee : objet decale de %d pas vers +X, pose a x = %.3f (comme le lot web 2.x)",
                     shifts, o.pos.x);
+    undoSnapshot("import");
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
     frameSelected();
@@ -972,6 +1041,7 @@ static void duplicateObject(int idx, int n) {
         }
         if (shifts > 0)
             userMsg("superposition evitee : %s decale de %d pas vers +X (x = %.3f)", o.name.c_str(), shifts, o.pos.x);
+        if (made == 0) undoSnapshot("duplication");   /* AVANT la 1re copie */
         g_objs.push_back(std::move(o));
         ++made;
     }
@@ -998,6 +1068,7 @@ static int removeInstances(int idx, int k) {
         return a.second != b.second ? a.second > b.second : a.first > b.first;
     });
     const int rem = std::min(k, (int)hits.size());
+    if (rem > 0) undoSnapshot("retrait de copies");
     for (int r = 0; r < rem; ++r) {
         g_objs.erase(g_objs.begin() + hits[(size_t)r].first);
         renumberSelectionAfterDelete(hits[(size_t)r].first);
@@ -1013,6 +1084,7 @@ static int removeInstances(int idx, int k) {
 static void deleteObject(int idx) {
     if (idx < 0 || idx >= (int)g_objs.size()) return;
     const std::string nm = g_objs[(size_t)idx].name;
+    undoSnapshot("suppression");
     g_objs.erase(g_objs.begin() + idx);
     renumberSelectionAfterDelete(idx);
     userMsg("suppression : %s (%zu objet(s) restant(s))", nm.c_str(), g_objs.size());
@@ -1024,6 +1096,7 @@ static size_t deleteSelectedSet() {
     const std::vector<int> idxs = selectedIndices();
     if (idxs.empty()) return 0;
     if (idxs.size() == 1) { deleteObject(idxs[0]); return 1; }
+    undoSnapshot("suppression");
     std::set<int> kill(idxs.begin(), idxs.end());
     std::vector<Object> keep;
     keep.reserve(g_objs.size() - kill.size());
@@ -1283,6 +1356,7 @@ static void pasteClipboard() {
     const double step = (hi[0] - lo[0]) + 0.25;
     const Vec3 off(step * (g_pasteRepeat + 1), 0.0, 0.0);
     std::vector<int> newIdxs;
+    undoSnapshot("collage");
     for (size_t i = 0; i < g_clipboard.size(); ++i) {
         Object o = g_clipboard[i];
         /* nommage type duplication : Nom (k), k = rang de ce nom dans la copie */
@@ -1653,6 +1727,8 @@ enum {
     IDM_TOOL_EDIT,             /* B2.7e : edition des traces apres coup (E) */
     IDM_TOOL_SWEEP,            /* B3 : balayage le long d'un chemin (Maj+W) */
     IDM_VIEW_JOURNAL,          /* B3.3f : journal des messages utilisateur (J) */
+    IDM_ANNULER,               /* B3.6z : annuler (Ctrl+Z) */
+    IDM_RETABLIR,              /* B3.6z : retablir (Ctrl+Y / Ctrl+Maj+Z) */
 };
 
 /* Homogeneite ("UN SEUL CHEMIN DE CODE", regle systematique) : tous les
@@ -1713,6 +1789,7 @@ static void handleMenuAction(int id) {
     switch (id) {
     case IDM_NEW_PROJECT:
         g_objs.clear();
+        undoVide();                           /* B3.6z : les piles ne survivent pas au projet */
         g_editMode = false; g_editObj = -1;   /* B2.7e : defense */
         g_setup.dernierProjet.clear(); saveSetup();   /* B3.2c : ne pas pre-remplir avec un AUTRE projet */
         clearSelection();
@@ -1725,6 +1802,7 @@ static void handleMenuAction(int id) {
         if (p.empty()) return;
         std::string err;
         if (!loadProject(p, err)) { userMsg("ouverture impossible : %s", err.c_str()); return; }
+        undoVide();                           /* B3.6z : annuler ne doit pas traverser les projets */
         g_editMode = false; g_editObj = -1;   /* B2.7e : defense */
         noteProjectPath(p);
         frameSelected();
@@ -1742,6 +1820,7 @@ static void handleMenuAction(int id) {
     }
     case IDM_CLOSE_PROJECT:
         g_objs.clear();
+        undoVide();                           /* B3.6z */
         g_editMode = false; g_editObj = -1;   /* B2.7e : defense */
         g_setup.dernierProjet.clear(); saveSetup();   /* B3.2c : ne pas pre-remplir avec un AUTRE projet */
         clearSelection();
@@ -2163,6 +2242,9 @@ static void attachMenus(GLFWwindow* win) {
        qui les propose (regle B1.7c) ; les 5 profils B2 y entreront au fil
        des lots ; delegation automatique : id >= kIdCommandStart */
     HMENU outils = CreatePopupMenu();
+    AppendMenuA(outils, MF_STRING, IDM_ANNULER, "&Annuler\tCtrl+Z");   /* B3.6z : en tete */
+    AppendMenuA(outils, MF_STRING, IDM_RETABLIR, "&Retablir\tCtrl+Y");
+    AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(outils, MF_STRING, IDM_TOOL_SELECT, "&Selection\tEchap");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_EDIT, "&Editer un trace\tE");   /* B2.7e */
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);   /* B2.7c : groupes de variantes separes */
@@ -2626,6 +2708,7 @@ static void applyExtrude(Object& o, const Extrude& dd, double d) {
 }
 
 static void ppCancel() {
+    undoAbandonne();                    /* B3.6z : ppCancel restaure deja la base */
     if (!g_ppActive || g_pp.obj < 0 || g_pp.obj >= (int)g_objs.size()) { g_ppActive = false; return; }
     Object& o = g_objs[(size_t)g_pp.obj];
     o.v = g_pp.base;
@@ -2697,6 +2780,7 @@ static bool sweepConvertTo(Object& profil, Object& chemin) {
         return false;
     }
     /* le chemin est absorbe : locales du fil -> locales du profil (pos + scl*v = monde) */
+    undoSnapshot("balayage");               /* B3.6z : avant la mutation reelle */
     std::vector<Vec3> chem;
     chem.reserve(chemin.tracePts.size());
     for (const Vec3& p : chemin.tracePts)
@@ -2766,6 +2850,7 @@ static void sweepClick(GLFWwindow* w) {
 }
 
 static void ppCommit() {
+    undoValide();                       /* B3.6z : le geste (s'il a mute) devient un pas */
     if (g_ppActive && g_pp.obj >= 0 && g_pp.obj < (int)g_objs.size())
         extrudeConvertTo(g_objs[(size_t)g_pp.obj], g_pp, g_pp.d);
     userMsg("face posee — extrusion : %.3f", g_pp.d);
@@ -2794,6 +2879,7 @@ static void updatePP(GLFWwindow* w) {
     const double d = ppDragDelta(org, dir);
     if (!std::isfinite(d)) return;
     applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, d);
+    if (std::fabs(d) > 1e-12) g_undoSale = true;    /* B3.6z */
     g_pp.d = d;
     const double now = glfwGetTime();
     if (now - g_ppStatusTick > 0.12) {
@@ -2889,6 +2975,7 @@ static void applyRotationAt(Object& o, const std::vector<Vec3>& base, const Vec3
 
 /* applique l'angle courant a la selection tournee (mono OU multi) */
 static void rotApplyCurrent(int axis, double angDeg) {
+    if (std::fabs(angDeg) > 1e-12) g_undoSale = true;   /* B3.6z */
     if (!g_rotMulti.empty()) {
         for (size_t k = 0; k < g_rotMulti.size(); ++k) {
             RotCapture& rc = g_rotMulti[k];
@@ -2960,6 +3047,7 @@ static void rotBegin(GLFWwindow* w, int axis) {
     g_rotNumBuf.clear();
     double dummy = 0.0;
     glfwGetCursorPos(w, &g_rotLastX, &dummy);
+    undoOuvre("rotation");                  /* B3.6z : capture AVANT toute mutation */
     g_rotActive = true;
     if (!g_rotMulti.empty()) {
         userMsg("rotation multi %s de %zu objets autour du %s : souris pour tourner, B = pivot barycentre/centre, chiffres + Entree (tapez dans la fenetre ; Entree pose et quitte)",
@@ -2971,6 +3059,7 @@ static void rotBegin(GLFWwindow* w, int axis) {
 }
 
 static void rotCancel() {
+    undoAbandonne();                    /* B3.6z : rotCancel restaure deja la base */
     if (!g_rotActive) { return; }
     if (!g_rotMulti.empty()) {          /* multi : restaure chaque base capturee */
         for (size_t k = 0; k < g_rotMulti.size(); ++k) {
@@ -2995,6 +3084,7 @@ static void rotCancel() {
 }
 
 static void rotCommit() {
+    undoValide();                       /* B3.6z : le geste (s'il a mute) devient un pas */
     if (!g_rotActive) { return; }
     if (!g_rotMulti.empty()) {
         userMsg("rotation posee : %+.2f deg sur %zu objets", g_rotAngle, g_rotMulti.size());
@@ -3134,6 +3224,7 @@ static void linePose() {
        (objet sans triangle = chaine 0-1, ...), donc survives au save/load */
     computeObjectDerived(o);
     const size_t nseg = o.edges.size();     /* capture AVANT le move (o move-assigne) */
+    undoSnapshot("ligne");
     g_objs.push_back(std::move(o));
     const int idx = (int)g_objs.size() - 1;
     selectOnly(idx);
@@ -3164,6 +3255,7 @@ static void lineCloseLoop() {
     computeObjectDerived(o);
     o.edges.emplace_back((int)o.v.size() - 1, 0);   /* boucle fermee */
     const size_t nseg = o.edges.size();     /* capture AVANT le move */
+    undoSnapshot("ligne fermee");
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
     userMsg("ligne fermee : %zu cotes, fil en boucle (pas de surface - le polygone ferme en surface)", nseg);
@@ -3247,6 +3339,7 @@ static void rectPose(const Vec3& a, const Vec3& b) {
     o.traceType = 4;
     o.tracePts = { a - o.pos, b - o.pos };
     computeObjectDerived(o);
+    undoSnapshot("rectangle");
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
     userMsg("rectangle pose : %s, %.3g x %.3g", g_objs.back().name.c_str(), x1 - x0, z1 - z0);
@@ -3368,6 +3461,7 @@ static void cerclePose(const Vec3& c, double r) {
     o.traceType = 5;
     o.tracePts = { Vec3(0, 0, 0), Vec3(r, 0, 0) };
     computeObjectDerived(o);
+    undoSnapshot("cercle");
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
     userMsg("cercle pose : %s, rayon %.3g", g_objs.back().name.c_str(), r);
@@ -3524,6 +3618,7 @@ static void arcPose(const Vec3& p1, const Vec3& b, const Vec3& p2) {
     o.tracePts = { Vec3(0, 0, 0), b - p1, p2 - p1 };
     computeObjectDerived(o);
     const size_t nseg = o.edges.size();
+    undoSnapshot("arc");
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
     userMsg("arc pose : %s, %zu segment(s)", g_objs.back().name.c_str(), nseg);   /* B2.7e2 : le rayon vit dans arcComputePts */
@@ -3679,6 +3774,7 @@ static void polyPose() {
     }
     computeObjectDerived(o);
     const size_t nc = o.v.size(), ntri = o.tri.size() / 3;   /* capture AVANT le move */
+    undoSnapshot("polygone");
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
     userMsg("polygone pose : %s, %zu cotes, %zu triangle(s) (feuille etirable)",
@@ -3910,6 +4006,7 @@ static void splPose(bool fermee) {
     computeObjectDerived(o);                        /* aretes = chaine derivee */
     const size_t np = g_splPts.size();              /* capture AVANT le reset */
     const size_t nv = o.v.size();
+    undoSnapshot("spline");
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
     userMsg("spline posee : %s, %zu %s, %zu sommets discretises%s (fil etirable au deplacement)",
@@ -4643,6 +4740,7 @@ static int traceAddPoint(Object& o, const Vec3& monde, bool gardeProfil = false)
             const int idx = sweepChainInsert(o.traceChemin, o.traceCheminFerme != 0, pLocal,
                                              gardeProfil ? filPickTol() : -1.0);
             if (idx < 0) { userMsg("edition : cliquez SUR le tube ou PRES du chemin pour ajouter un point"); return -1; }
+            undoSnapshot("edition : point ajoute");
             o.traceChemin.insert(o.traceChemin.begin() + idx, pLocal);
             traceRegen(o);
             return (int)o.tracePts.size() + idx;
@@ -4659,6 +4757,7 @@ static int traceAddPoint(Object& o, const Vec3& monde, bool gardeProfil = false)
             if ((q - proj).norm() < 1e-9) return -1;            /* meme point : rien */
         const int idx = sweepChainInsert(o.tracePts, o.traceFerme != 0, proj, filPickTol());
         if (idx < 0) { userMsg("edition : cliquez PRES du profil pour ajouter un point"); return -1; }
+        undoSnapshot("edition : point ajoute");
         o.tracePts.insert(o.tracePts.begin() + idx, proj);
         traceRegen(o);
         return idx;
@@ -4674,6 +4773,7 @@ static int traceAddPoint(Object& o, const Vec3& monde, bool gardeProfil = false)
     for (const Vec3& q : o.tracePts)
         if ((q - pLocal).norm() < 1e-9) return -1;      /* meme point : rien */
     const int idx = traceInsertIndex(o, pLocal);
+    undoSnapshot("edition : point ajoute");
     o.tracePts.insert(o.tracePts.begin() + idx, pLocal);
     traceRegen(o);
     return idx;
@@ -4702,6 +4802,7 @@ static bool traceDelPoint(Object& o, int idx) {
                             (size_t)(o.traceCheminFerme ? 3 : 2));
                 return false;
             }
+            undoSnapshot("edition : point supprime");
             o.traceChemin.erase(o.traceChemin.begin() + ic);
             if (g_editSel == idx) g_editSel = -1;
             traceRegen(o);
@@ -4716,6 +4817,7 @@ static bool traceDelPoint(Object& o, int idx) {
             userMsg("edition : minimum %zu point(s) pour le profil", mini);
             return false;
         }
+        undoSnapshot("edition : point supprime");
         o.tracePts.erase(o.tracePts.begin() + idx);
         if (g_editSel == idx) g_editSel = -1;
         traceRegen(o);
@@ -4725,6 +4827,7 @@ static bool traceDelPoint(Object& o, int idx) {
         userMsg("edition : minimum %zu point(s) pour ce trace", traceMinPoints(o));
         return false;
     }
+    undoSnapshot("edition : point supprime");
     o.tracePts.erase(o.tracePts.begin() + idx);
     if (g_editSel == idx) g_editSel = -1;
     traceRegen(o);
@@ -4742,6 +4845,7 @@ static void traceToggleFerme(Object& o) {
             userMsg("edition : au moins 3 points pour fermer le trace");
             return;
         }
+        undoSnapshot("edition : ouvert/ferme");
         o.traceFerme = o.traceFerme ? 0 : 1;
         traceRegen(o);
         userMsg("edition : extrusion du profil %s", o.traceFerme ? "FERME" : "ouvert");
@@ -4774,6 +4878,7 @@ static void traceToggleFerme(Object& o) {
         userMsg("edition : au moins 3 points pour fermer le trace");
         return;
     }
+    undoSnapshot("edition : ouvert/ferme");
     o.traceFerme = o.traceFerme ? 0 : 1;
     traceRegen(o);
     userMsg("edition : trace %s", o.traceFerme ? "FERME" : "ouvert");
@@ -4782,6 +4887,7 @@ static void traceToggleFerme(Object& o) {
    (regle des variantes : points conserves) */
 static void traceSetVariante(Object& o, bool ctrl) {
     if (o.traceType == 8 && (o.traceProfil == 2 || o.traceProfil == 3)) {
+        undoSnapshot("edition : variante");
         o.traceProfil = ctrl ? 3 : 2;           /* E3 : variante du profil, points conserves */
         traceRegen(o);
         userMsg("edition : profil spline %s (points conserves)", ctrl ? "POINTS DE CONTROLE" : "passage");
@@ -4791,6 +4897,7 @@ static void traceSetVariante(Object& o, bool ctrl) {
         userMsg("edition : la bascule passage/controle concerne les splines");
         return;
     }
+    undoSnapshot("edition : variante");
     o.traceType = ctrl ? 3 : 2;
     traceRegen(o);
     userMsg("edition : variante spline %s (points conserves)", ctrl ? "POINTS DE CONTROLE" : "passage");
@@ -4835,6 +4942,7 @@ static void editClick(GLFWwindow* w, int mods) {
             const Vec3 rh = g_sweepRollHandle - g_sweepRollCenter;
             Vec3 rv = rh - g_sweepRollAxis * dot(rh, g_sweepRollAxis);
             if (rv.norm() > 1e-9) {
+                undoOuvre("edition : roll");       /* B3.6z : capture au debut du drag */
                 g_rollV0 = rv * (1.0 / rv.norm());
                 g_rollAng0 = o.traceRoll;
                 g_rollDrag = true;
@@ -4856,6 +4964,7 @@ static void editClick(GLFWwindow* w, int mods) {
             if (d < bestA) { bestA = d; ai = (int)j; }
         }
         if (ai >= 0 && bestA <= filPickTol() * 2.0) {
+            undoSnapshot("edition : accroche");
             o.traceAccroche = ai;
             traceRegen(o);
             userMsg("edition balayage : l accroche %d/%d est collee au fil",
@@ -4889,6 +4998,7 @@ static void editClick(GLFWwindow* w, int mods) {
     }
     if (bi >= 0 && best <= filPickTol() * 2.0) {
         g_editSel = bi;
+        undoOuvre("edition : poignee deplacee");    /* B3.6z : capture au grab */
         g_editGrab = bi;                            /* drag jusqu'au relachement */
         if (o.traceType == 8 && bi == (int)o.tracePts.size()) {
             /* plan VERTICAL face camera, passant par le cap superieur :
@@ -5001,7 +5111,9 @@ static void editDrag(GLFWwindow* w) {
         if (g_editGrab >= (int)o.tracePts.size()) {          /* chemin : drag au sol */
             const size_t ic = (size_t)g_editGrab - o.tracePts.size();
             if (ic >= o.traceChemin.size()) return;
+            const Vec3 oldPt = o.traceChemin[ic];
             o.traceChemin[ic] = (p - o.pos) * (1.0 / o.scl);
+            if ((o.traceChemin[ic] - oldPt).norm() > 1e-12) g_undoSale = true;   /* B3.6z */
         } else if (g_editGrab >= 0) {                        /* profil : drag DANS son plan */
             Vec3 org, dir;
             if (!rayFromMouse(w, org, dir)) return;
@@ -5010,7 +5122,9 @@ static void editDrag(GLFWwindow* w) {
             const double denom = dot(dir, nn);
             if (std::fabs(denom) < 1e-9) return;
             const double t = dot(cPt - org, nn) / denom;
+            const Vec3 oldPt = o.tracePts[(size_t)g_editGrab];
             o.tracePts[(size_t)g_editGrab] = (org + dir * t - o.pos) * (1.0 / o.scl);
+            if ((o.tracePts[(size_t)g_editGrab] - oldPt).norm() > 1e-12) g_undoSale = true;   /* B3.6z */
         } else {
             return;
         }
@@ -5027,11 +5141,14 @@ static void editDrag(GLFWwindow* w) {
         const double t = dot(g_editHPt - org, g_editHN) / denom;
         const Vec3 p2 = org + dir * t;
         const double len = g_editH0 + dot(p2 - g_editHPt, g_editHDir) / o.scl;
+        if ((g_editHDir * len - o.traceVec).norm() > 1e-12) g_undoSale = true;   /* B3.6z */
         o.traceVec = g_editHDir * len;
         traceRegen(o);
         return;
     }
+    const Vec3 oldPt = o.tracePts[(size_t)g_editGrab];
     o.tracePts[(size_t)g_editGrab] = (p - o.pos) * (1.0 / o.scl);
+    if ((o.tracePts[(size_t)g_editGrab] - oldPt).norm() > 1e-12) g_undoSale = true;   /* B3.6z */
     traceRegen(o);
 }
 /* B3.6b : angle (DEGRES) entre deux directions autour d'un axe - helper
@@ -5065,6 +5182,7 @@ static void rollDragUpdate(GLFWwindow* w) {
     if (v.norm() < 1e-9) return;
     v = v * (1.0 / v.norm());
     o.traceRoll = rollWrap(g_rollAng0 + rollDelta(g_rollV0, v, T));
+    if (std::fabs(o.traceRoll - g_rollAng0) > 1e-12) g_undoSale = true;   /* B3.6z */
     traceRegen(o);
 }
 /* poignees dessinees : petits carres au sol sur les points de definition */
@@ -5300,6 +5418,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
             }
             dd.d = 0.0;
             g_pp = std::move(dd);
+            undoOuvre("extrusion (push/pull)");     /* B3.6z : capture AVANT toute mutation */
             g_ppActive = true;
             userMsg("face capturee — deplacez le long de la normale, cliquez pour poser la face (clic droit ou Echap : annuler ; chiffres + Entree : dimension exacte)");
             return;
@@ -5352,6 +5471,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         glfwGetCursorPos(w, &g_prevX, &g_prevY);
     } else {
         if (g_mode == M_Drag) { g_lockAxis = -1; g_dragMulti.clear(); }
+        undoValide();                               /* B3.6z : le geste relache (s'il a mute) devient un pas */
         g_editGrab = -1;                            /* B2.7e : fin du drag de poignee */
         g_rollDrag = false;                         /* B3.6b : fin du drag de roll */
         g_mode = M_None;
@@ -5491,6 +5611,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
                 }
                 applyExtrude(g_objs[(size_t)g_pp.obj], g_pp, v);
                 g_pp.d = v;
+                g_undoSale = true;     /* B3.6z : pose numerique = vrai changement (v != 0 garanti) */
                 g_pp.numBuf.clear();
                 ppCommit();            /* Entree = pose, comme le second clic gauche */
                 g_ppMode = false;      /* sortie du mode P apres application (demande de test) */
@@ -5676,6 +5797,14 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
            C sans Ctrl reste le recentrage sur le point vise */
         if ((mods & GLFW_MOD_CONTROL) && keyIsLetter(key, scancode, 'C')) { copySelected(); return; }
         if ((mods & GLFW_MOD_CONTROL) && keyIsLetter(key, scancode, 'V')) { pasteClipboard(); return; }
+        /* B3.6z : Ctrl+Z = annuler (Maj tenue = retablir), Ctrl+Y = retablir ;
+           place APRES Ctrl+C/V et AVANT les blocs de modes, donc actif aussi
+           pendant l'edition (les bascules d'edition viennent plus bas) */
+        if ((mods & GLFW_MOD_CONTROL) && keyIsLetter(key, scancode, 'Z')) {
+            if (mods & GLFW_MOD_SHIFT) undoRetablit(); else undoAnnule();
+            return;
+        }
+        if ((mods & GLFW_MOD_CONTROL) && keyIsLetter(key, scancode, 'Y')) { undoRetablit(); return; }
         if (key == GLFW_KEY_ESCAPE) {
             /* Echelle Echap : d'abord sortir de l'etat en cours (mode P/R en attente,
                puis deselection) ; Echap ne ferme JAMAIS l'application (rebonds de
@@ -5899,6 +6028,12 @@ static void runToolCommand(int id) {
             flashBand("spline : terminez d'abord le mode en cours (Echap)");
             userMsg("spline : terminez d'abord le mode en cours (Echap)");
         }
+        return;
+    case IDM_ANNULER:          /* = Ctrl+Z (B3.6z) */
+        undoAnnule();
+        return;
+    case IDM_RETABLIR:         /* = Ctrl+Y (B3.6z) */
+        undoRetablit();
         return;
     case IDM_TOOL_SWEEP:       /* = Maj+W (B3) : balayage le long d'un chemin */
         if (g_sweepStage) {
@@ -6343,7 +6478,7 @@ int main() {
     /* entete console : court, groupe par theme (retour utilisateur : trop de
        verbiage noie les informations importantes) */
     userMsg("Sketch3D - build %s", BUILD_VERSION);
-    userMsg("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart, clic droit ou Entree = ferme) | Maj+S spline (passage) | Maj+B spline (controle, clic depart = boucle) | E editer un trace | Maj+W balayage (face puis fil) | Ctrl+C/V | Suppr");
+    userMsg("Outils  : P extraire une face | R tourner (X/Y/Z = axe, B pivot, chiffres+Entree) | L ligne (clic sur le depart = fermer ; Maj+L fil) | Maj+R rectangle (clics = coins, L;H = exact) | Maj+C cercle (centre, rayon) | Maj+A arc (depart, fin, bombement) | Maj+P polygone (clic sur le depart, clic droit ou Entree = ferme) | Maj+S spline (passage) | Maj+B spline (controle, clic depart = boucle) | E editer un trace | Maj+W balayage (face puis fil) | Ctrl+C/V | Ctrl+Z annuler, Ctrl+Y retablir | Suppr");
     userMsg("Vue     : orbite = clic gauche dans le vide | zoom = molette | panoramique = molette-clic ou Shift+glisser | C centrer | F cadrer | H origine");
     userMsg("Projets : Ctrl+S enregistrer | clic droit = infos objet + duplication | I importer");
     userMsg("Formats : export scene/selection = menu Fichier, format defini dans Preferences");

@@ -1083,6 +1083,25 @@ globale corrigee par le volume signe (normales exterieures) ;
     B3.3c/B3.6a-ter) ;
   - +24 verifications = **505, 0 echec** (ASan propre) ; saisie numerique
     du roll (chiffres + Entree = degres) : plus tard.
+- **B3.6z (Ctrl+Z annulation / retablissement)** : priorite choisie par
+  l'utilisateur (Ctrl+Z AVANT le collage generique B3.7).
+  - **modele** : pile d'ETATS AVANT mutation - chaque pas = copie COMPLETE
+    de la scene (`UndoPas { objs, label }`, borne 100) ; les objets portant
+    leurs parametres de construction (B2.7e), la copie restaure tout ;
+    pile redo symetrique ;
+  - **touches** : Ctrl+Z = annuler, Ctrl+Maj+Z = retablir, Ctrl+Y =
+    retablir (via keyIsLetter, regle B2.4f) ; menu Outils : Annuler /
+    Retablir en tete (raccourcis rappelles, regle B1.7c) ; refus tant qu'un
+    geste est en cours ("terminez d'abord le geste en cours") ;
+  - **couverture** : poses (ligne, ligne fermee, rectangle, cercle, arc,
+    polygone, spline, import, duplication, collage, balayage), suppressions
+    (objet, multi, retrait de copies), editions ponctuelles (ajout /
+    suppression de point, accroche, ouvert/ferme, variante), gestes continus
+    (deplacement, push/pull, rotation, drag de poignee, roll) - UN pas par
+    GESTE (dirty flag : clic sans mouvement = pas de pas ; ppCancel /
+    rotCancel n'empilent pas) ; piles videes au nouveau projet / ouverture /
+    fermeture ; ne couvre PAS la vue ni la selection ;
+  - +31 verifications = **536, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 
