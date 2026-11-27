@@ -1537,15 +1537,16 @@ int main() {
               "ligne : Maj+L arme le mode, fil ouvert (meme outil, autre commande)");
         lineCancel("fin du test d'armement");
         g_lineMode = false;
-        g_lineFerme = true;                          /* defaut : surface fermee */
+        g_lineFerme = true;                          /* defaut : boucle fermee (B3.1b : jamais de surface) */
         g_linePts = { Vec3(0, 0, 0), Vec3(2, 0, 0), Vec3(2, 0, 2), Vec3(0, 0, 2) };
         g_lineActive = true;
         g_lineMode = true;
         lineCloseLoop();
-        CHECK(g_objs.size() == 1 && g_objs[0].tri.size() == 6 && g_objs[0].edges.size() == 5,
-              "ligne : fermeture en surface = feuille FUSEE au fil (2 tris) ; aretes derivees = 4 bords + 1 diagonale du fan (v1)");
-        CHECK(std::fabs(signedVolume(g_objs[0])) < 1e-12 && g_objs[0].v.size() == 4,
-              "ligne : feuille fermee = 4 sommets (pas de doublon du depart), volume plat nul");
+        CHECK(g_objs.size() == 1 && g_objs[0].tri.empty() && g_objs[0].edges.size() == 4,
+              "ligne : fermeture = fil en BOUCLE sans surface (4 aretes, 0 tri ; fermer en surface = le polygone)");
+        CHECK(g_objs[0].v.size() == 4 && g_objs[0].traceSurface == 0
+              && std::fabs(signedVolume(g_objs[0])) < 1e-12,
+              "ligne : boucle fermee = 4 sommets (pas de doublon du depart), pas de surface");
         CHECK(!g_lineMode && !g_lineActive && g_linePts.empty(),
               "ligne : fermeture = pose + sortie du mode");
 
@@ -2242,12 +2243,20 @@ int main() {
             CHECK(traceAddPoint(g_objs[3], Vec3(24.05, 0, 2), true) >= 0,
                   "E3 : garde - clic-sol PRES du profil accepte (0.05)");
         }
-        /* 8. O sur une extrusion de LIGNE fermee = bande (murs seuls) puis retour */
-        g_linePts = { Vec3(30,0,0), Vec3(32,0,0), Vec3(32,0,2), Vec3(30,0,2) };
-        g_lineMode = true; g_lineActive = true; g_lineFerme = true;
-        lineCloseLoop();
+        /* 8. O sur une extrusion de LIGNE fermee = bande (murs seuls) puis retour
+           B3.1b : la ligne ne ferme plus en surface - la feuille (ancien format,
+           traceSurface = 1) est construite ici a la main comme dans un vieux projet */
+        {
+            Object feuille;
+            feuille.name = "Ligne";
+            feuille.traceType = 1; feuille.traceFerme = 1; feuille.traceSurface = 1;
+            feuille.tracePts = { Vec3(30,0,0), Vec3(32,0,0), Vec3(32,0,2), Vec3(30,0,2) };
+            feuille.tri = { 0, 1, 2, 0, 2, 3 };      /* fan present = vieux projet (la regen le conserve) */
+            traceRegen(feuille);
+            g_objs.push_back(feuille);
+        }
         CHECK(g_objs[4].traceType == 1 && g_objs[4].traceFerme == 1 && g_objs[4].traceSurface == 1,
-              "E3 : feuille ligne fermee posee");
+              "E3 : feuille ligne fermee (ancien format) posee");
         {
             Extrude dd;
             CHECK(makeExtrude(g_objs[4], 0, dd) && extrudeConvertTo(g_objs[4], dd, 2.0),
@@ -2335,6 +2344,16 @@ int main() {
             }
             CHECK(perp, "B3 : anneaux PERPENDICULAIRES au chemin (z constant par anneau)");
             CHECK(signedVolume(g_objs[ip]) > 0.0, "B3 : normales exterieures (volume signe positif)");
+            /* B3.1b : le point de la face le plus proche du depart du fil se
+               connecte EXACTEMENT au depart du chemin (maitrise Follow Me) */
+            {
+                bool connexe = false;
+                for (const Vec3& p : g_objs[ip].v) {
+                    const Vec3 pw = g_objs[ip].pos + p * g_objs[ip].scl;
+                    if ((pw - Vec3(0, 0, 10)).norm() < 1e-9) { connexe = true; break; }
+                }
+                CHECK(connexe, "B3 : connexion - le point de la face le plus proche du fil est pose sur le depart");
+            }
             /* chemin ferme = solide torique (sans caps) */
             g_polyPts = { Vec3(70,0,0), Vec3(74,0,0), Vec3(74,0,4), Vec3(70,0,4) };
             polyPose();

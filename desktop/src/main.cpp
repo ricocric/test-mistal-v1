@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.1";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.2";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1963,7 +1963,7 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(outils, MF_STRING, IDM_TOOL_ROT, "&Tourner\tR");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_SWEEP, "Bal&ayer le long d'un chemin\tMaj+W");   /* B3 */
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
-    AppendMenuA(outils, MF_STRING, IDM_TOOL_LINE, "&Ligne (fermee en surface)\tL");
+    AppendMenuA(outils, MF_STRING, IDM_TOOL_LINE, "&Ligne (fermee en boucle)\tL");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_LIGNE_FIL, "Ligne (&fil ouvert)\tMaj+L");
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(outils, MF_STRING, IDM_TOOL_RECT, "&Rectangle\tMaj+R");
@@ -2461,20 +2461,24 @@ static void sweepCancel() {
 }
 static bool sweepConvertTo(Object& profil, Object& chemin) {
     if (&profil == &chemin) {
+        flashBand("Balayage : le chemin doit etre un AUTRE objet (un fil)");
         std::printf("balayage : le chemin doit etre un AUTRE objet (un fil)\n");
         return false;
     }
     if (profil.traceType == 0 || profil.traceType == 8 || profil.traceType == 9
         || profil.tri.empty()) {
+        flashBand("Balayage : la face visee n'est pas une feuille tracee");
         std::printf("balayage : la face visee n'est pas une feuille tracee (ligne, rect, cercle, arc, polygone, spline)\n");
         return false;
     }
     if (chemin.traceType != 1 && chemin.traceType != 2 && chemin.traceType != 3
         && chemin.traceType != 6) {
+        flashBand("Balayage : le chemin doit etre un fil (ligne, spline, arc)");
         std::printf("balayage : le chemin doit etre un fil (ligne, spline ou arc)\n");
         return false;
     }
     if (chemin.tracePts.size() < (chemin.traceType == 6 ? (size_t)3 : (size_t)2)) {
+        flashBand("Balayage : le fil chemin est vide ou trop court");
         std::printf("balayage : le fil chemin est vide ou trop court\n");
         return false;
     }
@@ -2522,6 +2526,7 @@ static void sweepClick(GLFWwindow* w) {
         if (t >= 0.0 && t < bestT) { bestT = t; hit = (int)i; }
     }
     if (hit < 0) {
+        flashBand("Balayage : aucun fil vise - cliquez un fil (ligne, spline, arc)");
         std::printf("balayage : aucun fil vise - cliquez un fil (ligne, spline, arc) ; Echap = annuler\n");
         return;
     }
@@ -2813,7 +2818,7 @@ static void updateRot(GLFWwindow* w) {
    Exception assumee a la regle "clic droit = neutre" : ICI le clic droit
    FINIT (les segments deja cliques restent poses). */
 static bool g_lineMode = false;         /* outil arme */
-static bool g_lineFerme = true;         /* B2.5b : pose par la COMMANDE d'armement (L = surface, Maj+L = fil) ; rien de memorise */
+static bool g_lineFerme = true;         /* B2.5b : pose par la COMMANDE d'armement (L = boucle fermee, Maj+L = fil ouvert) ; rien de memorise ; B3.1b : jamais de surface (le polygone ferme en surface) */
 static bool g_lineActive = false;       /* au moins un point clique */
 static std::vector<Vec3> g_linePts;     /* points cliques, monde (y = 0) */
 static std::string g_lineNumBuf;        /* longueur tapee du segment courant */
@@ -2902,12 +2907,11 @@ static void linePose() {
     std::printf("mode selection\n");
 }
 /* B2.5 : fermeture de la boucle - clic sur le depart (>= 3 sommets).
-   Choix par la COMMANDE d armement (regle utilisateur : rien de memorise) :
-   L "Ligne (fermee en surface)" = feuille FUSEE au fil en UN objet - fan
-   (0,i,i+1), etirable au push/pull - ou Maj+L "Ligne (fil ouvert)" = boucle
-   fermee sans triangle (arete n-1 -> 0 ajoutee apres la derive). */
+   B3.1b (retour test) : la ligne ferme en BOUCLE (fil), JAMAIS en surface -
+   fermer en surface est le role du POLYGONE (difference ligne/polygone).
+   L = boucle fermee, Maj+L = fil ouvert ; les vieux projets avec une feuille
+   de ligne fermee restent LUS (la regen type 1 garde la branche surface). */
 static void lineCloseLoop() {
-    const bool surface = g_lineFerme;
     Object o;
     o.name = lineNewName();
     o.pos = g_linePts[0];
@@ -2919,21 +2923,14 @@ static void lineCloseLoop() {
     /* B2.7e : les points de definition survivent a la pose (edition apres coup) */
     o.traceType = 1;
     o.traceFerme = 1;
-    o.traceSurface = surface ? 1 : 0;
+    o.traceSurface = 0;
     o.tracePts = o.v;
-    if (surface)
-        for (size_t i = 1; i + 1 < o.v.size(); ++i) {
-            o.tri.push_back(0); o.tri.push_back((int)i); o.tri.push_back((int)(i + 1));
-        }
     computeObjectDerived(o);
-    if (!surface)
-        o.edges.emplace_back((int)o.v.size() - 1, 0);   /* boucle fermee */
+    o.edges.emplace_back((int)o.v.size() - 1, 0);   /* boucle fermee */
     const size_t nseg = o.edges.size();     /* capture AVANT le move */
     g_objs.push_back(std::move(o));
     selectOnly((int)g_objs.size() - 1);
-    std::printf(surface
-        ? "ligne fermee : %zu cotes, feuille posee (etirable)\n"
-        : "ligne fermee : %zu cotes, fil simple (pas de surface)\n", nseg);
+    std::printf("ligne fermee : %zu cotes, fil en boucle (pas de surface - le polygone ferme en surface)\n", nseg);
     lineReset();
     g_lineMode = false;
     std::printf("mode selection\n");
@@ -3912,11 +3909,12 @@ static void traceRegenSweep(Object& o) {
     const size_t nRings = chem.size();
     const bool boucle = o.traceCheminFerme != 0;
     const size_t nsegPath = boucle ? nRings : nRings - 1;
-    /* repere 2D du profil dans son plan (normale = traceVec) : a sur u0,
-       b sur v0 ; reconstruit a chaque station par les frames transportees */
+    /* normale de reference du roll (traceVec = normale de la face au balayage) */
     Vec3 Nv = o.traceVec;
     if (Nv.norm() < 1e-9) Nv = Vec3(0, 1, 0);
     Nv = Nv * (1.0 / Nv.norm());
+    /* repere 2D du profil dans son plan (u0, v0) - MEMES coordonnees pour
+       toutes les stations (transportees par les frames) */
     Vec3 c{0, 0, 0};
     for (const Vec3& p : prof) c = c + p;
     c = c * (1.0 / (double)n);
@@ -3953,11 +3951,23 @@ static void traceRegenSweep(Object& o) {
     }
     o.v.clear(); o.tri.clear(); o.n.clear();
     o.v.reserve(nBase * nRings);
+    /* B3.1b (retour test) : maitrise du point de connexion - l ANCRE est le
+       point du profil le plus proche du DEPART du chemin (fidele Follow Me :
+       si la feuille touche le fil, le point touche se connecte) ; il est
+       pose EXACTEMENT sur le chemin a la premiere station */
+    size_t iAnc = 0;
+    double dAnc = 1e300;
+    for (size_t k = 0; k < n; ++k) {
+        const double d = (prof[k] - chem[0]).norm();
+        if (d < dAnc) { dAnc = d; iAnc = k; }
+    }
+    const double aC = aCentre ? dot(o.tracePts[0] - prof[iAnc], u0) : 0.0;
+    const double bC = aCentre ? dot(o.tracePts[0] - prof[iAnc], v0) : 0.0;
     for (size_t r = 0; r < nRings; ++r) {
-        if (aCentre) o.v.push_back(chem[r]);
+        if (aCentre) o.v.push_back(chem[r] + Nn[r] * aC + Bb[r] * bC);
         for (size_t k = 0; k < n; ++k) {
-            const double a2 = dot(prof[k] - c, u0);
-            const double b2 = dot(prof[k] - c, v0);
+            const double a2 = dot(prof[k] - prof[iAnc], u0);
+            const double b2 = dot(prof[k] - prof[iAnc], v0);
             o.v.push_back(chem[r] + Nn[r] * a2 + Bb[r] * b2);
         }
     }
@@ -5092,7 +5102,7 @@ static void runToolCommand(int id) {
             g_ppMode = false;
             g_rotMode = false;
             std::printf(id == IDM_TOOL_LINE
-                ? "mode Ligne (fermee en surface) : clics = points du fil ; clic sur le depart = fermeture ; clic droit = fin ; Echap = tout annuler\n"
+                ? "mode Ligne (fermee en boucle) : clics = points du fil ; clic sur le depart = fermeture en boucle (sans surface) ; clic droit = fin ; Echap = tout annuler\n"
                 : "mode Ligne (fil ouvert) : clics = points du fil ; clic sur le depart = boucle sans surface ; clic droit = fin ; Echap = tout annuler\n");
         }
         return;

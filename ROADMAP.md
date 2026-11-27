@@ -313,6 +313,14 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   Outils, bandeau dedie, persistence etendue, refus explicites ;
   edition du balayage (poignees profil + chemin) = lot 2 (gardes
   "prochain lot" en attendant) ; +17 verifications = 411, 0 echec ;
+  B3.2 (retours test) : (1) ancre du balayage = point du profil le
+  plus proche du DEPART du chemin, pose exactement sur le chemin
+  (maitrise du point de connexion, fidele Follow Me) ; (2) refus du
+  balayage affiches aussi au pied de page ; (3) REGLE REVISSEE (retour
+  test torique) : la ligne L ferme en BOUCLE (fil), JAMAIS en surface
+  - fermer en surface = le role du POLYGONE ; Maj+L = fil ouvert ;
+  vieux projets avec feuille de ligne fermee toujours lus ;
+  +1 verification = 412, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec

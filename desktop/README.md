@@ -935,7 +935,17 @@ globale corrigee par le volume signe (normales exterieures) ;
   objet, fil trop court ;
 - persistence : entete trace etendue au type 9 (profil + normale +
   chemin), vieux projets relisibles ; edition du balayage = lot 2
-  (message dedie en attendant) ; total **411, 0 echec**.
+  (message dedie en attendant) ;
+- **B3.2 (retours test)** : (1) **point de connexion maitrise** -
+  l'ancre du balayage = le point de la face le plus proche du DEPART
+  du fil, pose exactement sur le chemin (fidele Follow Me : la
+  feuille ou on la pose decide du resultat) ; (2) les refus du
+  balayage s'affichent AUSSI dans le pied de page (flashBand) ;
+  (3) **la ligne L ferme en BOUCLE (fil), JAMAIS en surface** -
+  fermer en surface est le role du POLYGONE (difference ligne /
+  polygone) ; Maj+L = fil ouvert ; les vieux projets avec feuille de
+  ligne fermee restent lus (regen type 1 conserve la branche
+  surface) ; total **412, 0 echec**.
 
 ## Organiseur des prochains lots
 
