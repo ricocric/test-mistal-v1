@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.3";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.3b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -4380,8 +4380,9 @@ static bool sweepProfilPlan(const Object& o, Vec3& cPt, Vec3& n) {
     return true;
 }
 /* B3.3 : index d'insertion sur une chaine (ouverte ou fermee) au point le
-   plus proche ; retourne -1 si le point est trop loin de la chaine */
-static int sweepChainInsert(const std::vector<Vec3>& pts, bool ferme, const Vec3& p) {
+   plus proche ; tol < 0 = SANS garde (le point vient d'un clic sur le
+   solide), sinon refus si le point est trop loin de la chaine */
+static int sweepChainInsert(const std::vector<Vec3>& pts, bool ferme, const Vec3& p, double tol) {
     const size_t n = pts.size();
     if (n < 2) return -1;
     double best = 1e300; int bi = -1;
@@ -4398,7 +4399,7 @@ static int sweepChainInsert(const std::vector<Vec3>& pts, bool ferme, const Vec3
     }
     if (bi < 1) bi = 1;
     if (bi > (int)n - 1) bi = (int)n - 1;
-    return best <= filPickTol() ? bi : -1;
+    return (tol < 0.0 || best <= tol) ? bi : -1;
 }
 /* clic sur la courbe = ajouter un point de definition ; retourne l'index
    insere (-1 = refuse : doublon ou trace inedit) */
@@ -4417,8 +4418,9 @@ static int traceAddPoint(Object& o, const Vec3& monde, bool gardeProfil = false)
             }
             for (const Vec3& q : o.traceChemin)
                 if ((q - pLocal).norm() < 1e-9) return -1;      /* meme point : rien */
-            const int idx = sweepChainInsert(o.traceChemin, o.traceCheminFerme != 0, pLocal);
-            if (idx < 0) { std::printf("edition : cliquez PRES du chemin pour ajouter un point\n"); return -1; }
+            const int idx = sweepChainInsert(o.traceChemin, o.traceCheminFerme != 0, pLocal,
+                                             gardeProfil ? filPickTol() : -1.0);
+            if (idx < 0) { std::printf("edition : cliquez SUR le tube ou PRES du chemin pour ajouter un point\n"); return -1; }
             o.traceChemin.insert(o.traceChemin.begin() + idx, pLocal);
             traceRegen(o);
             return (int)o.tracePts.size() + idx;
@@ -4433,7 +4435,7 @@ static int traceAddPoint(Object& o, const Vec3& monde, bool gardeProfil = false)
             proj = pLocal - nn * dot(pLocal - (cPt - o.pos) * (1.0 / o.scl), nn);
         for (const Vec3& q : o.tracePts)
             if ((q - proj).norm() < 1e-9) return -1;            /* meme point : rien */
-        const int idx = sweepChainInsert(o.tracePts, o.traceFerme != 0, proj);
+        const int idx = sweepChainInsert(o.tracePts, o.traceFerme != 0, proj, filPickTol());
         if (idx < 0) { std::printf("edition : cliquez PRES du profil pour ajouter un point\n"); return -1; }
         o.tracePts.insert(o.tracePts.begin() + idx, proj);
         traceRegen(o);
@@ -4614,6 +4616,19 @@ static void editClick(GLFWwindow* w) {
         }
         return;
     }
+    if (o.traceType == 9 && g_sweepEditChemin) {    /* B3.3b : clic sur le tube = nouvelle station */
+        double tHit;
+        if (rayObjectTri(org, dir, o, tHit, nullptr)) {
+            const Vec3 hw = org + dir * tHit;
+            const int idx = traceAddPoint(o, hw, false);   /* sans garde : station la plus proche */
+            if (idx >= 0) {
+                g_editSel = idx;
+                std::printf("edition : point ajoute au chemin (%zu au total)\n", o.traceChemin.size());
+            }
+            return;
+        }
+        /* pas sur le solide : clic-sol pres du chemin (regle existante ci-dessous) */
+    }
     if (o.traceType == 9 && !g_sweepEditChemin) {   /* B3.3 : ajout dans le plan du profil */
         Vec3 cPt, nn;
         if (!sweepProfilPlan(o, cPt, nn)) return;
@@ -4648,7 +4663,7 @@ static void editClick(GLFWwindow* w) {
         lineGroundPoint(w, ok, p);
         if (!ok) return;                            /* pointe le ciel : rien */
     }
-    const int idx = traceAddPoint(o, p, o.traceType == 8 && !surSolide);
+    const int idx = traceAddPoint(o, p, (o.traceType == 8 && !surSolide) || o.traceType == 9);
     if (idx >= 0) {
         g_editSel = idx;
         if (o.traceType == 9 && g_sweepEditChemin)
@@ -4718,6 +4733,18 @@ static void drawEditHandles() {
         glVertex3d(w.x + s, w.y, w.z - s);
         glVertex3d(w.x + s, w.y, w.z + s);
         glVertex3d(w.x - s, w.y, w.z + s);
+        glEnd();
+    }
+    /* B3.3b : le chemin du balayage dessine EN EDITION (cyan, visible a
+       travers le solide : il est enterre dans le tube, invisible sinon) */
+    if (o.traceType == 9 && o.traceChemin.size() >= 2) {
+        glColor3d(0.2, 0.7, 0.95);
+        glLineWidth(2.0);
+        glBegin(o.traceCheminFerme ? GL_LINE_LOOP : GL_LINE_STRIP);
+        for (const Vec3& q : o.traceChemin) {
+            const Vec3 w3 = o.pos + q * o.scl;
+            glVertex3d(w3.x, w3.y, w3.z);
+        }
         glEnd();
     }
     /* B3.3 : poignees du CHEMIN d'un balayage (cyans) - index = npts + i */
@@ -5477,7 +5504,7 @@ static void runToolCommand(int id) {
                 g_editSel = -1;
                 g_sweepEditChemin = false;
                 if (g_objs[(size_t)idx].traceType == 9) {   /* B3.3 */
-                    std::printf("mode Edition : %s - PROFIL (%zu pts, verts) + CHEMIN (%zu pts, cyans) - glissez une poignee ; O = cible des ajouts/suppressions ; poignee + Suppr = supprimer ; Echap ou clic droit = quitter\n",
+                    std::printf("mode Edition : %s - PROFIL (%zu pts, verts) + CHEMIN (%zu pts, cyans) - glissez une poignee ; clic sur le tube = point de chemin ; O = cible des ajouts/suppressions ; poignee + Suppr = supprimer ; Echap ou clic droit = quitter\n",
                                 g_objs[(size_t)idx].name.c_str(), g_objs[(size_t)idx].tracePts.size(),
                                 g_objs[(size_t)idx].traceChemin.size());
                     return;
@@ -5642,7 +5669,7 @@ static std::string statusPrompt() {
         if (g_editObj >= 0 && g_editObj < (int)g_objs.size()
             && g_objs[(size_t)g_editObj].traceType == 9)
             return g_sweepEditChemin
-                ? "Edition du balayage : chemin (cyans) - glissez une poignee | clic pres du chemin = ajouter | O = cible PROFIL | poignee + Suppr = supprimer | Echap = quitter"
+                ? "Edition du balayage : chemin (cyans) - glissez une poignee | clic SUR LE TUBE = nouvelle station | O = cible PROFIL | poignee + Suppr = supprimer | Echap = quitter"
                 : "Edition du balayage : profil (verts) - glissez une poignee | clic dans le plan = ajouter | O = cible CHEMIN | poignee + Suppr = supprimer | Echap = quitter";
         if (g_editObj >= 0 && g_editObj < (int)g_objs.size()
             && g_objs[(size_t)g_editObj].traceType == 8)

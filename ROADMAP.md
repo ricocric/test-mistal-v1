@@ -345,6 +345,10 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   suppression avec minimums par sous-type, O = bascule de la cible
   (profil/chemin), rect/cercle/arc = points fixes ; +14 verifications
   = 437, 0 echec ;
+  B3.3b (retour test) : chemin ENTERRE dans le tube = dessine en
+  edition (cyan, a travers le solide) ; clic SUR LE TUBE = nouvelle
+  station au segment le plus proche (sans garde) ; clic-sol = avec
+  garde ; +3 verifications = 440, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec

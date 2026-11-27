@@ -2503,12 +2503,20 @@ int main() {
         CHECK(sw.v.size() == 12 && sw.tri.size() == (size_t)(3 * 20)
               && std::fabs(signedVolume(sw) - 160.0) < 1e-6,
               "B3.3 : 3 anneaux (12 sommets, 20 tris), volume conserve 160");
-        CHECK(traceAddPoint(sw, sw.pos + Vec3(100, 0, 100)) < 0,
-              "B3.3 : refus - point LOIN du chemin");
+        CHECK(traceAddPoint(sw, sw.pos + Vec3(100, 0, 100), true) < 0,
+              "B3.3 : refus - clic-sol LOIN du chemin (avec garde)");
         CHECK(traceDelPoint(sw, ich), "B3.3 : suppression de la poignee du chemin");
         CHECK(sw.traceChemin.size() == nch0 && sw.v.size() == 8,
               "B3.3 : chemin retrouve (2 points, 8 sommets)");
         CHECK(!traceDelPoint(sw, (int)npts0), "B3.3 : garde - minimum 2 points pour le chemin ouvert");
+        /* B3.3b : clic SUR le tube (sans garde) = insertion a la station la plus proche */
+        {
+            CHECK(traceAddPoint(sw, sw.pos + Vec3(100, 0, 100), false) == (int)(npts0 + 1)
+                  && sw.traceChemin.size() == nch0 + 1 && sw.v.size() == 12,
+                  "B3.3b : clic sur le tube = station ajoutee au segment le plus proche (sans garde)");
+            CHECK(traceDelPoint(sw, (int)sw.tracePts.size() + 1), "B3.3b : station ajoutee supprimee");
+            CHECK(sw.traceChemin.size() == nch0 && sw.v.size() == 8, "B3.3b : chemin retrouve");
+        }
         /* ajout au PROFIL (O = cible profil) : milieu d un bord de la face */
         g_sweepEditChemin = false;
         const Vec3 milieuPr = sw.pos + ((sw.tracePts[0] + sw.tracePts[1]) * 0.5) * sw.scl;

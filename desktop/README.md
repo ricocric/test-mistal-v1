@@ -975,6 +975,12 @@ globale corrigee par le volume signe (normales exterieures) ;
   saisie avec minimums par sous-type (chemin ouvert 2 / ferme 3 ; profil
   polygone 3, ouvert 2 / ferme 3) ; rect/cercle/arc = points fixes (drag
   seul) ; total **437, 0 echec**.
+- **B3.3b (retour test)** : le chemin du balayage est ENTERRE dans le
+  tube (invisible, surtout en torique) - **dessine en edition** (cyan,
+  visible a travers le solide, boucle fermee = GL_LINE_LOOP) ; ajout :
+  **clic SUR LE TUBE = nouvelle station** au segment le plus proche
+  (sans garde), clic-sol pres du chemin = avec garde (pas d'ajout
+  accidentel) ; total **440, 0 echec**.
 
 ## Organiseur des prochains lots
 
