@@ -183,6 +183,12 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   suppression, message explicite), polygone = ajout/suppression avec
   garde a 3 ; round-trip save/load des 4 formes ; +20 verifications =
   350, 0 echec ; reste E3 = extrusions (profil + hauteur/chemin) ;
+  B2.7e2b : BUG arc corrige (drag du DEPART detachait l'arc des
+  poignees : rebasage - tracePts[0] invalide des que tracePts[0] != 0 ;
+  regen type 6 = locales tracePts telles quelles, pos + v = pos +
+  tracePts[i] = monde) ; +1 verification = 351, 0 echec ;
+  VALIDATION UTILISATEUR E1 + E2 + E2b : points 1 a 6 ok, arc corrige
+  confirme (l'arc suit la poignee de depart, extremites exactes) ;
   remarques utilisateur : (1) le probleme est le MEME pour la ligne
   (segments droits) et la spline (courbe) - il faudra pouvoir les
   modifier toutes ; (2) GENERALISATION : l'edition doit etre possible
@@ -222,6 +228,29 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   des points des v1 ou seulement deplacer ; bascule variante
   passage/controle A CHAUD pendant l'edition ; bascule ouvert/ferme
   pendant l'edition (rattache une feuille -> fil et reciproquement).
+- B2.7e E3 EXTRUSIONS EDITABLES (conception AVANT code) :
+  ETAT DES LIEUX : le push/pull P extrude UNE FACE d'un objet EN PLACE
+  (applyExtrude modifie v directement) - sur une feuille issue d'un
+  profil (traceType != 0), la TraceData survit mais la geometrie DIVERGE
+  (les tracePts ne decrivent plus l'objet) ; les coques posees (cubes,
+  imports) n'ont AUCUN parametre de construction - hors perimetre E3 ;
+  PROPOSITION : type 8 = EXTRUSION dans traceType - l'objet porte le
+  PROFIL (sous-type 1/2/3/4/5/6/7 + ses tracePts + ferme/surface) + la
+  HAUTEUR (Vec3 local, normalement au plan du profil) ; regen = MEMES
+  fonctions que le trace (traceRegenBase/fan pour le profil) puis
+  prismatage (cap bas + cap haut inverse + jupe = perimetre) - chemin
+  unique, pose et edition confondus ; open : profil OUVERT (ligne, arc
+  ouvert, spline) extrude = BANDE (2 nappes + bords) et non solide ;
+  EDITION type 8 : E = poignees du profil au sol + poignee de HAUTEUR
+  au centre du cap superieur (drag = projection sur la normale) ; O /
+  variantes du profil a chaud ; persistence : bloc trace etendu (type 8
+  + sous-type + npts + hauteur) ;
+  ARBITRAGES A TRANCHER : (1) geste de pose - P sur une feuille a
+  TraceData CONVERTIT en extrusion parametrique vs commande dediee ;
+  (2) P sur le reste (coques, imports) reste en place non parametrique ;
+  (3) feuille profil : consommee (remplacee par le solide, fidele
+  SketchUp) ou conservee ; (4) la hauteur dans le geste : drag P comme
+  aujourd'hui + saisie chiffres.
 - B2.2 RECTANGLE (conception avant code, mecanique commune B2) :
   - clic 1 = coin, souris = apercu du rectangle au sol, clic 2 = pose ;
     clic droit ou Echap = annulation SANS objet pose ; Entree vide = rien ;
