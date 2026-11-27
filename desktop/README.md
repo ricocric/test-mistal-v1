@@ -1003,6 +1003,13 @@ globale corrigee par le volume signe (normales exterieures) ;
   200 derniers messages, **touche J** ou menu Affichage > Journal des
   messages) ; restent en console : l'echo de developpement, les compteurs
   live (\r) et le repli sans fenetre ; +3 verifications = **448, 0 echec**.
+- **B3.3h (retours test B3.3g)** : journal **ancre en HAUT a gauche**
+  (il etait en bas), **largeur FIXE** (35 % de la fenetre, plus de
+  retrecissement aleatoire), **les clics dans le panneau sont avales**
+  (plus de clic traversant vers la scene), **repetitions dedupliquees**
+  (une seule ligne, compteur xN), **plus d'echo console** (console = debug
+  uniquement, regle B3.3f appliquee a la lettre) ; +1 verification =
+  **449, 0 echec**.
 
 ## Organiseur des prochains lots
 

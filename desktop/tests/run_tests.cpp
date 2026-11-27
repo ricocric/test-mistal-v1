@@ -2548,6 +2548,11 @@ int main() {
             userMsg("plein", 1);
             for (int i = 0; i < 250; ++i) userMsg("l%d", i);
             CHECK(g_journal.size() <= 200, "B3.3f : journal borne a 200 messages");
+            /* B3.3h : repetitions dedupliquees (compteur xN), plus d'echo console */
+            const size_t n1 = g_journal.size();
+            userMsg("dup"); userMsg("dup"); userMsg("dup");
+            CHECK(g_journal.size() == n1 && g_journalN.back() == 3,
+                  "B3.3h : message repete = une seule ligne, compteur (x3)");
             g_bandFlash.clear();
         }
         /* ajout au PROFIL (O = cible profil) : milieu d un bord de la face */

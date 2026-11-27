@@ -362,6 +362,10 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   B3.3f (REGLE) : console = debug uniquement, tout message
   utilisateur passe par userMsg (bandeau + journal consultable, J,
   panneau des 200 derniers) ; +3 = 448, 0 echec ;
+  B3.3g/h (retours test) : stub GL complete pour MSVC (bloc
+  _WIN32 du panneau) ; journal en haut a gauche, largeur fixe,
+  clics avales, repetitions dedupliquees (xN), plus d echo
+  console ; +1 = 449, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec

@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.3g";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.3h";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -316,7 +316,8 @@ static void flashBand(const char* msg) {
    utilisateur va DANS LA FENETRE - bandeau + JOURNAL consultable (touche J,
    panneau des derniers messages). L'echo console reste pendant le
    developpement uniquement. */
-static std::vector<std::string> g_journal;
+static std::vector<std::string> g_journal;   /* messages UNIQUES, ordre d'arrivee */
+static std::vector<int> g_journalN;          /* nombre d'apparitions (B3.3h : dedup) */
 static bool g_journalVisible = false;
 static void userMsg(const char* fmt, ...) {
     char buf[512];
@@ -324,9 +325,17 @@ static void userMsg(const char* fmt, ...) {
     va_start(ap, fmt);
     std::vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
-    std::printf("%s\n", buf);       /* echo developpement */
+    /* B3.3h (retour test) : pas d'echo console ; un message repete
+       n'ajoute pas de ligne, son compteur (xN) s'incremente */
+    for (size_t i = g_journal.size(); i > 0; --i) {
+        if (g_journal[i - 1] == buf) { ++g_journalN[i - 1]; flashBand(buf); return; }
+    }
     g_journal.push_back(buf);
-    if (g_journal.size() > 200) g_journal.erase(g_journal.begin(), g_journal.end() - 200);
+    g_journalN.push_back(1);
+    if (g_journal.size() > 200) {
+        g_journal.erase(g_journal.begin());
+        g_journalN.erase(g_journalN.begin());
+    }
     flashBand(buf);
 }
 static Mode g_mode = M_None;
@@ -335,6 +344,19 @@ static Camera g_camHome;
 static double g_prevX = 0, g_prevY = 0;
 static double g_lastClickTime = -1.0;
 static int g_winW = 1280, g_winH = 800;
+
+/* B3.3h : geometrie du panneau journal, partagee par le dessin et la
+   detection de clic (un seul chemin de code) ; LARGEUR FIXE (retour test :
+   la largeur ne doit plus varier selon les messages), ancre en HAUT a gauche */
+static void journalRect(float& xj, float& yj, float& wj, float& hj, size_t& debut, size_t nAff) {
+    const size_t nj = g_journal.size();
+    debut = nj > nAff ? nj - nAff : 0;
+    xj = 8.0f;
+    wj = (float)g_winW * 0.35f;
+    if (wj < 220.0f) wj = 220.0f;
+    hj = (float)(nj - debut) * 15.0f + 12.0f;
+    yj = (float)g_winH - 8.0f - hj;
+}
 static int g_lockAxis = -1;
 static Vec3 g_grabPoint;
 static Vec3 g_startPos;
@@ -4846,6 +4868,16 @@ static void onScroll(GLFWwindow*, double, double dy) {
 }
 
 static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
+    /* B3.3h (retour test) : un clic DANS le panneau journal est avale
+       (il ne doit pas etre interprete comme un clic dans la scene) */
+    if (g_journalVisible && !g_journal.empty()) {
+        float xj, yj, wj, hj; size_t debut;
+        journalRect(xj, yj, wj, hj, debut, 12);
+        double mx, my;
+        glfwGetCursorPos(w, &mx, &my);
+        const float fy = (float)g_winH - (float)my;   /* GLFW : origine en haut */
+        if ((float)mx >= xj && (float)mx <= xj + wj && fy >= yj && fy <= yj + hj) return;
+    }
     if (button == GLFW_MOUSE_BUTTON_MIDDLE) return;   /* B3.3e : pan = Maj + clic droit (UN seul moyen de se deplacer) */
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         /* B3.3e (retour test) : Maj + clic droit (glisser) = deplacer la vue
@@ -5887,16 +5919,9 @@ static void drawStatusBand() {
     }
     if (g_journalVisible) {   /* B3.3f : panneau des derniers messages (J) */
         const size_t nAff = 12;
-        const size_t nj = g_journal.size();
-        const size_t debut = nj > nAff ? nj - nAff : 0;
-        float lj = 120.0f;
-        for (size_t i = debut; i < nj; ++i) {
-            const float wl = (float)textWidthPx(g_journal[i].c_str());
-            if (wl > lj) lj = wl;
-        }
-        lj += 16.0f;
-        const float hj = (float)(nj - debut) * 15.0f + 12.0f;
-        const float xj = 8.0f, yj = 28.0f;
+        size_t debut;
+        float xj, yj, lj, hj;
+        journalRect(xj, yj, lj, hj, debut, nAff);   /* B3.3h : haut gauche, largeur fixe */
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glColor4f(0.97f, 0.97f, 0.99f, 0.92f);
@@ -5911,8 +5936,14 @@ static void drawStatusBand() {
         glVertex2f(xj + lj - 0.5f, yj + hj - 0.5f); glVertex2f(xj + 0.5f, yj + hj - 0.5f);
         glEnd();
         glColor3f(0.08f, 0.09f, 0.12f);
-        for (size_t i = debut; i < nj; ++i)
-            drawText2D(xj + 8.0f, yj + 4.0f + (float)(i - debut) * 15.0f, g_journal[i].c_str());
+        for (size_t i = debut; i < g_journal.size(); ++i) {
+            char ligne[560];
+            if (g_journalN[i] > 1)
+                std::snprintf(ligne, sizeof(ligne), "%s (x%d)", g_journal[i].c_str(), g_journalN[i]);
+            else
+                std::snprintf(ligne, sizeof(ligne), "%s", g_journal[i].c_str());
+            drawText2D(xj + 8.0f, yj + hj - 16.0f - (float)(i - debut) * 15.0f, ligne);
+        }
     }
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
