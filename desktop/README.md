@@ -1083,6 +1083,49 @@ globale corrigee par le volume signe (normales exterieures) ;
     B3.3c/B3.6a-ter) ;
   - +24 verifications = **505, 0 echec** (ASan propre) ; saisie numerique
     du roll (chiffres + Entree = degres) : plus tard.
+- **B3.6z (Ctrl+Z annulation / retablissement)** : priorite choisie par
+  l'utilisateur (Ctrl+Z AVANT le collage generique B3.7).
+  - **modele** : pile d'ETATS AVANT mutation - chaque pas = copie COMPLETE
+    de la scene (`UndoPas { objs, label }`, borne 100) ; les objets portant
+    leurs parametres de construction (B2.7e), la copie restaure tout ;
+    pile redo symetrique ;
+  - **touches** : Ctrl+Z = annuler, Ctrl+Maj+Z = retablir, Ctrl+Y =
+    retablir (via keyIsLetter, regle B2.4f) ; menu Outils : Annuler /
+    Retablir en tete (raccourcis rappelles, regle B1.7c) ; refus tant qu'un
+    geste est en cours ("terminez d'abord le geste en cours") ;
+  - **couverture** : poses (ligne, ligne fermee, rectangle, cercle, arc,
+    polygone, spline, import, duplication, collage, balayage), suppressions
+    (objet, multi, retrait de copies), editions ponctuelles (ajout /
+    suppression de point, accroche, ouvert/ferme, variante), gestes continus
+    (deplacement, push/pull, rotation, drag de poignee, roll) - UN pas par
+    GESTE (dirty flag : clic sans mouvement = pas de pas ; ppCancel /
+    rotCancel n'empilent pas) ; piles videes au nouveau projet / ouverture /
+    fermeture ; ne couvre PAS la vue ni la selection ;
+  - +31 verifications = **536, 0 echec** (ASan propre).
+- **B3.6zb (correctif collision d'ids de menu)** - retour de test du lot
+  Ctrl+Z : "choisir Dupliquer dans le menu de contexte me recolle une vieille
+  version de projet", puis "le mode dupliquer ne fonctionne plus du tout".
+  - cause : la base des fichiers recents (`IDM_PROJET_RECENT`, B3.2d) etait
+    au milieu de l'enum et reservait les ids 9..16 ; `IDM_DUPLICATE = 11`,
+    `IDM_DELETE_OBJECT = 12`, `IDM_INFO_OBJECT = 10` tombaient dedans :
+    Dupliquer chargeait `historique[2]` (vieux projet), et si le slot etait
+    vide, retour silencieux ; en sens inverse les slots 4..8 du sous-menu
+    Projets recents declenchaient Select/PushPull/Tourner ; bug date de
+    B3.2d, PAS du lot Ctrl+Z (menu contextuel non re-teste depuis) ;
+  - correctif : base deplacee en fin d'enum, plage recents testee AVANT la
+    delegation aux commandes ;
+  - +6 verifications = **542, 0 echec** (ASan propre).
+- **B3.6zb suite (retour de test : "un seul Ctrl+Z supprime le pull ET le
+  rectangle", sequence : pull, relachement, deselection, Ctrl+Z)** :
+  - le bloc commun de relachement gauche refermait le geste push/pull AVANT
+    qu'il ait mute (le pull est un geste clic -> deplacement -> clic) : le pas
+    d'extrusion n'etait jamais pousse, Ctrl+Z remontait au pas de la pose =
+    scene vide ; correctif : pas de validation au relachement quand
+    g_ppActive / g_rotActive (cloture a ppCommit / rotCommit) ;
+  - au passage : le pull VIDAIT une feuille a winding oppose a la normale de
+    tirage (polygone trace clockwise = mesh vide) ; rewind au lieu du rejet ;
+  - +8 verifications = **549, 0 echec** (ASan propre), dont le geste pull
+    complet simule (capture, relachement, tirage +3, pose, 2 pas distincts).
 
 ## Organiseur des prochains lots
 

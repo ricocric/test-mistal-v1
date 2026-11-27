@@ -550,8 +550,124 @@ Questions ouvertes a trancher avec l'utilisateur :
       - **Bandeau** : "Edition du balayage : ROLL - glissez la poignee
         violette pour tourner le profil autour du fil" ; saisie numerique
         (chiffres + Entree = degres) PLUS TARD ;
-  - **B3.7+ collage generique 2 objets** (coin/coin, arete/arete) : a cadrer
-    separatiment une fois B3.5/B3.6 validees ;
+  - **B3.6z FAIT (505 -> 536 verifs) - Ctrl+Z annulation / retablissement**
+    (backlog priorise par l'utilisateur : Ctrl+Z EN PREMIER, collage
+    generique ENSUITE) - conception posee ci-dessous puis appliquee SANS
+    ecart : 25 sites de mutation branches, 4 gestes continus, touches +
+    menu Outils, +31 verifications, ASan propre ;
+    - note de test : `polyPose` (comme les autres poses) VIDE `g_polyPts`
+      au reset - un moteur de tests qui repose 2 fois doit re-remplir ;
+    - note de test : la pose du balayage dans un sous-bloc pousse AUSSI un
+      pas "balayage" (undoSnapshot dans sweepConvertTo) - les comptes de
+      pas des tests l'incluent ;
+    - **modele** : pile d'ETATS AVANT mutation - chaque pas = copie COMPLETE
+      de la scene (vector<Object>) ; les objets portent leurs parametres de
+      construction (principe B2.7e), donc la copie restaure tout (geometrie
+      derivee comprise) ; struct `UndoPas { std::vector<Object> objs;
+      std::string label; }` ;
+    - **2 piles** : `g_undoPile` (borne 100, kUndoMax) et `g_redoPile` ;
+      globals de geste : `g_undoEnCours` (UndoPas en attente), `g_undoOuvert`
+      (un geste continu est capture), `g_undoSale` (le geste a vraiment mute
+      quelque chose) ;
+    - **API (UN SEUL CHEMIN DE CODE)** :
+      `undoPousse(p)` = pousse dans undo (borne + clear redo) ;
+      `undoSnapshot(label)` = one-shot AVANT la mutation (pose, suppression,
+      edition ponctuelle) ;
+      `undoOuvre(label)` = capture au DEBUT d'un geste continu (pending) ;
+      `undoValide()` = au relachement, pousse seulement si sale ;
+      `undoAbandonne()` = annulations qui restaurent deja la base (ppCancel,
+      rotCancel) ;
+      `undoVide()` = nouveau/ouvrir/fermer projet ;
+      `undoAnnule()` / `undoRetablit()` : refus si geste en cours ("terminez
+      d'abord le geste en cours") ; "rien a annuler" si pile vide ; sinon
+      push etat courant sur l'autre pile + restore + clearSelection() + garde
+      edition (g_editObj hors bornes = sortie d'edition) + userMsg
+      "annule : <label>" / "retabli : <label>" ;
+    - **touches** (apres Ctrl+V dans onKey, AVANT les blocs d'edition donc
+      actif en edition) : Ctrl+Z = annuler, Ctrl+Maj+Z = retablir, Ctrl+Y =
+      retablir (via keyIsLetter, regle B2.4f) ; menu Outils : "Annuler
+      Ctrl+Z" / "Retablir Ctrl+Y" en tete (regle B1.7c), IDs IDM_ANNULER /
+      IDM_RETABLIR DERNIERS et contigus + cases dispatcher runToolCommand ;
+    - **dirty flags par geste** (UN pas par GESTE, pas par frame) :
+      deplacement = delta.norm() > 1e-12 ; push/pull = fabs(d) > 1e-12
+      (+ sale dans la pose numerique) ; rotation = fabs(angDeg) > 1e-12 ;
+      drag de poignee = comparaison ancien/nouveau point ; roll =
+      fabs(traceRoll - g_rollAng0) > 1e-12 ; clic sans mouvement = PAS de pas ;
+    - **ne couvre PAS** : vue (camera), selection ; undoVide dans
+      IDM_NEW_PROJECT / IDM_OPEN_PROJECT (apres load OK) / IDM_CLOSE_PROJECT ;
+    - **verifications visees (~15)** : pose + undo/redo, suppression,
+      duplication, clic sans mouvement = pile inchangee, drag reel, edition
+      ajout/suppression de point, roll undo, refus pendant geste, piles vides
+      au nouveau projet, pile vide sans crash, borne 100.
+  - **B3.6zb FAIT (536 -> 542 verifs) - correctif collision d'ids de menu**
+    (retour de test du lot Ctrl+Z, point 9 : "choisir Dupliquer dans le menu
+    de contexte me recolle une vieille version de projet", puis "le mode
+    dupliquer ne fonctionne plus du tout") :
+    - cause : la base des fichiers recents `IDM_PROJET_RECENT` (B3.2d) etait
+      au MILIEU de l'enum (valeur 9) et reservait les ids 9..16 (base +0..7) ;
+      or `IDM_INFO_OBJECT = 10`, `IDM_DUPLICATE = 11`, `IDM_DELETE_OBJECT =
+      12` tombent DANS cette plage : dans `handleMenuAction` la plage recents
+      etait testee avant le switch, donc Dupliquer chargeait `historique[2]`
+      (le 3e projet recent - exactement le retour), Supprimer/Infos pareil,
+      et si le slot etait vide, retour silencieux = "ne fonctionne plus du
+      tout" ; en sens inverse les slots 4..8 du sous-menu (ids 13..16) etaient
+      avales par la delegation aux commandes (Select/PushPull/Tourner au lieu
+      d'ouvrir) ; date du bug : B3.2d (le menu contextuel n'avait pas ete
+      re-teste depuis), PAS le lot Ctrl+Z ;
+    - correctif : `IDM_PROJET_RECENT` deplace en FIN d'enum (apres
+      `IDM_RETABLIR`) et plage recents testee AVANT la delegation
+      `id >= kIdCommandStart` (sinon les slots seraient avales) ;
+    - REGLE A RETENIR : une base d'ids "contigus +N" ne doit
+      JAMAIS etre placee au milieu d'un enum qui contient d'autres familles -
+      toute nouvelle plage contigue va en FIN d'enum ;
+    - +6 verifications (projets temoins sur disque : Dupliquer = demande du
+      nombre, Supprimer = suppression, slot 0 ouvre, slot 7 ouvre).
+  - **B3.6zb FAIT (suite) - le relachement du clic de capture refermait le
+    geste push/pull** (retour de test : "un seul Ctrl+Z supprime le pull ET
+    le rectangle", sequence exacte : pull, relachement, deselection, Ctrl+Z) :
+    - cause : le bloc commun de relachement gauche (B3.6z) appelait
+      `undoValide()` sans condition ; le push/pull est un geste CLIC (capture)
+      -> deplacement -> CLIC (pose), le relachement du clic de capture
+      refermait donc le geste AVANT qu'il ait mute (sale=0) - le pas
+      d'extrusion n'etait jamais pousse, le Ctrl+Z remontait au pas de la
+      pose = scene vide ;
+    - correctif : le relachement gauche ne valide PAS quand `g_ppActive` /
+      `g_rotActive` (ces gestes se closent a ppCommit / rotCommit) ;
+    - +7 verifications dont le geste pull COMPLET simule (capture,
+      relachement, tirage d=+3, pose, annulation en 2 pas distincts).
+  - **B3.6zb FAIT (suite) - le pull VIDAIT une feuille a winding oppose** :
+    `makeExtrude` oriente la normale du cote de la camera ; la branche
+    "feuille plate" d'`applyExtrude` REJETAIT les triangles a winding oppose
+    (`dot(cr, n) <= 0 -> skip`) : tirer vers le haut un polygone trace
+    clockwise (ou un rectangle aux coins inverses) vidait le mesh (tri = 0,
+    feuille disparue) ; correctif : REWIND du triangle au lieu du rejet (les
+    doublons a deux windings du butee restent dedoublonnes par seenT) ;
+    +1 verification (tirage d'une feuille -Y wound = volume positif).
+  - **B3.7 collage generique 2 objets (coin/coin, arete/arete) - CONCEPTION
+    posee avant code (priorite 2 du backlog, apres validation Ctrl+Z)** :
+    - **principe** (generalise de B3.4/B3.5) : chaque forme possede des
+      POINTS D'ACCROCHE = sommets + milieux de segments ; coller A sur B =
+      poser une accroche de A sur une cible de B (point de fil = deja fait
+      au trace du balayage ; B3.7 = les cibles SOLIDES : coin, milieu
+      d'arete, point d'une face) ;
+    - **arbitrages a trancher AVANT code** :
+      1. **armement** : proposition v1 = selectionner A puis menu contextuel
+         "Coller sur..." -> clic sur la cible de B (le meme geste que
+         Supprimer/Dupliquer) ; variante = touche dediee (a definir) ;
+      2. **accroche de A** : collage intelligent (l'accroche de A la plus
+         proche de la cible, comme B3.5) v1, ou choix explicite de
+         l'accroche (poignees orange, comme B3.6a) en v2 ;
+      3. **ce que fait le collage** : v1 = TRANSLATION seule (l'accroche de
+         A arrive sur la cible, orientation de A inchangee) ; l'alignement
+         arete/arete (rotation) = question ouverte ;
+      4. **lien persistant ou pose definitive** : v1 = pose definitive (un
+         simple deplacement) ; un LIEN parametre de construction (A suit B)
+         = plus tard (le principe B2.7e le permet, mais il faut un editeur
+         de liens - a cadrer avec B8 pivot) ;
+      5. **undo** : un pas "collage" (B3.6z, deja pret) ;
+    - cibles v1 proposees : sommet de B, milieu d'arete, point au plus
+      proche d'une arete (tolerance filPickTol), point d'une face
+      (projection au plan) ;
   - les arbitrages restants (interaction exacte du choix d'accroche au
     trace, comportement torique) seront poses au fil des tests utilisateur.
 - B8 pivot intelligent : ETUDE DE CONCEPTION avant code (nombreux cas de
