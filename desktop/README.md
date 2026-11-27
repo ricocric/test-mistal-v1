@@ -1034,6 +1034,25 @@ globale corrigee par le volume signe (normales exterieures) ;
   persiste (ligne optionnelle `accroche N`, vieux projets relisibles),
   hors bornes = repli collage intelligent ; helper unique `sweepAccroches`
   (regen et poignees) ; +12 verifications = **464, 0 echec** (ASan propre).
+- **B3.6a-bis (lot de correctifs retour test B3.6a)** :
+  - **fils selectionnables devant un solide** - CAUSE des splines par
+    controle incaptables : dans `pickAt`, tout solide touche par le rayon
+    gagnait sur TOUS les fils (une spline de controle pres d'un tube etait
+    masquee par le tube derriere elle, meme si la courbe etait visible et
+    plus proche) ; desormais le fil VISIBLE le plus proche gagne sur le
+    solide (marge = tolerance de capture) ; ce n'etait donc PAS une question
+    d'altitude : la courbe captee est exactement la courbe dessinee ;
+  - **pan Maj+clic droit robuste** : l'ordre du geste ne compte plus (Maj
+    pressee pendant le clic droit tenu = pan aussi, etat `g_rightDown`) et
+    la sortie d'edition passe au relachement du clic droit ; bandeau de
+    confirmation a l'armement du pan ;
+  - **zoom plus efficace** : 20 % par cran (0.8 au lieu de 0.9) - x100 en
+    20 crans au lieu de 44 ; bornes 0.1/4000 conservees ;
+  - **altitude des poignees** : le drag d'une poignee et l'ajout d'un point
+    se font dans le plan HORIZONTAL passant par le point (plus de retombee
+    au sol pour les courbes en hauteur) ; au sol, identique a avant ;
+  - +15 verifications = **479, 0 echec** (ASan propre) ; backlog consigne :
+    selection par NOM d'objet (liste de choix, menu contextuel).
 
 ## Organiseur des prochains lots
 

@@ -2613,6 +2613,149 @@ int main() {
         g_polyPts.clear(); g_lineMode = false; lineReset();
     }
 
+    { /* B3.6a-bis : fils SELECTIONNABLES devant un solide (splines par
+         controle incaptables, retour test) + pan Maj+clic droit robuste
+         (ordre du geste libre) + ALTITUDE des poignees conservee */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_winW = 1600; g_winH = 900;
+        g_cam = g_camHome;
+        g_cam.target = Vec3(0, 2, 0); g_cam.dist = 25.0;
+        g_editMode = false; g_editObj = -1; g_editGrab = -1;
+        g_rightDown = false; g_mode = M_None;
+        g_sweepEditChemin = false; g_sweepEditAcc = false;
+        auto pixelDe = [](const Vec3& c, double& px, double& py) {
+            const double t = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+            const Vec3 d = normalized(c - g_cam.pos());
+            const double df = dot(d, g_cam.forward());
+            const double aspect = (double)g_winW / (double)g_winH;
+            const double ndcX = dot(d, g_cam.right()) / (df * t * aspect);
+            const double ndcY = dot(d, g_cam.up()) / (df * t);
+            px = (ndcX + 1.0) * 0.5 * (double)g_winW;
+            py = (1.0 - ndcY) * 0.5 * (double)g_winH;
+        };
+        /* solide : boite 10x2x10 (derriere la courbe vue de la camera) */
+        {
+            Object cube; cube.name = "Cube";
+            cube.v = { Vec3(-5,0,-5),Vec3(5,0,-5),Vec3(5,0,5),Vec3(-5,0,5),
+                       Vec3(-5,2,-5),Vec3(5,2,-5),Vec3(5,2,5),Vec3(-5,2,5) };
+            const unsigned t[] = {0,1,2, 0,2,3, 4,6,5, 4,7,6, 0,4,5, 0,5,1,
+                                  1,5,6, 1,6,2, 2,6,7, 2,7,3, 3,7,4, 3,4,0};
+            for (int i = 0; i < 36; ++i) cube.tri.push_back(t[i]);
+            computeObjectDerived(cube);
+            g_objs.push_back(cube);
+        }
+        /* spline PAR CONTROLE (type 3) en pont au-dessus de la boite :
+           4 points de controle = Bezier cubique, milieu exact (0,4,0) */
+        g_splMode = true; g_splCtrl = true; splReset();
+        const std::vector<Vec3> pont = { Vec3(-6,4,0), Vec3(-2,4,0), Vec3(2,4,0), Vec3(6,4,0) };
+        for (const Vec3& q : pont) g_splPts.push_back(q);
+        splFinish();
+        g_splMode = false; g_splCtrl = false;
+        CHECK(g_objs.size() == 2 && g_objs[1].traceType == 3 && g_objs[1].tri.empty(),
+              "B3.6a-bis : spline controle (type 3) posee en pont au-dessus du solide");
+        {
+            extern double g_stubCursorX, g_stubCursorY;
+            double px, py;
+            pixelDe(Vec3(0, 4, 0), px, py);           /* milieu exact de la courbe */
+            g_stubCursorX = px; g_stubCursorY = py;
+            CHECK(pickAt(W) == 1,
+                  "B3.6a-bis : clic sur la courbe (type 3) = la SPLINE gagne (le solide derriere ne masque plus)");
+            pixelDe(Vec3(-4, 2, 3), px, py);          /* face du cube, courbe loin du rayon */
+            g_stubCursorX = px; g_stubCursorY = py;
+            CHECK(pickAt(W) == 0,
+                  "B3.6a-bis : le solide PLUS PROCHE gagne toujours (regression evitee)");
+        }
+        /* pan Maj + clic droit EN EDITION - les deux ordres du geste */
+        {
+            extern double g_stubCursorX, g_stubCursorY;
+            g_editMode = true; g_editObj = -1; g_mode = M_None;
+            g_stubCursorX = 800; g_stubCursorY = 450;
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, GLFW_MOD_SHIFT);
+            CHECK(g_mode == M_Pan && g_editMode,
+                  "B3.6a-bis : pan EN EDITION - Maj + clic droit presse = M_Pan (edition conservee)");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, GLFW_MOD_SHIFT);
+            CHECK(g_mode == M_None && g_editMode,
+                  "B3.6a-bis : relachement = fin du pan, edition toujours active");
+            /* ordre inverse : clic droit presse D'ABORD, Maj ensuite */
+            g_mode = M_None;
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
+            CHECK(g_editMode, "B3.6a-bis : clic droit presse sans Maj = edition NON quittee au presse");
+            onKey(W, GLFW_KEY_LEFT_SHIFT, 0, GLFW_PRESS, 0);
+            CHECK(g_mode == M_Pan,
+                  "B3.6a-bis : Maj pressee PENDANT le clic droit = pan arme (ordre du geste libre)");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, GLFW_MOD_SHIFT);
+            CHECK(g_mode == M_None && g_editMode,
+                  "B3.6a-bis : pan (ordre inverse) fini au relachement, edition conservee");
+            /* regle conservee : clic droit SANS pan (Maj jamais arrivee) = sortie d'edition */
+            g_mode = M_None;
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, 0);
+            CHECK(!g_editMode, "B3.6a-bis : clic droit sans Maj ni pan = sortie d'edition (regle conservee)");
+            g_editMode = false; g_editObj = -1;
+        }
+        /* ALTITUDE : drag d'une poignee du chemin d'un tube EN HAUTEUR =
+           l'altitude est conservee (avant : la poignee retombait au sol) */
+        {
+            extern double g_stubCursorX, g_stubCursorY;
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
+            polyPose();
+            Object chemin;
+            chemin.name = "Ligne";
+            chemin.traceType = 1; chemin.traceFerme = 0;
+            chemin.tracePts = { Vec3(0,3,10), Vec3(0,3,20) };   /* chemin EN ALTITUDE */
+            g_objs.push_back(chemin);
+            const size_t ip = g_objs.size() - 2;
+            CHECK(sweepConvertTo(g_objs[ip], g_objs[g_objs.size() - 1]),
+                  "B3.6a-bis : tube pose le long d'un chemin en altitude");
+            Object& sw = g_objs[ip];
+            g_editMode = true; g_editObj = (int)ip;
+            g_editGrab = (int)sw.tracePts.size();               /* 1re poignee du CHEMIN */
+            g_cam.target = Vec3(2, 1, 12); g_cam.dist = 25.0;
+            const Vec3 visee = sw.pos + sw.traceChemin[0] * sw.scl + Vec3(2, 0, 2);
+            double px, py;
+            pixelDe(visee, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            const double yAvant = sw.traceChemin[0].y;
+            editDrag(W);
+            CHECK(std::fabs(sw.traceChemin[0].y - yAvant) < 1e-9,
+                  "B3.6a-bis : drag d'une poignee du chemin EN HAUTEUR = altitude conservee");
+            const Vec3 apres = sw.pos + sw.traceChemin[0] * sw.scl;
+            CHECK((apres - visee).norm() < 1e-6,
+                  "B3.6a-bis : la poignee suit le curseur DANS SON PLAN horizontal");
+            /* ajout d'un point sur une courbe en hauteur : meme altitude */
+            g_editGrab = -1;
+            Object sp; sp.name = "Spline"; sp.pos = Vec3(0, 0, 0); sp.scl = 1.0;
+            sp.traceType = 2; sp.traceFerme = 0;
+            sp.tracePts = { Vec3(0,3,40), Vec3(6,3,40) };
+            traceRegen(sp);
+            g_objs.push_back(std::move(sp));
+            const int isp = (int)g_objs.size() - 1;
+            g_editObj = isp; g_editGrab = -1;
+            g_cam.target = Vec3(3, 1, 40); g_cam.dist = 25.0;
+            pixelDe(Vec3(3, 3, 40), px, py);                    /* milieu de la courbe */
+            g_stubCursorX = px; g_stubCursorY = py;
+            g_editSel = -1;
+            editClick(W);
+            CHECK(g_objs[(size_t)isp].tracePts.size() == 3
+                  && std::fabs(g_objs[(size_t)isp].tracePts.back().y - 3.0) < 1e-9,
+                  "B3.6a-bis : point ajoute sur une courbe en hauteur = meme altitude");
+            g_editMode = false; g_editObj = -1; g_editGrab = -1; g_editSel = -1;
+        }
+        /* zoom : pas par cran porte a 20 % (0.8) - "toujours tres insuffisant" */
+        {
+            g_cam.dist = 9.0;
+            onScroll(nullptr, 0, 10);
+            CHECK(g_cam.dist < 1.2, "B3.6a-bis : zoom avant 10 crans = x9 plus pres (0.8 par cran)");
+            onScroll(nullptr, 0, 1000);
+            CHECK(g_cam.dist == 0.1, "B3.6a-bis : borne de zoom avant 0.1 conservee");
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_rightDown = false; g_mode = M_None;
+        g_cam = g_camHome;
+    }
+
     { /* B3.3 : edition du balayage - poignees profil + chemin, O = cible */
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };

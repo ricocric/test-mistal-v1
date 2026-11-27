@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.6a";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.6a-bis";   /* fils selectionnables devant un solide + pan robuste + zoom 20% + altitude des poignees */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -337,6 +337,7 @@ static void userMsg(const char* fmt, ...) {
     flashBand(buf);
 }
 static Mode g_mode = M_None;
+static bool g_rightDown = false;   /* B3.6a-bis : clic droit tenu (pan armable meme si Maj arrive apres) */
 static Camera g_cam;
 static Camera g_camHome;
 static double g_prevX = 0, g_prevY = 0;
@@ -543,19 +544,20 @@ static double filPickTol() { return g_cam.dist * 0.02 + 0.05; }
 static int pickAt(GLFWwindow* w) {
     Vec3 org, dir;
     if (!rayFromMouse(w, org, dir)) return -1;
-    int best = -1;
-    double bestT = 1e300;
+    int best = -1, bestF = -1;
+    double bestT = 1e300, bestTf = 1e300;
     for (size_t i = 0; i < g_objs.size(); ++i) {
         double t;
         if (rayObject(org, dir, g_objs[i], t) && t < bestT) { bestT = t; best = (int)i; }
+        const double tf = filRayHit(org, dir, g_objs[i], filPickTol());
+        if (tf >= 0.0 && tf < bestTf) { bestTf = tf; bestF = (int)i; }
     }
-    if (best < 0) {   /* B2.1c : aucun solide touche -> tenter les fils */
-        double bestTf = 1e300;
-        for (size_t i = 0; i < g_objs.size(); ++i) {
-            const double tf = filRayHit(org, dir, g_objs[i], filPickTol());
-            if (tf >= 0.0 && tf < bestTf) { bestTf = tf; best = (int)i; }
-        }
-    }
+    /* B3.6a-bis (retour test : "les splines par controle ne sont pas
+       selectionnables") : le fil VISIBLE gagne sur un solide DERRIERE lui.
+       Avant, tout solide touche par le rayon masquait TOUS les fils (une
+       spline de controle pres d'un tube etait donc incaptable). La marge
+       compense l'echantillonnage du rayon (128 pas, erreur < tol). */
+    if (bestF >= 0 && (best < 0 || bestTf <= bestT + filPickTol())) return bestF;
     return best;
 }
 
@@ -3027,6 +3029,20 @@ static void lineGroundPoint(GLFWwindow* w, bool& ok, Vec3& p) {
     p = org + dir * t;
     ok = true;
 }
+/* B3.6a-bis (retour test : "l'altitude n'est pas maitrisee correctement") :
+   intersection du rayon avec le plan HORIZONTAL passant par yPlan - le drag
+   d'une poignee en hauteur conserve son altitude (avant : tout retombait au
+   sol) ; au sol (yPlan = 0) le comportement est identique a lineGroundPoint */
+static void linePointY(GLFWwindow* w, double yPlan, bool& ok, Vec3& p) {
+    ok = false;
+    Vec3 org, dir;
+    if (!rayFromMouse(w, org, dir)) return;
+    if (std::fabs(dir.y) < 1e-12) return;
+    const double t = (yPlan - org.y) / dir.y;
+    if (t <= 1e-9) return;
+    p = org + dir * t;
+    ok = true;
+}
 /* suivi du curseur chaque tour (apercu + direction de la longueur tapee) */
 static void lineTrackCursor(GLFWwindow* w) {
     Vec3 p;
@@ -4838,7 +4854,17 @@ static void editClick(GLFWwindow* w) {
             if (!ok) { editOrbit(w); return; }      /* pointe le ciel : orbite */
         }
     } else {
-        lineGroundPoint(w, ok, p);
+        /* B3.6a-bis : le point s'ajoute dans le plan HORIZONTAL passant par
+           le point de trace (ou de chemin) LE PLUS PROCHE du rayon -
+           l'altitude suit la courbe ; au sol, plan y = 0 = identique a avant */
+        double yPlan = 0.0;
+        if (bi >= 0 && bi < (int)o.tracePts.size())
+            yPlan = o.pos.y + o.tracePts[(size_t)bi].y * o.scl;
+        else if (o.traceType == 9 && bi >= (int)o.tracePts.size()) {
+            const size_t ic = (size_t)bi - o.tracePts.size();
+            if (ic < o.traceChemin.size()) yPlan = o.pos.y + o.traceChemin[ic].y * o.scl;
+        }
+        linePointY(w, yPlan, ok, p);
         if (!ok) { editOrbit(w); return; }          /* pointe le ciel : orbite */
     }
     const int idx = traceAddPoint(o, p, (o.traceType == 8 && !surSolide) || o.traceType == 9);
@@ -4855,10 +4881,22 @@ static void editClick(GLFWwindow* w) {
 /* drag d'une poignee au sol (recalcul CONTINU de la courbe) */
 static void editDrag(GLFWwindow* w) {
     if (g_editObj < 0 || g_editObj >= (int)g_objs.size()) { g_editGrab = -1; return; }
-    bool ok; Vec3 p;
-    lineGroundPoint(w, ok, p);
-    if (!ok) return;
     Object& o = g_objs[(size_t)g_editObj];
+    /* B3.6a-bis : le drag se fait dans le plan HORIZONTAL passant par la
+       poignee saisie (altitude conservee ; au sol y = 0, identique a avant) */
+    double yPlan = 0.0;
+    if (g_editGrab >= 0) {
+        const int npts = (int)o.tracePts.size();
+        if (o.traceType == 9 && g_editGrab >= npts) {
+            const size_t ic = (size_t)g_editGrab - (size_t)npts;
+            if (ic < o.traceChemin.size()) yPlan = o.pos.y + o.traceChemin[ic].y * o.scl;
+        } else if (g_editGrab < npts) {
+            yPlan = o.pos.y + o.tracePts[(size_t)g_editGrab].y * o.scl;
+        }
+    }
+    bool ok; Vec3 p;
+    linePointY(w, yPlan, ok, p);
+    if (!ok) return;
     if (o.traceType == 9) {                     /* B3.3 : drag d'une poignee du balayage */
         if (g_editGrab >= (int)o.tracePts.size()) {          /* chemin : drag au sol */
             const size_t ic = (size_t)g_editGrab - o.tracePts.size();
@@ -4987,7 +5025,10 @@ static void drawEditHandles() {
 /* ------------------------------------------------------------------ */
 
 static void onScroll(GLFWwindow*, double, double dy) {
-    g_cam.dist *= std::pow(0.9, dy);
+    /* B3.6a-bis (retour test : "zoom toujours tres insuffisant") : pas par
+       cran porte de 11 % (0.9) a 20 % (0.8) - 100 fois plus pres en 20 crans
+       au lieu de 44 ; les bornes ne changent pas */
+    g_cam.dist *= std::pow(0.8, dy);
     /* B3.3e : niveaux de zoom DEFINIS - tres pres (0.1, plan proche 0.05)
        a tres loin (4000, plan lointain 5000) */
     if (g_cam.dist < 0.1) g_cam.dist = 0.1;
@@ -5007,6 +5048,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
     }
     if (button == GLFW_MOUSE_BUTTON_MIDDLE) return;   /* B3.3e : pan = Maj + clic droit (UN seul moyen de se deplacer) */
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+        g_rightDown = (action == GLFW_PRESS);   /* B3.6a-bis : etat du clic droit */
         /* B3.3e (retour test) : Maj + clic droit (glisser) = deplacer la vue
            (pan), DANS TOUS les modes (edition, creation, orbite...) - le meme
            geste partout, on ne change pas de moyen de deplacement en cours
@@ -5018,11 +5060,19 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
                 && (g_mode == M_None || g_mode == M_Orbit || g_mode == M_Pan)) {
                 g_mode = M_Pan;
                 glfwGetCursorPos(w, &g_prevX, &g_prevY);
+                /* B3.6a-bis : retour VISIBLE (diagnostic : si ce bandeau ne
+                   s'affiche pas, le geste n'arrive pas au programme) */
+                flashBand("pan : deplacez la vue ; relachez le clic droit pour poser");
             }
             return;
         }
         if (action != GLFW_PRESS) {
             if (g_mode == M_Pan) g_mode = M_None;   /* relachement : fin du pan */
+            /* B3.6a-bis : la sortie d'edition passe AU RELACHEMENT - un clic
+               droit presse sans Maj peut encore devenir un pan (Maj arrivee
+               pendant le geste) ; sans pan, le relachement quitte l'edition
+               (regle conservee, l'utilisateur ne voit aucune difference) */
+            else if (g_editMode) editExit();
             return;
         }
         if (g_rectMode) { rectCancel("dessin annule"); return; }   /* B2.2 : clic droit = annule (2 clics suffisent) */
@@ -5030,7 +5080,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_arcMode) { arcCancel("dessin annule"); return; }      /* B2.4 : clic droit = annule */
         if (g_polyMode) { polyFinish(); return; }   /* B2.6b : clic droit = valide (ferme la surface) */
         if (g_splMode) { splFinish(); return; }   /* B2.7 : clic droit = valide (courbe ouverte) */
-        if (g_editMode) { editExit(); return; }   /* B2.7e : clic droit = quitter l'edition */
+        if (g_editMode) return;   /* B3.6a-bis : la sortie d'edition passe au relachement (le presse peut devenir un pan si Maj arrive) */
         if (g_sweepStage) { sweepCancel(); return; }   /* B3 : clic droit = annule le balayage */
         if (g_lineMode) { lineFinish(); return; }   /* B2.1 : le clic droit FINIT (segments deja cliques poses) */
         if (g_ppActive) {
@@ -5205,6 +5255,18 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             g_dupNumBuf.clear();
             userMsg("duplication annulee");
         }
+        return;
+    }
+    /* B3.6a-bis (retour test : "Maj + clic droit ne donne toujours pas de
+       pan") : Maj pressee PENDANT le clic droit tenu = pan aussi - l'ordre
+       du geste ne doit pas compter ; couvre l'edition (le clic droit presse
+       sans Maj n'y sort plus de l'edition avant le relachement) */
+    if ((key == GLFW_KEY_LEFT_SHIFT || key == GLFW_KEY_RIGHT_SHIFT) && action == GLFW_PRESS
+        && g_rightDown && !g_ppActive && !g_rotActive
+        && (g_mode == M_None || g_mode == M_Orbit || g_mode == M_Pan)) {
+        g_mode = M_Pan;
+        glfwGetCursorPos(w, &g_prevX, &g_prevY);
+        flashBand("pan : deplacez la vue ; relachez le clic droit pour poser");
         return;
     }
     if (g_rotActive) {

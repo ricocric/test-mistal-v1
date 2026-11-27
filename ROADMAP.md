@@ -488,6 +488,21 @@ Questions ouvertes a trancher avec l'utilisateur :
       (ligne optionnelle "accroche N", retrocompatible) ; hors bornes =
       repli collage intelligent ; helper unique `sweepAccroches` (regen ET
       poignees, UN SEUL CHEMIN DE CODE) ; RESTE : B3.6b poignee de ROLL ;
+    - **B3.6a-bis FAIT (464 -> 479 verifs)** - lot de correctifs retour test
+      B3.6a : (1) fils SELECTIONNABLES devant un solide - avant, tout solide
+      touche par le rayon masquait TOUS les fils (les splines par controle
+      pres d'un tube etaient incaptables) : desormais le fil VISIBLE le plus
+      proche gagne (marge = tolerance de capture, compense l'echantillonnage
+      du rayon) ; (2) pan Maj+clic droit ROBUSTE a l'ordre du geste : Maj
+      pressee PENDANT le clic droit tenu arme le pan aussi (etat g_rightDown),
+      et la sortie d'edition passe au RELACHEMENT du clic droit (un presse
+      sans Maj peut encore devenir un pan) ; bandeau de confirmation a
+      l'armement du pan ; (3) zoom plus efficace : 20 % par cran (0.8, avant
+      11 %) - x100 en 20 crans au lieu de 44, bornes 0.1/4000 conservees ;
+      (4) ALTITUDE des poignees maitrisee : drag de poignee et ajout de point
+      se font dans le plan HORIZONTAL passant par le point (l'altitude est
+      conservee ; au sol, comportement strictement identique) ; RESTE :
+      B3.6b poignee de ROLL ;
   - **B3.7+ collage generique 2 objets** (coin/coin, arete/arete) : a cadrer
     separatiment une fois B3.5/B3.6 validees ;
   - les arbitrages restants (interaction exacte du choix d'accroche au
@@ -527,6 +542,10 @@ Questions ouvertes a trancher avec l'utilisateur :
   F cadrer, H origine) qui portera leurs raccourcis, aujourd'hui rappeles
   seulement dans l'entete console et les boutons de la barre flottante ;
 - STL ASCII editable (informationnel), export fiable par fichier
+- SELECTION PAR NOM d'objet : choix dans une LISTE (probablement menu
+  contextuel) - demande explicite retour test B3.6a ("il manque une selection
+  par nom d'objet, choix dans une liste") ; utile des que les fils (spline
+  notamment) sont durs a cliquer dans une scene chargee ;
 - Surface -> fil : fonction qui part d'une surface quelconque (feuille ou
   solide) et la transforme en fil (arêtes de contour / wireframe) - demande
   utilisateur B2.5b ("il sera probablement utile de creer une fonction qui
