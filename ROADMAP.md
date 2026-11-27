@@ -452,6 +452,15 @@ Questions ouvertes a trancher avec l'utilisateur :
   booleens risquent de devenir des rustines ; B5 (edition directe, notion de
   face) et B4 (offset/chanfrein) tireront aussi parti de cette migration
 - B7 deformations : echelle non homogene, twist, bend, taper
+- **PRIORITAIRE (retour test B3.3i)** : maitrise des points de CONNEXION et
+  des PIVOTS du balayage - l'utilisateur ne peut pas choisir precisement A QUEL
+  POINT du chemin la forme va s'appliquer (ancre actuelle = point du profil le
+  plus proche du DEPART du fil, B3.2) ; symptome : un rectangle colle sur un
+  chemin donne une forme INCLINEE non souhaitee (le roll, rotation de la forme
+  autour du fil, est impose par la normale de la face) ; ETUDE DE CONCEPTION
+  avant code (regle B8, valable pour ce cas) : choix de l'interaction (clic du
+  point de depart sur le fil ? poignee de depart en edition ?) et du roll
+  (coller plat ? reglage en edition ? chiffres ?)
 - B8 pivot intelligent : ETUDE DE CONCEPTION avant code (nombreux cas de
   figure : sommet, face, point clique, coordonnees, centre du monde...)
 
