@@ -349,6 +349,8 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   edition (cyan, a travers le solide) ; clic SUR LE TUBE = nouvelle
   station au segment le plus proche (sans garde) ; clic-sol = avec
   garde ; +3 verifications = 440, 0 echec ;
+  B3.3c (retour test) : navigation pendant l'edition - clic sans
+  effet (vide, ciel, refus) = orbite ; pan molette + zoom actifs ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec

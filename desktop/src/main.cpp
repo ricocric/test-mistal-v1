@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.3b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.3c";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -4567,7 +4567,15 @@ static void editExit() {
     g_editSel = -1;
     std::printf("\nmode selection\n");
 }
-/* clic gauche en edition : saisir une poignee (drag) ou ajouter un point */
+/* B3.3c (retour test) : en edition, un clic qui ne saisit aucune poignee et
+   n'ajoute aucun point = ORBITE - tourner autour de l'objet pendant
+   l'edition (pan molette et zoom deja actifs) */
+static void editOrbit(GLFWwindow* w) {
+    g_mode = M_Orbit;
+    glfwGetCursorPos(w, &g_prevX, &g_prevY);
+}
+/* clic gauche en edition : saisir une poignee (drag) ou ajouter un point ;
+   clic sans effet (vide, ciel, refuse) = orbite (B3.3c) */
 static void editClick(GLFWwindow* w) {
     if (g_editObj < 0 || g_editObj >= (int)g_objs.size()) { editExit(); return; }
     Object& o = g_objs[(size_t)g_editObj];
@@ -4633,13 +4641,15 @@ static void editClick(GLFWwindow* w) {
         Vec3 cPt, nn;
         if (!sweepProfilPlan(o, cPt, nn)) return;
         const double denom = dot(dir, nn);
-        if (std::fabs(denom) < 1e-9) return;
+        if (std::fabs(denom) < 1e-9) { editOrbit(w); return; }
         const double t = dot(cPt - org, nn) / denom;
-        if (t <= 0.0) return;
+        if (t <= 0.0) { editOrbit(w); return; }
         const int idx = traceAddPoint(o, org + dir * t, false);
         if (idx >= 0) {
             g_editSel = idx;
             std::printf("edition : point ajoute au profil (%zu au total)\n", o.tracePts.size());
+        } else {
+            editOrbit(w);
         }
         return;
     }
@@ -4657,11 +4667,11 @@ static void editClick(GLFWwindow* w) {
             surSolide = true;
         } else {
             lineGroundPoint(w, ok, p);
-            if (!ok) return;                        /* pointe le ciel : rien */
+            if (!ok) { editOrbit(w); return; }      /* pointe le ciel : orbite */
         }
     } else {
         lineGroundPoint(w, ok, p);
-        if (!ok) return;                            /* pointe le ciel : rien */
+        if (!ok) { editOrbit(w); return; }          /* pointe le ciel : orbite */
     }
     const int idx = traceAddPoint(o, p, (o.traceType == 8 && !surSolide) || o.traceType == 9);
     if (idx >= 0) {
@@ -4670,6 +4680,8 @@ static void editClick(GLFWwindow* w) {
             std::printf("edition : point ajoute au chemin (%zu au total)\n", o.traceChemin.size());
         else
             std::printf("edition : point ajoute (%zu au total)\n", o.tracePts.size());
+    } else {
+        editOrbit(w);
     }
 }
 /* drag d'une poignee au sol (recalcul CONTINU de la courbe) */
@@ -4849,7 +4861,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_polyMode) { polyTakePoint(w); return; }       /* B2.6 : chaque clic pose un sommet ; clic sur le depart = ferme */
         if (g_splMode) { splTakePoint(w); return; }       /* B2.7 : chaque clic pose un point ; clic sur le depart = boucle */
         if (g_sweepStage) { sweepClick(w); return; }   /* B3 : clic 1 = la face, clic 2 = le fil */
-        if (g_editMode) { editClick(w); return; }   /* B2.7e : poignee = drag ; sinon clic sur la courbe = ajouter un point */
+        if (g_editMode) { editClick(w); return; }   /* B2.7e : poignee = drag ; clic utile = ajouter ; sans effet = orbite (B3.3c) */
         if (g_ppActive) { ppCommit(); return; }   /* second clic gauche : pose la face */
         if (g_rotActive) { rotCommit(); return; }  /* clic gauche : pose la rotation */
         if (g_ppMode) {

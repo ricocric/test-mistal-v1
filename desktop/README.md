@@ -981,6 +981,9 @@ globale corrigee par le volume signe (normales exterieures) ;
   **clic SUR LE TUBE = nouvelle station** au segment le plus proche
   (sans garde), clic-sol pres du chemin = avec garde (pas d'ajout
   accidentel) ; total **440, 0 echec**.
+- **B3.3c (retour test)** : **navigation pendant l'edition** - un clic
+  gauche qui ne saisit aucune poignee et n'ajoute aucun point (vide,
+  ciel, refus) = ORBITE ; pan molette et zoom deja actifs.
 
 ## Organiseur des prochains lots
 
