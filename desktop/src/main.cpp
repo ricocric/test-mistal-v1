@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.3h";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.3i";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -317,7 +317,6 @@ static void flashBand(const char* msg) {
    panneau des derniers messages). L'echo console reste pendant le
    developpement uniquement. */
 static std::vector<std::string> g_journal;   /* messages UNIQUES, ordre d'arrivee */
-static std::vector<int> g_journalN;          /* nombre d'apparitions (B3.3h : dedup) */
 static bool g_journalVisible = false;
 static void userMsg(const char* fmt, ...) {
     char buf[512];
@@ -325,17 +324,13 @@ static void userMsg(const char* fmt, ...) {
     va_start(ap, fmt);
     std::vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
-    /* B3.3h (retour test) : pas d'echo console ; un message repete
-       n'ajoute pas de ligne, son compteur (xN) s'incremente */
-    for (size_t i = g_journal.size(); i > 0; --i) {
-        if (g_journal[i - 1] == buf) { ++g_journalN[i - 1]; flashBand(buf); return; }
-    }
+    /* B3.3h/i (retour test) : pas d'echo console ; un message deja
+       present ne rajoute PAS de ligne (ni compteur, inutile) - il
+       reanime seulement le bandeau */
+    for (size_t i = g_journal.size(); i > 0; --i)
+        if (g_journal[i - 1] == buf) { flashBand(buf); return; }
     g_journal.push_back(buf);
-    g_journalN.push_back(1);
-    if (g_journal.size() > 200) {
-        g_journal.erase(g_journal.begin());
-        g_journalN.erase(g_journalN.begin());
-    }
+    if (g_journal.size() > 200) g_journal.erase(g_journal.begin());
     flashBand(buf);
 }
 static Mode g_mode = M_None;
@@ -5936,14 +5931,9 @@ static void drawStatusBand() {
         glVertex2f(xj + lj - 0.5f, yj + hj - 0.5f); glVertex2f(xj + 0.5f, yj + hj - 0.5f);
         glEnd();
         glColor3f(0.08f, 0.09f, 0.12f);
-        for (size_t i = debut; i < g_journal.size(); ++i) {
-            char ligne[560];
-            if (g_journalN[i] > 1)
-                std::snprintf(ligne, sizeof(ligne), "%s (x%d)", g_journal[i].c_str(), g_journalN[i]);
-            else
-                std::snprintf(ligne, sizeof(ligne), "%s", g_journal[i].c_str());
-            drawText2D(xj + 8.0f, yj + hj - 16.0f - (float)(i - debut) * 15.0f, ligne);
-        }
+        for (size_t i = debut; i < g_journal.size(); ++i)
+            drawText2D(xj + 8.0f, yj + hj - 16.0f - (float)(i - debut) * 15.0f,
+                       g_journal[i].c_str());
     }
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();

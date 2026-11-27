@@ -366,6 +366,9 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   _WIN32 du panneau) ; journal en haut a gauche, largeur fixe,
   clics avales, repetitions dedupliquees (xN), plus d echo
   console ; +1 = 449, 0 echec ;
+  B3.3i (retour test) : compteurs xN retires (inutiles) -
+  message repete = aucune nouvelle ligne, bandeau reanime ;
+  449, 0 echec ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec

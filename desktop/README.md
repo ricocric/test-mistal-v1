@@ -1010,6 +1010,9 @@ globale corrigee par le volume signe (normales exterieures) ;
   (une seule ligne, compteur xN), **plus d'echo console** (console = debug
   uniquement, regle B3.3f appliquee a la lettre) ; +1 verification =
   **449, 0 echec**.
+- **B3.3i (retour test B3.3h)** : compteurs (xN) **retires** (inutiles) -
+  un message deja present ne rajoute pas de ligne, il reanime seulement le
+  bandeau ; **449, 0 echec**.
 
 ## Organiseur des prochains lots
 
