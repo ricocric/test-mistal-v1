@@ -284,7 +284,12 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec
-  B5 edition de maillage) ; RESTE : extrusion le long d un CHEMIN = B3.
+  B5 edition de maillage) ; ANNULATION Ctrl+Z ABSENTE : ok pour les
+  petits mouvements (on repart dans l autre sens) mais les
+  transformations compliquees (suppression de points, conversions,
+  deformations B5+) en deviendront un vrai besoin - a concevoir
+  (snapshot d etat par commande ?) avant B5 ;
+  RESTE : extrusion le long d un CHEMIN = B3.
 - B2.2 RECTANGLE (conception avant code, mecanique commune B2) :
   - clic 1 = coin, souris = apercu du rectangle au sol, clic 2 = pose ;
     clic droit ou Echap = annulation SANS objet pose ; Entree vide = rien ;
