@@ -1102,6 +1102,19 @@ globale corrigee par le volume signe (normales exterieures) ;
     rotCancel n'empilent pas) ; piles videes au nouveau projet / ouverture /
     fermeture ; ne couvre PAS la vue ni la selection ;
   - +31 verifications = **536, 0 echec** (ASan propre).
+- **B3.6zb (correctif collision d'ids de menu)** - retour de test du lot
+  Ctrl+Z : "choisir Dupliquer dans le menu de contexte me recolle une vieille
+  version de projet", puis "le mode dupliquer ne fonctionne plus du tout".
+  - cause : la base des fichiers recents (`IDM_PROJET_RECENT`, B3.2d) etait
+    au milieu de l'enum et reservait les ids 9..16 ; `IDM_DUPLICATE = 11`,
+    `IDM_DELETE_OBJECT = 12`, `IDM_INFO_OBJECT = 10` tombaient dedans :
+    Dupliquer chargeait `historique[2]` (vieux projet), et si le slot etait
+    vide, retour silencieux ; en sens inverse les slots 4..8 du sous-menu
+    Projets recents declenchaient Select/PushPull/Tourner ; bug date de
+    B3.2d, PAS du lot Ctrl+Z (menu contextuel non re-teste depuis) ;
+  - correctif : base deplacee en fin d'enum, plage recents testee AVANT la
+    delegation aux commandes ;
+  - +6 verifications = **542, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 

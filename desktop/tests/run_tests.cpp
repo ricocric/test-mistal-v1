@@ -3086,6 +3086,63 @@ int main() {
         g_setupPath = "sketch3d.ini";
         g_setup = Setup{};
 
+        /* 11. B3.6zb : collision d'ids reparee - Dupliquer/Supprimer/Infos du
+           menu contextuel ne doivent PLUS charger un projet recent (retour de
+           test : "Dupliquer... me recolle une vieille version de projet") ;
+           et les slots 4..8 du sous-menu doivent OUVRIR, pas declencher
+           Select/PushPull/Tourner */
+        {
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1; undoVide();
+            g_setupPath = tmpPath("b36zb.ini");
+            std::remove(g_setupPath.c_str());
+            g_setup = Setup{};
+            const double colT[3] = {0.5, 0.5, 0.5};
+            /* deux projets temoins sur disque, contenus distincts */
+            g_objs.clear();
+            g_objs.push_back(makeBoxObject("TemoinA", Vec3(0, 0.5, 0), Vec3(1, 1, 1), colT));
+            const std::string pA = tmpPath("b36zb_a.s3projet");
+            std::string errP;
+            CHECK(saveProject(pA, errP), "B3.6zb : projet temoin A enregistre");
+            g_objs.clear();
+            g_objs.push_back(makeBoxObject("TemoinB", Vec3(0, 0.5, 0), Vec3(2, 1, 1), colT));
+            g_objs.push_back(makeBoxObject("TemoinB2", Vec3(5, 0.5, 0), Vec3(1, 1, 1), colT));
+            const std::string pB = tmpPath("b36zb_b.s3projet");
+            CHECK(saveProject(pB, errP), "B3.6zb : projet temoin B enregistre");
+            /* scene courante : 1 objet selectionne ; historique rempli */
+            g_objs.clear();
+            g_objs.push_back(makeBoxObject("Source", Vec3(0, 0.5, 0), Vec3(1, 1, 1), colT));
+            selectOnly(0);
+            g_setup.historique = { pA, pB, pA, pA, pA, pA, pA, pB };
+            g_setup.nbRecents = 8;
+            undoVide();
+            /* Dupliquer = demande du nombre, PAS un chargement de projet */
+            handleMenuAction(IDM_DUPLICATE);
+            CHECK(g_dupPending && g_objs.size() == 1 && g_objs[0].name == "Source",
+                  "B3.6zb : menu contextuel Dupliquer = demande du nombre (pas un chargement de projet)");
+            g_dupPending = false; g_dupNumBuf.clear();
+            /* Supprimer = suppression, PAS un chargement */
+            handleMenuAction(IDM_DELETE_OBJECT);
+            CHECK(g_objs.empty(), "B3.6zb : Supprimer du menu contextuel = suppression (pas un chargement)");
+            undoVide();
+            /* slot 0 du sous-menu = ouvre le projet A */
+            g_objs.clear(); g_selected = -1;
+            handleMenuAction(IDM_PROJET_RECENT + 0);
+            CHECK(g_objs.size() == 1 && g_objs[0].name == "TemoinA",
+                  "B3.6zb : slot recent 0 = projet A ouvert");
+            /* slot 7 (dernier, avale par la delegation avant correctif) = projet B */
+            g_objs.clear(); g_selected = -1;
+            g_setup.historique = { pA, pA, pA, pA, pA, pA, pA, pB };
+            handleMenuAction(IDM_PROJET_RECENT + 7);
+            CHECK(g_objs.size() == 2 && g_objs[0].name == "TemoinB",
+                  "B3.6zb : slot recent 7 = projet B ouvert (n'est plus avale par Select/PushPull/Tourner)");
+            undoVide();
+            g_setup.historique.clear();
+            std::remove(pA.c_str()); std::remove(pB.c_str());
+            std::remove(g_setupPath.c_str());
+            g_setupPath = "sketch3d.ini";
+            g_setup = Setup{};
+        }
+
         undoVide();
         g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
         g_cam = g_camHome;

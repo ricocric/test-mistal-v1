@@ -599,6 +599,29 @@ Questions ouvertes a trancher avec l'utilisateur :
       duplication, clic sans mouvement = pile inchangee, drag reel, edition
       ajout/suppression de point, roll undo, refus pendant geste, piles vides
       au nouveau projet, pile vide sans crash, borne 100.
+  - **B3.6zb FAIT (536 -> 542 verifs) - correctif collision d'ids de menu**
+    (retour de test du lot Ctrl+Z, point 9 : "choisir Dupliquer dans le menu
+    de contexte me recolle une vieille version de projet", puis "le mode
+    dupliquer ne fonctionne plus du tout") :
+    - cause : la base des fichiers recents `IDM_PROJET_RECENT` (B3.2d) etait
+      au MILIEU de l'enum (valeur 9) et reservait les ids 9..16 (base +0..7) ;
+      or `IDM_INFO_OBJECT = 10`, `IDM_DUPLICATE = 11`, `IDM_DELETE_OBJECT =
+      12` tombent DANS cette plage : dans `handleMenuAction` la plage recents
+      etait testee avant le switch, donc Dupliquer chargeait `historique[2]`
+      (le 3e projet recent - exactement le retour), Supprimer/Infos pareil,
+      et si le slot etait vide, retour silencieux = "ne fonctionne plus du
+      tout" ; en sens inverse les slots 4..8 du sous-menu (ids 13..16) etaient
+      avales par la delegation aux commandes (Select/PushPull/Tourner au lieu
+      d'ouvrir) ; date du bug : B3.2d (le menu contextuel n'avait pas ete
+      re-teste depuis), PAS le lot Ctrl+Z ;
+    - correctif : `IDM_PROJET_RECENT` deplace en FIN d'enum (apres
+      `IDM_RETABLIR`) et plage recents testee AVANT la delegation
+      `id >= kIdCommandStart` (sinon les slots seraient avales) ;
+    - REGLE A RETENIR : une base d'ids "contigus +N" ne doit
+      JAMAIS etre placee au milieu d'un enum qui contient d'autres familles -
+      toute nouvelle plage contigue va en FIN d'enum ;
+    - +6 verifications (projets temoins sur disque : Dupliquer = demande du
+      nombre, Supprimer = suppression, slot 0 ouvre, slot 7 ouvre).
   - **B3.7+ collage generique 2 objets** (coin/coin, arete/arete) : a cadrer
     separatiment une fois B3.5/B3.6 validees ;
   - les arbitrages restants (interaction exacte du choix d'accroche au

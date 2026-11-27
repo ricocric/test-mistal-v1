@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "Ctrl+Z";   /* poignee de ROLL : tourner le profil du balayage autour du fil */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "Ctrl+Zb";   /* correctif : Dupliquer/Supprimer/Infos du menu contextuel chargeaient un vieux projet (collision ids fichiers recents) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -1698,7 +1698,6 @@ enum {
     IDM_EXPORT_SCENE,
     IDM_EXPORT_SEL,
     IDM_QUIT,
-    IDM_PROJET_RECENT,         /* B3.2d : base des fichiers recents (+0..7, contigus) */
     IDM_INFO_OBJECT,
     IDM_DUPLICATE,
     IDM_DELETE_OBJECT,
@@ -1729,6 +1728,14 @@ enum {
     IDM_VIEW_JOURNAL,          /* B3.3f : journal des messages utilisateur (J) */
     IDM_ANNULER,               /* B3.6z : annuler (Ctrl+Z) */
     IDM_RETABLIR,              /* B3.6z : retablir (Ctrl+Y / Ctrl+Maj+Z) */
+    IDM_PROJET_RECENT,         /* B3.2d : base des fichiers recents (+0..7, contigus) ;
+                                  B3.6zb : DEPLACE en fin d'enum - la base etait au
+                                  milieu (9) et empietait sur INFO/DUPLICATE/DELETE
+                                  (10/11/12) : choisir Dupliquer dans le menu
+                                  contextuel chargeait historique[2] (vieux projet,
+                                  retour de test), Supprimer/Infos pareil, et les
+                                  slots 4..8 du sous-menu declenchaient
+                                  Select/PushPull/Tourner au lieu d'ouvrir */
 };
 
 /* Homogeneite ("UN SEUL CHEMIN DE CODE", regle systematique) : tous les
@@ -1771,9 +1778,11 @@ static std::string exportFileChooser(bool scene) {
 }
 
 static void handleMenuAction(int id) {
-    /* commandes (outils/affichage/preferences) : deleguees au dispatcher */
-    if (id >= kIdCommandStart) { runToolCommand(id); return; }
-    /* B3.2d : fichiers recents (contigus a partir d'IDM_PROJET_RECENT) */
+    /* B3.2d : fichiers recents (contigus a partir d'IDM_PROJET_RECENT) -
+       teste AVANT la delegation : la base est APRES les commandes dans
+       l'enum depuis B3.6zb, sans ce test en tete les slots seraient
+       avales par runToolCommand (lecon du retour de test : Dupliquer
+       chargeait un vieux projet) */
     if (id >= IDM_PROJET_RECENT && id < IDM_PROJET_RECENT + (int)kProjetRecents) {
         const size_t i = (size_t)(id - IDM_PROJET_RECENT);
         if (i < g_setup.historique.size()) {
@@ -1786,6 +1795,8 @@ static void handleMenuAction(int id) {
         }
         return;
     }
+    /* commandes (outils/affichage/preferences) : deleguees au dispatcher */
+    if (id >= kIdCommandStart) { runToolCommand(id); return; }
     switch (id) {
     case IDM_NEW_PROJECT:
         g_objs.clear();
