@@ -890,6 +890,25 @@ et se regenere par SA construction d'origine :
 - round-trip save/load verifie pour les 4 formes ; total **350,
   0 echec**.
 
+### B2.7e E3 : extrusions editables (profil + hauteur)
+
+- **P sur une feuille issue d un profil = extrusion PARAMETRIQUE** :
+  l objet passe en type 8 (EXTRUSION) - il garde le profil (sous-type
+  + points de definition + ferme/surface) et le vecteur d extrusion ;
+  la feuille est consommee (la face devient le solide, fidele SketchUp) ;
+- regen par les MEMES fonctions que le trace (chaines rectangle/cercle/
+  arc/spline, fan) puis prismatage : murs + caps bas/haut, normales
+  exterieures quel que soit le sens du vecteur (tirer OU pousser) ;
+- edition (E) : poignees du profil au sol (drag = le solide suit) +
+  poignee de HAUTEUR (bleue) au centre du cap superieur - drag dans un
+  plan vertical face camera ; chiffres non necessaires ;
+- profils ouverts extrudes = bande (murs seuls) : accessible par
+  O (ouvert/ferme) a chaud sur une extrusion de ligne ; ajout/
+  suppression de points selon les regles du profil (rect/cercle/arc
+  = points fixes, polygone/ligne = garde au minimum) ;
+- persistence : entete trace etendue (profil + vecteur) ; vieux
+  projets relisibles ; total **385, 0 echec**.
+
 ## Organiseur des prochains lots
 
 - N5 : interface (Dear ImGui) : barre de menus en haut (Fichier/Affichage/Outils

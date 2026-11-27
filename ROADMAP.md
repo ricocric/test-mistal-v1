@@ -245,12 +245,26 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   au centre du cap superieur (drag = projection sur la normale) ; O /
   variantes du profil a chaud ; persistence : bloc trace etendu (type 8
   + sous-type + npts + hauteur) ;
-  ARBITRAGES A TRANCHER : (1) geste de pose - P sur une feuille a
-  TraceData CONVERTIT en extrusion parametrique vs commande dediee ;
-  (2) P sur le reste (coques, imports) reste en place non parametrique ;
-  (3) feuille profil : consommee (remplacee par le solide, fidele
-  SketchUp) ou conservee ; (4) la hauteur dans le geste : drag P comme
-  aujourd'hui + saisie chiffres.
+  ARBITRAGES TRANCHES ("comme propose") : P convertit (feuille a
+  TraceData = extrusion parametrique, pas de nouveau bouton), profil
+  CONSOMME (la feuille devient le solide), hauteur par drag + chiffres
+  (comme le push/pull), coques NON parametriques pour l'instant ;
+  E3 FAIT (build B2.7e3) : type 8 = EXTRUSION (traceProfil = sous-type
+  1..7 + traceVec = vecteur local) ; extrudeConvertTo appelee par
+  ppCommit (clic ou chiffres+Entree : LES DEUX chemins convergent) ;
+  regen par les MEMES fonctions (chaines rect/cercle/arc/spline, fan,
+  prismatage murs + caps, windings exterieurs quelque soit le signe du
+  vecteur - volume signe positif verifie) ; rect/cercle/polygone =
+  profils FERMES par nature (leurs poses ne renseignent pas traceFerme,
+  bug mur de cloture attrape par le moteur de tests) ; profils ouverts
+  extrudes = bande (murs seuls) - accessible par O a chaud sur une
+  extrusion de ligne ; EDITION type 8 : poignees du profil au sol +
+  poignee de HAUTEUR (bleue) au centre du cap superieur (drag dans un
+  plan vertical face camera capte a la saisie), ajout/suppression selon
+  les regles du sous-type, O = bascule du profil, Maj+S/Maj+B si
+  profil spline ; persistence : entete trace etendue (profil + vecteur,
+  validation 0..8, vieux projets relisibles) ; +35 verifications = 385,
+  0 echec ; RESTE : extrusion le long d un CHEMIN = B3.
 - B2.2 RECTANGLE (conception avant code, mecanique commune B2) :
   - clic 1 = coin, souris = apercu du rectangle au sol, clic 2 = pose ;
     clic droit ou Echap = annulation SANS objet pose ; Entree vide = rien ;

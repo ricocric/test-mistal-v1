@@ -47,7 +47,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B2.7e2b";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B2.7e3";   /* fil visible sans selection + capture fil au clic */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -139,10 +139,13 @@ struct Object {
        v/tri/edges n'est qu'un derive, regenerable par traceRegen avec les
        MEMES fonctions que le trace (un seul chemin de code). tracePts sont
        LOCAUX (pos + scl*p = monde), comme v. */
-    int traceType = 0;          /* 0 = aucun ; 1 = LIGNE ; 2 = SPLINE passage ; 3 = SPLINE controle */
+    int traceType = 0;          /* 0 = aucun ; 1 = LIGNE ; 2 = SPLINE passage ; 3 = SPLINE controle ;
+                                   4 = RECT ; 5 = CERCLE ; 6 = ARC ; 7 = POLY ; 8 = EXTRUSION */
     int traceFerme = 0;         /* 1 = boucle fermee */
     int traceSurface = 0;       /* 1 = feuille fermee en surface (fan, ligne B2.5) */
     std::vector<Vec3> tracePts; /* points de definition */
+    int traceProfil = 0;        /* B2.7e E3 : type 8 = sous-type du profil extrude (1..7) */
+    Vec3 traceVec{0, 0, 0};     /* B2.7e E3 : type 8 = vecteur d extrusion (LOCALE, comme v) */
 };
 
 static std::vector<Object> g_objs;
@@ -1301,7 +1304,11 @@ static bool saveProject(const std::string& path, std::string& err) {
            optionnel : les vieux projets (sans trace) restent relisibles */
         if (o.traceType != 0) {
             f << "trace " << o.traceType << " " << o.traceFerme << " " << o.traceSurface
-              << " " << o.tracePts.size() << "\n";
+              << " " << o.tracePts.size();
+            if (o.traceType == 8)                       /* E3 : profil + vecteur d extrusion */
+                f << " " << o.traceProfil << " " << o.traceVec.x << " " << o.traceVec.y
+                  << " " << o.traceVec.z;
+            f << "\n";
             for (const Vec3& p : o.tracePts) f << p.x << " " << p.y << " " << p.z << "\n";
         }
     }
@@ -1364,11 +1371,19 @@ static bool loadProject(const std::string& path, std::string& err) {
                 std::istringstream is(probe);
                 std::string tag;
                 if (!(is >> tag >> o.traceType >> o.traceFerme >> o.traceSurface)
-                    || o.traceType < 0 || o.traceType > 7) {
+                    || o.traceType < 0 || o.traceType > 8) {
                     err = "fichier corrompu (entete de trace)"; return false;
                 }
+                o.traceProfil = 0;
+                o.traceVec = Vec3();
                 size_t ntp = 0;
                 if (!(is >> ntp) || ntp > 20000000ull) { err = "fichier corrompu (compteur de trace)"; return false; }
+                if (o.traceType == 8) {                 /* E3 : sous-type + vecteur */
+                    if (!(is >> o.traceProfil) || o.traceProfil < 1 || o.traceProfil > 7
+                        || !(is >> o.traceVec.x >> o.traceVec.y >> o.traceVec.z)) {
+                        err = "fichier corrompu (entete d extrusion)"; return false;
+                    }
+                }
                 o.tracePts.resize(ntp);
                 for (Vec3& p : o.tracePts)
                     if (!(f >> p.x >> p.y >> p.z)) { err = "fichier corrompu (points du trace)"; return false; }
@@ -2383,7 +2398,28 @@ static void ppCancel() {
     std::printf("\nextrusion annulee\n");
 }
 
+/* B2.7e E3 : un pull pose sur une feuille issue d un profil (TraceData, patch
+   = tout l objet) CONVERTIT l objet en EXTRUSION parametrique (type 8) : le
+   profil (sous-type + tracePts + ferme/surface) et le vecteur survivent, la
+   geometrie est regeneree par les MEMES fonctions que le trace. Les coques
+   (cubes, imports, extrusions en place) restent non parametriques pour
+   l instant (arbitrage utilisateur). */
+static void traceRegen(Object& o);            /* defini plus bas (bloc edition) */
+static bool extrudeConvertTo(Object& o, const Extrude& dd, double d) {
+    if (o.traceType == 0 || o.traceType == 8) return false;
+    if (o.tri.empty()) return false;                             /* fil : pas une feuille */
+    if (dd.patchTris.size() * 3 != dd.tri.size()) return false;  /* patch != tout l objet */
+    if (std::fabs(d) < 1e-12) return false;
+    o.traceProfil = o.traceType;
+    o.traceType = 8;
+    o.traceVec = dd.normal * (d / o.scl);
+    traceRegen(o);
+    return true;
+}
+
 static void ppCommit() {
+    if (g_ppActive && g_pp.obj >= 0 && g_pp.obj < (int)g_objs.size())
+        extrudeConvertTo(g_objs[(size_t)g_pp.obj], g_pp, g_pp.d);
     std::printf("\nface posee — extrusion : %.3f\n", g_pp.d);
     g_ppActive = false;
     g_pp = Extrude();
@@ -3588,6 +3624,12 @@ static void drawSplinePreview() {
 /* ------------------------------------------------------------------ */
 static int g_editGrab = -1;             /* poignee saisie (drag en cours) */
 static int g_editSel = -1;              /* poignee selectionnee (cible de Suppr) */
+/* B2.7e E3 : drag de la poignee de HAUTEUR (extrusion type 8) - plan vertical
+   face camera, capte a la saisie ; g_editH0 = longueur locale au depart */
+static Vec3 g_editHPt{0, 0, 0};         /* centre du cap superieur (monde) a la saisie */
+static Vec3 g_editHN{0, 0, 0};          /* normale du plan vertical (monde, horizontale) */
+static Vec3 g_editHDir{0, 1, 0};        /* direction du vecteur d extrusion (unitaire) */
+static double g_editH0 = 0.0;           /* longueur locale du vecteur a la saisie */
 
 /* distance point-rayon (capture des poignees) */
 static double pointRayDist(const Vec3& org, const Vec3& dir, const Vec3& p) {
@@ -3691,14 +3733,117 @@ static void traceRegenBase(Object& o) {
         computeObjectDerived(o);
         return;
     }
+    if (o.traceType == 8) {                     /* EXTRUSION : profil + vecteur (E3) */
+        const int ptype = o.traceProfil;
+        std::vector<Vec3> ch;
+        if (ptype == 1) {
+            ch = o.tracePts;                    /* MEME chaine que le trace ligne */
+        } else if (ptype == 2 || ptype == 3) {
+            g_splPts = o.tracePts;              /* MEME code que le trace spline */
+            const bool oldCtrl = g_splCtrl;
+            g_splCtrl = (ptype == 3);
+            ch = splSample(o.traceFerme != 0);
+            g_splCtrl = oldCtrl;
+            g_splPts.clear();
+        } else if (ptype == 4) {                /* MEMES coins canoniques que rectPose */
+            const Vec3& a = o.tracePts[0];
+            const Vec3& b = o.tracePts[1];
+            const double x0 = (a.x < b.x) ? a.x : b.x, x1 = (a.x < b.x) ? b.x : a.x;
+            const double z0 = (a.z < b.z) ? a.z : b.z, z1 = (a.z < b.z) ? b.z : a.z;
+            ch = { Vec3(x0, 0, z0), Vec3(x1, 0, z0), Vec3(x1, 0, z1), Vec3(x0, 0, z1) };
+        } else if (ptype == 5) {                /* MEME cercle que cerclePose */
+            const Vec3 c = o.tracePts[0];
+            const double r = (o.tracePts[1] - c).norm();
+            if (r < 1e-9) return;
+            ch.reserve((size_t)CERCLE_SEG);
+            for (int i = 0; i < CERCLE_SEG; ++i) {
+                const double a = 6.283185307179586 * double(i) / double(CERCLE_SEG);
+                ch.push_back(c + Vec3(r * std::cos(a), 0.0, -r * std::sin(a)));
+            }
+        } else if (ptype == 6) {                /* MEME coeur que arcPose */
+            if (!arcComputePts(o.tracePts[0], o.tracePts[1], o.tracePts[2], ch)) return;
+        } else if (ptype == 7) {
+            ch = o.tracePts;
+        } else {
+            return;
+        }
+        if (ch.size() < 2) return;
+        const size_t n = ch.size();
+        const Vec3 h = o.traceVec;
+        /* rect/cercle/polygone : profils FERMES par nature (leurs poses ne
+           renseignent pas traceFerme) ; ligne/spline : selon le drapeau */
+        const bool ferme = o.traceFerme != 0 || ptype == 4 || ptype == 5 || ptype == 7;
+        const bool plein = ferme && ((o.traceFerme != 0 && o.traceSurface != 0)
+                        || ptype == 4 || ptype == 5 || ptype == 7);   /* surfaces par nature */
+        o.v.clear();
+        o.v.reserve(n * 2);
+        for (const Vec3& p : ch) o.v.push_back(p);
+        if (h.norm() > 1e-9)
+            for (const Vec3& p : ch) o.v.push_back(p + h);
+        o.tri.clear();
+        o.n.clear();
+        if (o.v.size() == n) {                  /* hauteur nulle : feuille (ou fil) */
+            if (plein)
+                for (size_t i = 1; i + 1 < n; ++i) {
+                    o.tri.push_back(0); o.tri.push_back((unsigned)i); o.tri.push_back((unsigned)(i + 1));
+                }
+            computeObjectDerived(o);
+            if (ferme && o.tri.empty())
+                o.edges.emplace_back((int)n - 1, 0);
+            return;
+        }
+        /* orientation du profil : fan de reference -> windings des murs et caps
+           (normales EXTERIEURES, volume signe positif, quel que soit le sens
+           du profil ou le signe du vecteur) */
+        Vec3 nProf;
+        double bestA = 0.0;
+        for (size_t i = 1; i + 1 < n; ++i) {
+            const Vec3 c3 = cross(ch[i] - ch[0], ch[i + 1] - ch[0]);
+            const double a = c3.norm();
+            if (a > bestA) { bestA = a; nProf = c3; }
+        }
+        const bool flip = dot(nProf, h) > 0.0;
+        const size_t nseg = ferme ? n : n - 1;          /* ferme : cloture incluse */
+        for (size_t i = 0; i < nseg; ++i) {
+            const unsigned bi = (unsigned)i, bj = (unsigned)((i + 1) % n);
+            const unsigned ti = (unsigned)(n + i), tj = (unsigned)(n + (i + 1) % n);
+            if (flip) {
+                o.tri.push_back(bi); o.tri.push_back(bj); o.tri.push_back(tj);
+                o.tri.push_back(bi); o.tri.push_back(tj); o.tri.push_back(ti);
+            } else {
+                o.tri.push_back(bi); o.tri.push_back(ti); o.tri.push_back(tj);
+                o.tri.push_back(bi); o.tri.push_back(tj); o.tri.push_back(bj);
+            }
+        }
+        if (plein && n >= 3) {
+            for (size_t i = 1; i + 1 < n; ++i) {
+                const unsigned a0 = (unsigned)i, a1 = (unsigned)(i + 1);
+                if (flip) {   /* cap haut = fan direct translate, cap bas = inverse */
+                    o.tri.push_back((unsigned)n); o.tri.push_back((unsigned)(n + a0)); o.tri.push_back((unsigned)(n + a1));
+                    o.tri.push_back(0); o.tri.push_back(a1); o.tri.push_back(a0);
+                } else {
+                    o.tri.push_back((unsigned)n); o.tri.push_back((unsigned)(n + a1)); o.tri.push_back((unsigned)(n + a0));
+                    o.tri.push_back(0); o.tri.push_back(a0); o.tri.push_back(a1);
+                }
+            }
+        }
+        computeObjectDerived(o);
+        return;
+    }
 }
 /* formes a points FIXES (pas d'ajout/suppression : les poignees se deplacent) */
 static bool tracePointsFixes(const Object& o) {
+    if (o.traceType == 8)                       /* E3 : selon le profil extrude */
+        return o.traceProfil == 4 || o.traceProfil == 5 || o.traceProfil == 6;
     return o.traceType == 4 || o.traceType == 5 || o.traceType == 6;
 }
 /* minimum de points de definition par forme (garde de suppression/fermeture) */
 static size_t traceMinPoints(const Object& o) {
     if (o.traceType == 7) return 3;             /* polygone : surface seule fermee */
+    if (o.traceType == 8) {                     /* E3 : regles du profil extrude */
+        if (o.traceProfil == 7) return 3;
+        return o.traceFerme ? 3 : 2;
+    }
     return o.traceFerme ? 3 : 2;
 }
 /* index d'insertion dans tracePts : apres l'intervalle le plus proche du clic
@@ -3706,6 +3851,39 @@ static size_t traceMinPoints(const Object& o) {
    le plus proche, kSplSub sous-segments par intervalle, cf. splSample) */
 static int traceInsertIndex(const Object& o, const Vec3& pLocal) {
     const size_t n = o.tracePts.size();
+    if (o.traceType == 8) {                     /* E3 : comme le profil extrude */
+        if (o.traceProfil == 1 && o.traceFerme) {   /* ligne fermee : cloture incluse */
+            double best = 1e300; int bi = 1;
+            for (size_t i = 0; i < n; ++i) {
+                const Vec3 a = o.tracePts[i], b = o.tracePts[(i + 1) % n];
+                const Vec3 ab = b - a;
+                const double l2 = dot(ab, ab);
+                double t = l2 > 1e-18 ? dot(pLocal - a, ab) / l2 : 0.0;
+                if (t < 0.0) t = 0.0;
+                if (t > 1.0) t = 1.0;
+                const double d = (a + ab * t - pLocal).norm();
+                if (d < best) { best = d; bi = (int)i + 1; }
+            }
+            return bi;
+        }
+        if (o.traceProfil == 2 || o.traceProfil == 3) {   /* spline : echantillons */
+            g_splPts = o.tracePts;
+            const bool oldCtrl = g_splCtrl;
+            g_splCtrl = (o.traceProfil == 3);
+            const std::vector<Vec3> pts = splSample(o.traceFerme != 0);
+            g_splCtrl = oldCtrl;
+            g_splPts.clear();
+            double best = 1e300; int bi = 1;
+            for (size_t j = 0; j < pts.size(); ++j) {
+                const double d = (pts[j] - pLocal).norm();
+                if (d < best) { best = d; bi = (int)(j / kSplSub) + 1; }
+            }
+            if (bi < 1) bi = 1;
+            if (bi > (int)n - 1) bi = (int)n - 1;
+            return bi;
+        }
+        /* lignes ouvertes et polygones : branches 1 / 7 plus bas, memes regles */
+    }
     if (o.traceType == 1) {
         double best = 1e300; int bi = 1;
         for (size_t i = 0; i + 1 < n; ++i) {
@@ -3778,6 +3956,20 @@ static bool traceDelPoint(Object& o, int idx) {
 /* O pendant l'edition : bascule ouvert/ferme (feuille <-> fil pour la ligne) */
 static void traceToggleFerme(Object& o) {
     if (o.traceType == 0) return;
+    if (o.traceType == 8) {                     /* E3 : bascule du profil extrude */
+        if (o.traceProfil != 1 && o.traceProfil != 2 && o.traceProfil != 3) {
+            std::printf("edition : le profil de cette extrusion est toujours ferme\n");
+            return;
+        }
+        if (!o.traceFerme && o.tracePts.size() < 3) {
+            std::printf("edition : au moins 3 points pour fermer le trace\n");
+            return;
+        }
+        o.traceFerme = o.traceFerme ? 0 : 1;
+        traceRegen(o);
+        std::printf("edition : extrusion du profil %s\n", o.traceFerme ? "FERME" : "ouvert");
+        return;
+    }
     if (o.traceType != 1 && o.traceType != 2 && o.traceType != 3) {
         std::printf("edition : ouvert/ferme concerne la ligne et la spline\n");
         return;
@@ -3793,6 +3985,12 @@ static void traceToggleFerme(Object& o) {
 /* Maj+S / Maj+B pendant l'edition d'une spline : bascule variante a chaud
    (regle des variantes : points conserves) */
 static void traceSetVariante(Object& o, bool ctrl) {
+    if (o.traceType == 8 && (o.traceProfil == 2 || o.traceProfil == 3)) {
+        o.traceProfil = ctrl ? 3 : 2;           /* E3 : variante du profil, points conserves */
+        traceRegen(o);
+        std::printf("edition : profil spline %s (points conserves)\n", ctrl ? "POINTS DE CONTROLE" : "passage");
+        return;
+    }
     if (o.traceType != 2 && o.traceType != 3) {
         std::printf("edition : la bascule passage/controle concerne les splines\n");
         return;
@@ -3820,9 +4018,34 @@ static void editClick(GLFWwindow* w) {
         const double d = pointRayDist(org, dir, wpt);
         if (d < best) { best = d; bi = (int)i; }
     }
+    /* E3 : la poignee de HAUTEUR (index = npts) au centre du cap superieur */
+    Vec3 cG{0, 0, 0};
+    if (o.traceType == 8 && !o.tracePts.empty()) {
+        for (const Vec3& p : o.tracePts) cG = cG + p;
+        cG = cG * (1.0 / (double)o.tracePts.size());
+        const Vec3 wpt = o.pos + (cG + o.traceVec) * o.scl;
+        const double d = pointRayDist(org, dir, wpt);
+        if (d < best) { best = d; bi = (int)o.tracePts.size(); }
+    }
     if (bi >= 0 && best <= filPickTol() * 2.0) {
         g_editSel = bi;
         g_editGrab = bi;                            /* drag jusqu'au relachement */
+        if (o.traceType == 8 && bi == (int)o.tracePts.size()) {
+            /* plan VERTICAL face camera, passant par le cap superieur :
+               le drag vertical pilote la hauteur sans dependre du sol */
+            Vec3 fwd = g_cam.target - g_cam.pos();
+            fwd.y = 0.0;
+            if (fwd.norm() > 1e-9) {
+                fwd = fwd * (1.0 / fwd.norm());
+                g_editHN = Vec3(-fwd.z, 0.0, fwd.x);   /* perpendiculaire, horizontale */
+            } else {
+                g_editHN = Vec3(1.0, 0.0, 0.0);
+            }
+            g_editHPt = o.pos + (cG + o.traceVec) * o.scl;
+            g_editHDir = (o.traceVec.norm() > 1e-9) ? o.traceVec * (1.0 / o.traceVec.norm())
+                                                    : Vec3(0.0, 1.0, 0.0);
+            g_editH0 = o.traceVec.norm();
+        }
         return;
     }
     bool ok; Vec3 p;
@@ -3841,6 +4064,20 @@ static void editDrag(GLFWwindow* w) {
     lineGroundPoint(w, ok, p);
     if (!ok) return;
     Object& o = g_objs[(size_t)g_editObj];
+    /* E3 : poignee de HAUTEUR (index = npts) - drag dans le plan vertical
+       capte a la saisie ; la longueur suit le curseur, la direction garde */
+    if (o.traceType == 8 && g_editGrab == (int)o.tracePts.size()) {
+        Vec3 org, dir;
+        if (!rayFromMouse(w, org, dir)) return;
+        const double denom = dot(dir, g_editHN);
+        if (std::fabs(denom) < 1e-9) return;
+        const double t = dot(g_editHPt - org, g_editHN) / denom;
+        const Vec3 p2 = org + dir * t;
+        const double len = g_editH0 + dot(p2 - g_editHPt, g_editHDir) / o.scl;
+        o.traceVec = g_editHDir * len;
+        traceRegen(o);
+        return;
+    }
     o.tracePts[(size_t)g_editGrab] = (p - o.pos) * (1.0 / o.scl);
     traceRegen(o);
 }
@@ -3861,6 +4098,23 @@ static void drawEditHandles() {
         glVertex3d(w.x + s, w.y, w.z - s);
         glVertex3d(w.x + s, w.y, w.z + s);
         glVertex3d(w.x - s, w.y, w.z + s);
+        glEnd();
+    }
+    /* E3 : poignee de HAUTEUR (bleue) au centre du cap superieur */
+    if (o.traceType == 8 && !o.tracePts.empty()) {
+        Vec3 cG{0, 0, 0};
+        for (const Vec3& p : o.tracePts) cG = cG + p;
+        cG = cG * (1.0 / (double)o.tracePts.size());
+        const Vec3 wt = o.pos + (cG + o.traceVec) * o.scl;
+        const int idx = (int)o.tracePts.size();
+        if (idx == g_editSel) glColor3d(0.95, 0.5, 0.2);
+        else if (idx == g_editGrab) glColor3d(0.95, 0.75, 0.1);
+        else glColor3d(0.2, 0.7, 0.95);                            /* bleue = hauteur */
+        glBegin(GL_QUADS);
+        glVertex3d(wt.x - s, wt.y, wt.z - s);
+        glVertex3d(wt.x + s, wt.y, wt.z - s);
+        glVertex3d(wt.x + s, wt.y, wt.z + s);
+        glVertex3d(wt.x - s, wt.y, wt.z + s);
         glEnd();
     }
     glEnable(GL_DEPTH_TEST);
@@ -4719,8 +4973,12 @@ static std::string statusPrompt() {
         if (glfwGetTime() < g_bandFlashUntil) return g_bandFlash;
         g_bandFlash.clear();
     }
-    if (g_editMode)
+    if (g_editMode) {
+        if (g_editObj >= 0 && g_editObj < (int)g_objs.size()
+            && g_objs[(size_t)g_editObj].traceType == 8)
+            return "Edition de l extrusion : glissez une poignee (bleue = hauteur) | Echap ou clic droit = quitter";
         return "Edition du trace : glissez une poignee | clic sur la courbe = ajouter un point (ligne, spline, polygone) | poignee + Suppr = supprimer | Maj+S/Maj+B = variante spline | O = ouvert/ferme | Echap ou clic droit = quitter";
+    }
     if (g_lineActive)
         return "Ligne : clic = prolonger | clic droit = fin | chiffres + Entree = longueur exacte | Echap = tout annuler";
     if (g_rectActive)

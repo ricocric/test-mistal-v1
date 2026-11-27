@@ -2137,6 +2137,134 @@ int main() {
         g_polyPts.clear();
     }
 
+    /* ------------------------------------------------------------------ */
+    /* B2.7e E3 : extrusion parametrique (type 8 = profil + vecteur)       */
+    /* ------------------------------------------------------------------ */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        /* 1. pull pose sur une feuille rectangle = conversion en extrusion */
+        rectPose(Vec3(0,0,0), Vec3(4,0,2));
+        CHECK(g_objs.size() == 1 && g_objs[0].traceType == 4 && g_objs[0].tri.size() == 6,
+              "E3 : feuille rectangle posee (2 tris, type 4)");
+        {
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[0], 0, dd), "E3 : la feuille est capturable par P");
+            CHECK(extrudeConvertTo(g_objs[0], dd, 3.0),
+                  "E3 : pull pose = conversion en extrusion parametrique (type 8)");
+            CHECK(g_objs[0].traceType == 8 && g_objs[0].traceProfil == 4,
+                  "E3 : profil rectangle conserve (traceProfil = 4)");
+            CHECK(g_objs[0].v.size() == 8 && g_objs[0].tri.size() == 36,
+                  "E3 : prisme = 8 sommets, 12 tris (8 murs + 2 x 2 caps)");
+            CHECK(std::fabs(signedVolume(g_objs[0]) - 24.0) < 1e-9,
+                  "E3 : volume signe = 4 x 2 x 3 = 24 (normales exterieures)");
+        }
+        /* 2. pousser (vecteur inverse) : windings toujours exterieurs */
+        g_objs[0].traceVec = Vec3(0, -3, 0);
+        traceRegen(g_objs[0]);
+        CHECK(std::fabs(signedVolume(g_objs[0]) - 24.0) < 1e-9,
+              "E3 : pousser (vecteur vers le bas) = volume exterieur conserve");
+        g_objs[0].traceVec = Vec3(0, 3, 0);
+        traceRegen(g_objs[0]);
+        /* 3. edition du profil : drag d'un coin = le prisme suit */
+        g_objs[0].tracePts[1] = Vec3(2, 0, 1);      /* coin oppose deplace (locales) */
+        traceRegen(g_objs[0]);
+        CHECK(g_objs[0].v.size() == 8 && std::fabs(g_objs[0].v[6].x - 2.0) < 1e-12
+              && std::fabs(g_objs[0].v[6].y - 3.0) < 1e-12 && std::fabs(g_objs[0].v[6].z - 1.0) < 1e-12,
+              "E3 : coin du profil deplace = le cap superieur suit (v[6] = coin + h)");
+        CHECK(std::fabs(signedVolume(g_objs[0]) - 6.0) < 1e-9,
+              "E3 : volume = 2 x 1 x 3 = 6 apres le drag du coin");
+        /* 4. edition de la hauteur (traceVec) : volume proportionnel */
+        g_objs[0].traceVec = Vec3(0, 1.5, 0);
+        traceRegen(g_objs[0]);
+        CHECK(std::fabs(signedVolume(g_objs[0]) - 3.0) < 1e-9,
+              "E3 : hauteur 1.5 = volume 3 (poignee bleue = traceVec)");
+        /* 5. cercle extrude : prisme a 24 segments */
+        cerclePose(Vec3(10,0,10), 2.0);
+        {
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[1], 0, dd), "E3 : feuille cercle capturable");
+            CHECK(extrudeConvertTo(g_objs[1], dd, 2.0), "E3 : cercle extrude (type 8, profil 5)");
+            CHECK(g_objs[1].v.size() == 2 * (size_t)CERCLE_SEG
+                  && g_objs[1].tri.size() == (size_t)(3 * (2 * CERCLE_SEG + 2 * (CERCLE_SEG - 2))),
+                  "E3 : prisme circulaire = 48 sommets, murs 48 tris + caps 44 tris");
+            const double vol = signedVolume(g_objs[1]);
+            /* aire du polygone INSCRIT a 24 cotes (pas le disque) x hauteur */
+            const double attendu = 0.5 * CERCLE_SEG * 4.0
+                                 * std::sin(6.283185307179586 / CERCLE_SEG) * 2.0;
+            CHECK(std::fabs(vol - attendu) < 1e-6,
+                  "E3 : volume du prisme circulaire = aire du polygone x hauteur");
+        }
+        /* 6. refus : une coque (cube) n est pas convertible */
+        {
+            const double col[3] = {0.5, 0.5, 0.5};
+            g_objs.push_back(makeBoxObject("Cube", Vec3(0.5,0.5,0.5), Vec3(0.5,0.5,0.5), col));
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[2], 2, dd), "E3 : face du cube capturable");
+            CHECK(!extrudeConvertTo(g_objs[2], dd, 2.0),
+                  "E3 : coque sans TraceData = pas de conversion (patch != tout l objet)");
+            CHECK(g_objs[2].traceType == 0, "E3 : le cube reste non parametrique");
+        }
+        /* 7. polygone extrude : ajout/suppression sur le profil */
+        g_polyPts = { Vec3(20,0,0), Vec3(24,0,0), Vec3(24,0,4), Vec3(20,0,4) };
+        polyPose();
+        {
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[3], 0, dd) && extrudeConvertTo(g_objs[3], dd, 1.0),
+                  "E3 : polygone extrude (type 8, profil 7)");
+            CHECK(g_objs[3].tri.size() == (size_t)(3 * (2 * 4 + 2 * 2)),
+                  "E3 : prisme polygonal = 12 tris (8 murs + 4 caps)");
+            CHECK(traceAddPoint(g_objs[3], Vec3(22,0,2)) >= 0 && g_objs[3].tracePts.size() == 5,
+                  "E3 : point ajoute au profil extrude (regles du polygone)");
+            CHECK(g_objs[3].tri.size() == (size_t)(3 * (2 * 5 + 2 * 3)),
+                  "E3 : profil a 5 sommets = 16 tris (10 murs + 6 caps)");
+            CHECK(traceDelPoint(g_objs[3], 4) && g_objs[3].tri.size() == (size_t)(3 * 12),
+                  "E3 : point supprime du profil extrude = retour a 12 tris");
+            CHECK(traceDelPoint(g_objs[3], 0) && g_objs[3].tracePts.size() == 3,
+                  "E3 : suppression a 4 points (-> 3, regles du polygone)");
+            CHECK(!traceDelPoint(g_objs[3], 0), "E3 : garde - profil polygone minimum 3 sommets");
+        }
+        /* 8. O sur une extrusion de LIGNE fermee = bande (murs seuls) puis retour */
+        g_linePts = { Vec3(30,0,0), Vec3(32,0,0), Vec3(32,0,2), Vec3(30,0,2) };
+        g_lineMode = true; g_lineActive = true; g_lineFerme = true;
+        lineCloseLoop();
+        CHECK(g_objs[4].traceType == 1 && g_objs[4].traceFerme == 1 && g_objs[4].traceSurface == 1,
+              "E3 : feuille ligne fermee posee");
+        {
+            Extrude dd;
+            CHECK(makeExtrude(g_objs[4], 0, dd) && extrudeConvertTo(g_objs[4], dd, 2.0),
+                  "E3 : ligne fermee extrudee (type 8, profil 1)");
+            CHECK(g_objs[4].tri.size() == (size_t)(3 * 12),
+                  "E3 : prisme ligne = 12 tris (8 murs + 4 caps)");
+            traceToggleFerme(g_objs[4]);
+            CHECK(g_objs[4].traceFerme == 0 && g_objs[4].tri.size() == (size_t)(3 * 6),
+                  "E3 : O = profil ouvert -> bande (6 tris = 3 murs x 2, sans caps)");
+            traceToggleFerme(g_objs[4]);
+            CHECK(g_objs[4].traceFerme == 1 && g_objs[4].tri.size() == (size_t)(3 * 12),
+                  "E3 : O = retour au prisme ferme (12 tris)");
+        }
+        /* 9. persistence : l extrusion survit au save/load (profil + vecteur) */
+        {
+            std::string err;
+            const std::string p = tmpPath("extrusion.s3projet");
+            CHECK(saveProject(p, err), err.c_str());
+            const size_t nObjAvant = g_objs.size();
+            const std::vector<Vec3> vAvant = g_objs[0].v;
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), err.c_str());
+            CHECK(g_objs.size() == nObjAvant && g_objs[0].traceType == 8 && g_objs[0].traceProfil == 4,
+                  "E3 : type 8 + sous-type survivent au save/load");
+            CHECK(std::fabs(g_objs[0].traceVec.y - 1.5) < 1e-9,
+                  "E3 : vecteur d extrusion fidele au save/load");
+            traceRegen(g_objs[0]);
+            bool identique = g_objs[0].v.size() == vAvant.size();
+            for (size_t i = 0; identique && i < vAvant.size(); ++i)
+                identique = (g_objs[0].v[i] - vAvant[i]).norm() < 1e-9;
+            CHECK(identique, "E3 : geometrie regeneree identique apres save/load");
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_polyPts.clear(); g_lineMode = false; lineReset();
+    }
+
     std::printf("resume : %d echec(s), %d verifications\n", g_fail, g_tot);
     return g_fail ? 1 : 0;
 }
