@@ -281,6 +281,8 @@ Mecanique commune aux 5 profils (meme contrat que le reste de l'application,
   correctif : helper pushFanTri (tri pousse sauf si surface nulle)
   applique a TOUS les fans (types 1/7/8 : cas plat + caps, les 2
   variantes flip) - murs inchanges ; +6 verifications = 394, 0 echec ;
+  VALIDATION UTILISATEUR E3b + E3c (caps centre, garde ajout, pull
+  repare) ;
   BACKLOG NOTE (retours test) : fond non rafraichi en continu pendant
   le redimensionnement de la fenetre (annexe, cosmétique) ; controle
   des murs d une extrusion en place non ergonomique (a repenser avec
