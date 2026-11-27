@@ -2692,7 +2692,14 @@ int main() {
             onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
             onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, 0);
             CHECK(!g_editMode, "B3.6a-bis : clic droit sans Maj ni pan = sortie d'edition (regle conservee)");
-            g_editMode = false; g_editObj = -1;
+            /* B3.6a-ter : en edition, Maj tenue au clic sans effet = PAN
+               (meme regle que la selection), sans Maj = orbite */
+            g_editMode = true; g_mode = M_None;
+            editOrbit(W, true);
+            CHECK(g_mode == M_Pan, "B3.6a-ter : edition, clic sans effet AVEC Maj = PAN");
+            editOrbit(W, false);
+            CHECK(g_mode == M_Orbit, "B3.6a-ter : edition, clic sans effet sans Maj = orbite (regle B3.3c)");
+            g_editMode = false; g_mode = M_None;
         }
         /* ALTITUDE : drag d'une poignee du chemin d'un tube EN HAUTEUR =
            l'altitude est conservee (avant : la poignee retombait au sol) */
@@ -2737,7 +2744,7 @@ int main() {
             pixelDe(Vec3(3, 3, 40), px, py);                    /* milieu de la courbe */
             g_stubCursorX = px; g_stubCursorY = py;
             g_editSel = -1;
-            editClick(W);
+            editClick(W, 0);
             CHECK(g_objs[(size_t)isp].tracePts.size() == 3
                   && std::fabs(g_objs[(size_t)isp].tracePts.back().y - 3.0) < 1e-9,
                   "B3.6a-bis : point ajoute sur une courbe en hauteur = meme altitude");
@@ -2749,7 +2756,7 @@ int main() {
             onScroll(nullptr, 0, 10);
             CHECK(g_cam.dist < 1.2, "B3.6a-bis : zoom avant 10 crans = x9 plus pres (0.8 par cran)");
             onScroll(nullptr, 0, 1000);
-            CHECK(g_cam.dist == 0.1, "B3.6a-bis : borne de zoom avant 0.1 conservee");
+            CHECK(g_cam.dist == 0.02, "B3.6a-bis : borne de zoom avant 0.02 (5 fois plus pres)");
         }
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_rightDown = false; g_mode = M_None;
@@ -2809,7 +2816,7 @@ int main() {
             onScroll(nullptr, 0, -1000);
             CHECK(g_cam.dist == 4000.0, "B3.3e : zoom arriere borne a 4000");
             onScroll(nullptr, 0, 1000);
-            CHECK(g_cam.dist == 0.1, "B3.3e : zoom avant borne a 0.1");
+            CHECK(g_cam.dist == 0.02, "B3.3e : zoom avant borne a 0.02 (B3.6a-ter : 5 fois plus pres)");
             g_cam.dist = d0;
         }
         /* B3.3f (regle) : les messages utilisateur vont dans la FENETRE

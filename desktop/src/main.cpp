@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.6a-bis";   /* fils selectionnables devant un solide + pan robuste + zoom 20% + altitude des poignees */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
+static const char* BUILD_VERSION = "B3.6a-ter";   /* fils selectionnables devant un solide + pan robuste + zoom 20% + altitude des poignees */   /* B2.1 : outil Ligne (fil multi-segments pose au sol) */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -4732,14 +4732,22 @@ static void editExit() {
 }
 /* B3.3c (retour test) : en edition, un clic qui ne saisit aucune poignee et
    n'ajoute aucun point = ORBITE - tourner autour de l'objet pendant
-   l'edition (pan molette et zoom deja actifs) */
-static void editOrbit(GLFWwindow* w) {
-    g_mode = M_Orbit;
+   l'edition (pan molette et zoom deja actifs) ;
+   B3.6a-ter (retour test : maj + clic G = pan demande) : Maj tenue au clic
+   = PAN (meme regle que la selection : deplacer la vue), sans Maj = orbite */
+static void editOrbit(GLFWwindow* w, bool maj) {
+    if (maj) {
+        g_mode = M_Pan;
+        flashBand("pan : deplacez la vue ; relachez pour poser");
+    } else {
+        g_mode = M_Orbit;
+    }
     glfwGetCursorPos(w, &g_prevX, &g_prevY);
 }
 /* clic gauche en edition : saisir une poignee (drag) ou ajouter un point ;
    clic sans effet (vide, ciel, refuse) = orbite (B3.3c) */
-static void editClick(GLFWwindow* w) {
+static void editClick(GLFWwindow* w, int mods) {
+    const bool majClic = (mods & GLFW_MOD_SHIFT) != 0;   /* B3.6a-ter */
     if (g_editObj < 0 || g_editObj >= (int)g_objs.size()) { editExit(); return; }
     Object& o = g_objs[(size_t)g_editObj];
     Vec3 org, dir;
@@ -4761,7 +4769,7 @@ static void editClick(GLFWwindow* w) {
             userMsg("edition balayage : l accroche %d/%d est collee au fil",
                         ai + 1, (int)acc.size());
         } else {
-            editOrbit(w);                       /* B3.3c : clic sans effet = orbite */
+            editOrbit(w, majClic);                       /* B3.3c : clic sans effet = orbite */
         }
         return;
     }
@@ -4825,15 +4833,15 @@ static void editClick(GLFWwindow* w) {
         Vec3 cPt, nn;
         if (!sweepProfilPlan(o, cPt, nn)) return;
         const double denom = dot(dir, nn);
-        if (std::fabs(denom) < 1e-9) { editOrbit(w); return; }
+        if (std::fabs(denom) < 1e-9) { editOrbit(w, majClic); return; }
         const double t = dot(cPt - org, nn) / denom;
-        if (t <= 0.0) { editOrbit(w); return; }
+        if (t <= 0.0) { editOrbit(w, majClic); return; }
         const int idx = traceAddPoint(o, org + dir * t, false);
         if (idx >= 0) {
             g_editSel = idx;
             userMsg("edition : point ajoute au profil (%zu au total)", o.tracePts.size());
         } else {
-            editOrbit(w);
+            editOrbit(w, majClic);
         }
         return;
     }
@@ -4851,7 +4859,7 @@ static void editClick(GLFWwindow* w) {
             surSolide = true;
         } else {
             lineGroundPoint(w, ok, p);
-            if (!ok) { editOrbit(w); return; }      /* pointe le ciel : orbite */
+            if (!ok) { editOrbit(w, majClic); return; }      /* pointe le ciel : orbite */
         }
     } else {
         /* B3.6a-bis : le point s'ajoute dans le plan HORIZONTAL passant par
@@ -4865,7 +4873,7 @@ static void editClick(GLFWwindow* w) {
             if (ic < o.traceChemin.size()) yPlan = o.pos.y + o.traceChemin[ic].y * o.scl;
         }
         linePointY(w, yPlan, ok, p);
-        if (!ok) { editOrbit(w); return; }          /* pointe le ciel : orbite */
+        if (!ok) { editOrbit(w, majClic); return; }          /* pointe le ciel : orbite */
     }
     const int idx = traceAddPoint(o, p, (o.traceType == 8 && !surSolide) || o.traceType == 9);
     if (idx >= 0) {
@@ -4875,7 +4883,7 @@ static void editClick(GLFWwindow* w) {
         else
             userMsg("edition : point ajoute (%zu au total)", o.tracePts.size());
     } else {
-        editOrbit(w);
+        editOrbit(w, majClic);
     }
 }
 /* drag d'une poignee au sol (recalcul CONTINU de la courbe) */
@@ -5029,9 +5037,10 @@ static void onScroll(GLFWwindow*, double, double dy) {
        cran porte de 11 % (0.9) a 20 % (0.8) - 100 fois plus pres en 20 crans
        au lieu de 44 ; les bornes ne changent pas */
     g_cam.dist *= std::pow(0.8, dy);
-    /* B3.3e : niveaux de zoom DEFINIS - tres pres (0.1, plan proche 0.05)
-       a tres loin (4000, plan lointain 5000) */
-    if (g_cam.dist < 0.1) g_cam.dist = 0.1;
+    /* B3.3e : niveaux de zoom DEFINIS - tres pres (0.02) a tres loin (4000,
+       plan lointain 5000) ; B3.6a-ter (retour test : borne pas assez
+       petite) : le rapprochement passe de 0.1 a 0.02 (5 fois plus pres) */
+    if (g_cam.dist < 0.02) g_cam.dist = 0.02;
     if (g_cam.dist > 4000.0) g_cam.dist = 4000.0;
 }
 
@@ -5112,7 +5121,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_polyMode) { polyTakePoint(w); return; }       /* B2.6 : chaque clic pose un sommet ; clic sur le depart = ferme */
         if (g_splMode) { splTakePoint(w); return; }       /* B2.7 : chaque clic pose un point ; clic sur le depart = boucle */
         if (g_sweepStage) { sweepClick(w); return; }   /* B3 : clic 1 = la face, clic 2 = le fil */
-        if (g_editMode) { editClick(w); return; }   /* B2.7e : poignee = drag ; clic utile = ajouter ; sans effet = orbite (B3.3c) */
+        if (g_editMode) { editClick(w, mods); return; }   /* B2.7e : poignee = drag ; clic utile = ajouter ; sans effet = orbite/pan (B3.3c, B3.6a-ter) */   /* B2.7e : poignee = drag ; clic utile = ajouter ; sans effet = orbite (B3.3c) */
         if (g_ppActive) { ppCommit(); return; }   /* second clic gauche : pose la face */
         if (g_rotActive) { rotCommit(); return; }  /* clic gauche : pose la rotation */
         if (g_ppMode) {
@@ -5200,6 +5209,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
             }
         } else if (mods & GLFW_MOD_SHIFT) {
             g_mode = M_Pan;              /* Shift+glisser = deplacer la vue */
+            flashBand("pan : deplacez la vue ; relachez pour poser");   /* B3.6a-ter : retour visible */
         } else {
             g_mode = M_Orbit;
         }
@@ -5930,7 +5940,11 @@ static void render() {
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    if (g_winH > 0) setPerspective(kFovDeg, double(g_winW) / double(g_winH), 0.05, 5000.0);
+    /* B3.6a-ter : plan proche ADAPTATIF - sous dist 5 le plan passe de
+       0.05 a 0.005 (le zoom rapproche sous l'ancienne borne sans z-fighting
+       a distance : au-dela de dist 5, la precision 1:100000 est conservee) */
+    if (g_winH > 0) setPerspective(kFovDeg, double(g_winW) / double(g_winH),
+                                   (g_cam.dist < 5.0) ? 0.005 : 0.05, 5000.0);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();

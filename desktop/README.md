@@ -1053,6 +1053,15 @@ globale corrigee par le volume signe (normales exterieures) ;
     au sol pour les courbes en hauteur) ; au sol, identique a avant ;
   - +15 verifications = **479, 0 echec** (ASan propre) ; backlog consigne :
     selection par NOM d'objet (liste de choix, menu contextuel).
+- **B3.6a-ter (complement retour test)** :
+  - **pan aussi a Maj + clic GAUCHE en edition** : un clic sans effet avec
+    Maj tenue = pan (meme regle que la selection : avant, l'orbite d'absence
+    d'effet ignorait Maj) ; sans Maj = orbite (regle B3.3c) ; bandeau de
+    confirmation aussi sur le pan de la selection ;
+  - **borne de rapprochement 0.1 -> 0.02** (retour test : borne pas assez
+    petite) avec plan proche ADAPTATIF (0.005 sous dist 5, 0.05 au-dela :
+    precision conservee a distance) ;
+  - +2 verifications = **481, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 
