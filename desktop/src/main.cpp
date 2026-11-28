@@ -49,7 +49,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.10b";  /* orientation 3 axes : anneau 0 = profil EXACTEMENT tel que pose (frame = base du plan du profil), stations suivantes = transport parallele ; roll B3.6b = reglage fin */
+static const char* BUILD_VERSION = "B3.10b-bis";  /* normale de l'anneau 0 placee PARALLELE a l'axe du fil par rotation minimale autour de la poignee selectionnee (pivot A) ; transport parallele ensuite, roll B3.6b = reglage fin */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -4957,23 +4957,52 @@ static void traceRegenSweep(Object& o) {
        transport parallele le long du chemin (inchangé, pas de torsion) ;
        le roll (B3.6b) reste le reglage fin de l'orientation autour du
        chemin, editable apres coup. */
-    Vec3 U0(0, 0, 0);
+    /* B3.10b : base DU PLAN DU PROFIL ancree sur la POIGNEE A (accroche
+       pincee B3.6a/B3.10a, sinon la plus proche du fil) : u = direction
+       tracee A -> sommet le plus loin, w = Nv x u (base directe) ;
+       coordonnees du profil lues dans (u, w) */
+    Vec3 u(0, 0, 0);
     {
         double dFar = -1.0; size_t kFar = 0;
         for (size_t k = 0; k < n; ++k) {
             const double d = (prof[k] - A).norm();
             if (d > dFar) { dFar = d; kFar = k; }
         }
-        if (dFar > 1e-12) U0 = (prof[kFar] - A) * (1.0 / dFar);
+        if (dFar > 1e-12) u = (prof[kFar] - A) * (1.0 / dFar);
     }
-    if (U0.norm() < 1e-9) {                         /* profil ponctuel : axe quelconque dans le plan */
+    if (u.norm() < 1e-9) {                          /* profil ponctuel : axe quelconque dans le plan */
         const Vec3 ref = (std::fabs(Nv.y) < 0.9) ? Vec3(0, 1, 0) : Vec3(1, 0, 0);
-        U0 = ref - Nv * dot(ref, Nv);
-        if (U0.norm() < 1e-9) return;
-        U0 = U0 * (1.0 / U0.norm());
+        u = ref - Nv * dot(ref, Nv);
+        if (u.norm() < 1e-9) return;
+        u = u * (1.0 / u.norm());
     }
-    Nn[0] = U0;
-    Bb[0] = cross(Nv, U0);                           /* (U0, Bb0, Nv) direct : pas de miroir */
+    const Vec3 w = cross(Nv, u);                     /* (u, w, Nv) direct : pas de miroir */
+    /* B3.10b-bis (retour test : "placement de la normale du profil
+       parallele a l'axe du fil, depuis la poignee selectionnee") : la
+       NORMALE de l'ANNEAU 0 est placee PARALLELE a l'axe du fil par la
+       ROTATION MINIMALE autour du pivot A (poignee selectionnee) amenant
+       Nv sur Tv[0] : Nn[0] = R(u), Bb[0] = R(w) -> anneau 0 =
+       chem[0] + R(prof[k] - A), section PERPENDICULAIRE au fil (pas de
+       losange : l'axe cross(Nv,Tv[0]) est dans le plan du profil) ;
+       l'orientation dans le plan est celle de la rotation minimale depuis
+       le trace, le roll (B3.6b) reste le reglage fin. Stations suivantes =
+       transport parallele (inchangé, pas de torsion). */
+    Vec3 ax = cross(Nv, Tv[0]);
+    const double sn = ax.norm();
+    double ang = 0.0;
+    if (sn > 1e-12) {
+        ax = ax * (1.0 / sn);
+        ang = std::atan2(sn, dot(Nv, Tv[0]));
+    } else if (dot(Nv, Tv[0]) < 0.0) {
+        /* normale opposee a la tangente : rotation de 180 deg autour d'un
+           axe perpendiculaire (repli canonique) */
+        ax = cross(Nv, Vec3(0, 1, 0));
+        if (ax.norm() < 1e-12) ax = Vec3(1, 0, 0);
+        ax = ax * (1.0 / ax.norm());
+        ang = 3.14159265358979;
+    }
+    Nn[0] = vecRotate(u, ax, ang);
+    Bb[0] = vecRotate(w, ax, ang);
     for (size_t i = 1; i < nRings; ++i) {           /* transport parallele (projete) */
         Vec3 ni = Nn[i - 1] - Tv[i] * dot(Nn[i - 1], Tv[i]);
         if (ni.norm() < 1e-12) ni = Nn[i - 1];      /* tangente retournee : garder la frame */
@@ -4981,20 +5010,18 @@ static void traceRegenSweep(Object& o) {
         Nn[i] = ni;
         Bb[i] = cross(Tv[i], ni);
     }
-    /* B3.10b : coordonnees du profil DANS SA PROPRE frame de station 0 :
-       anneau 0 = chem[0] + (prof[k] - A) exactement (translation seule) */
     std::vector<double> aa(n), bb(n);
     for (size_t k = 0; k < n; ++k) {
-        aa[k] = dot(prof[k] - A, Nn[0]);
-        bb[k] = dot(prof[k] - A, Bb[0]);
+        aa[k] = dot(prof[k] - A, u);
+        bb[k] = dot(prof[k] - A, w);
     }
     double aC = 0.0, bC = 0.0;
     if (aCentre) {
-        aC = dot(o.tracePts[0] - A, Nn[0]);
-        bC = dot(o.tracePts[0] - A, Bb[0]);
+        aC = dot(o.tracePts[0] - A, u);
+        bC = dot(o.tracePts[0] - A, w);
     }
     /* B3.6b : ROLL utilisateur - rotation du profil dans SON PLAN (autour de
-       Tv[0], a l'accroche A) ; 0 degre = profil tel que pose (B3.10b) */
+       Tv[0], a l'accroche A) ; 0 degre = orientation de lancement (B3.10b-bis) */
     if (std::fabs(o.traceRoll) > 1e-12) {
         const double R = o.traceRoll * 3.14159265358979 / 180.0;
         const double cr = std::cos(R), sr = std::sin(R);

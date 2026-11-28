@@ -855,6 +855,16 @@ Questions ouvertes a trancher avec l'utilisateur :
     volume-exact B3/B3.3 remplaces par invariants de section
     perpendiculaire (aire = aire du profil, z constant par anneau,
     volume signe > 0) ;
+  - **B3.10b-bis PLACEMENT DE LA NORMALE PARALLELE A L'AXE DU FIL** (retour
+    test B3.10b : "placement de la normale du rectangle, ou du cercle,
+    parallele a l'axe du fil, depuis la poignee selectionnee") - **FAIT
+    (B3.10b-bis, 652 verifications, 0 echec, ASan propre)** : a la station 0,
+    ROTATION MINIMALE autour du pivot A (poignee pincee) amenant la normale
+    Nv sur la tangente Tv[0] : l'anneau 0 = chem[0] + R(prof[k] - A) est
+    PERPENDICULAIRE au fil (normale parallele a l'axe), rotation rigide
+    (congruence avec le profil trace, pas de losange) ; stations suivantes =
+    transport parallele inchange ; roll B3.6b = reglage fin ; prisme droit
+    retrouve (volumes exacts 160/320 restaures dans les tests) ;
   - **B3.10c DEPLOIEMENT CONTROLE A LA MAIN (option complementaire,
     indispensable aux objets evolues : routes, couloirs, tuyauteries,
     jonctions)** : pouvoir ARRETER le deploiement EN COURS DE ROUTE sur

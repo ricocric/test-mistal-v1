@@ -1234,6 +1234,13 @@ globale corrigee par le volume signe (normales exterieures) ;
   parallele inchange (pas de torsion) ; poignee de roll projetee sur le
   plan perpendiculaire a l'axe (cercle du drag) ; roll B3.6b reste le
   reglage fin ; **651, 0 echec** (ASan propre).
+- **B3.10b-bis (placement de la normale parallele a l'axe du fil, depuis
+  la poignee selectionnee)** : a la station 0, rotation MINIMALE autour du
+  pivot A (poignee pincee) amenant la normale du profil sur la tangente du
+  fil : anneau 0 PERPENDICULAIRE au fil, rotation rigide (congruent au
+  profil trace, pas de losange), prisme droit (volumes exacts) ; transport
+  parallele inchange ensuite ; roll B3.6b = reglage fin ; **652, 0 echec**
+  (ASan propre).
 
 ## Organiseur des prochains lots
 
