@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.7c";   /* collage generique 2 objets : menu contextuel Coller sur..., accroche intelligente, alignement arete/arete */
+static const char* BUILD_VERSION = "B3.8";   /* collage generique 2 objets : menu contextuel Coller sur..., accroche intelligente, alignement arete/arete */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -5483,16 +5483,53 @@ static void drawEditHandles() {
 /* Callbacks                                                           */
 /* ------------------------------------------------------------------ */
 
-static void onScroll(GLFWwindow*, double, double dy) {
+static void onScroll(GLFWwindow* w, double, double dy) {
     /* B3.6a-bis (retour test : "zoom toujours tres insuffisant") : pas par
        cran porte de 11 % (0.9) a 20 % (0.8) - 100 fois plus pres en 20 crans
        au lieu de 44 ; les bornes ne changent pas */
+    /* B3.8 (demande utilisateur, facon SketchUp) : le zoom AVANT converge
+       vers la zone pointee par le curseur (recentrer = zoom arriere, curseur
+       dans le secteur cible, zoom avant). Methode : point vise P = impact du
+       rayon du curseur (objet, puis fil), sinon projection sur le plan de
+       travail (plan par la cible, face a la camera) ; apres le changement de
+       dist, la cible camera glisse vers P au meme rapport
+       cible_new = P + (cible - P) * dist_new/dist_old : le point vise reste
+       SOUS LE CURSEUR (la camera avance en ligne droite vers lui).
+       w == nullptr (tests) = molette sans curseur : pur dolly, comme avant. */
+    const double oldDist = g_cam.dist;
+    Vec3 P(0, 0, 0);
+    bool aP = false;
+    if (w && std::fabs(dy) > 1e-12) {
+        Vec3 org, dir;
+        if (rayFromMouse(w, org, dir)) {
+            double bestT = 1e300;
+            for (size_t i = 0; i < g_objs.size(); ++i) {
+                double t; size_t ti;
+                if (rayObjectTri(org, dir, g_objs[i], t, &ti) && t < bestT) { bestT = t; aP = true; }
+            }
+            if (!aP)
+                for (size_t i = 0; i < g_objs.size(); ++i) {
+                    const double t = filRayHit(org, dir, g_objs[i], filPickTol());
+                    if (t >= 0.0 && t < bestT) { bestT = t; aP = true; }
+                }
+            if (aP) P = org + dir * bestT;
+            else {
+                const double den = dot(dir, g_cam.forward());
+                if (std::fabs(den) > 1e-12) {
+                    const double t = dot(g_cam.target - org, g_cam.forward()) / den;
+                    if (t > 0.0) { P = org + dir * t; aP = true; }
+                }
+            }
+        }
+    }
     g_cam.dist *= std::pow(0.8, dy);
     /* B3.3e : niveaux de zoom DEFINIS - tres pres (0.02) a tres loin (4000,
        plan lointain 5000) ; B3.6a-ter (retour test : borne pas assez
        petite) : le rapprochement passe de 0.1 a 0.02 (5 fois plus pres) */
     if (g_cam.dist < 0.02) g_cam.dist = 0.02;
     if (g_cam.dist > 4000.0) g_cam.dist = 4000.0;
+    if (aP)
+        g_cam.target = P + (g_cam.target - P) * (g_cam.dist / oldDist);
 }
 
 static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {

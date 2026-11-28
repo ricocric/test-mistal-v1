@@ -1151,7 +1151,15 @@ globale corrigee par le volume signe (normales exterieures) ;
     cas impossibles (geste actif pp/rot/drag de poignee/roll ; edition qui
     garde sa regle propre poignee d'abord) ; la selection simple garde sa
     regle (Maj+clic sur un objet = le deplacer, dans le vide = pan) ;
-    +5 verifications = **572, 0 echec** (ASan propre).
+    +5 verifications = **572, 0 echec** (ASan propre) ;
+- **B3.8 (zoom sur le curseur, facon SketchUp)** : le zoom AVANT converge
+  vers la zone pointee par le curseur (recentrer = zoom arriere, curseur
+  dans le secteur cible, zoom avant) ; le point vise (impact objet, fil,
+  ou plan de travail si vide) reste SOUS LE CURSEUR pendant le zoom, la
+  camera avance en ligne droite vers lui (cible glissee au rapport
+  dist_new/dist_old) ; pas de 20 % par cran et bornes 0.02/4000 inchanges ;
+  molette sans curseur (nullptr, tests) = pur dolly comme avant ;
+  +10 verifications = **582, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 

@@ -3395,6 +3395,69 @@ int main() {
         g_cam = g_camHome;
     }
 
+    { /* B3.8 : zoom sur le curseur (facon SketchUp) - le zoom AVANT converge
+          vers la zone pointee par le curseur ; le point vise reste SOUS le
+          curseur (recentrer = zoom arriere, curseur, zoom avant) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        const double colT[3] = {0.6, 0.6, 0.6};
+        g_winW = 1600; g_winH = 900;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_objs.push_back(makeBoxObject("Sol", Vec3(0, 0.5, 0), Vec3(1, 0.5, 1), colT));
+        g_cam.target = Vec3(0, 0.5, 0); g_cam.dist = 20.0;
+        g_cam.theta = 0.0; g_cam.phi = 0.6;
+        double px, py, qx, qy;
+        const double tg = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+        auto pixelDe = [&](const Vec3& c, double& ox, double& oy) {
+            const Vec3 d = normalized(c - g_cam.pos());
+            const double df = dot(d, g_cam.forward());
+            const double aspect = (double)g_winW / (double)g_winH;
+            ox = (dot(d, g_cam.right()) / (df * tg * aspect) + 1.0) * 0.5 * (double)g_winW;
+            oy = (1.0 - dot(d, g_cam.up()) / (df * tg)) * 0.5 * (double)g_winH;
+        };
+        extern double g_stubCursorX, g_stubCursorY;
+        const Vec3 Pv(0.3, 1.0, -0.2);          /* point sur la face du dessus */
+        pixelDe(Pv, px, py); g_stubCursorX = px; g_stubCursorY = py;
+        const double d0 = g_cam.dist; const Vec3 t0 = g_cam.target;
+        onScroll(W, 0, 1.0);
+        CHECK(std::fabs(g_cam.dist - d0 * 0.8) < 1e-9,
+              "B3.8 : zoom avant = 20 % par cran (regle conservee)");
+        CHECK((g_cam.target - t0).norm() > 1e-9,
+              "B3.8 : zoom avant = la cible camera avance vers le point vise");
+        pixelDe(Pv, qx, qy);
+        CHECK(std::fabs(qx - px) < 0.5 && std::fabs(qy - py) < 0.5,
+              "B3.8 : zoom avant - le point vise reste sous le curseur");
+        {   /* zoom arriere : s'eloigne, le point reste sous le curseur */
+            const double d1 = g_cam.dist; const Vec3 t1 = g_cam.target;
+            onScroll(W, 0, -1.0);
+            CHECK(std::fabs(g_cam.dist - d1 * 1.25) < 1e-9, "B3.8 : zoom arriere = x1.25 par cran");
+            pixelDe(Pv, qx, qy);
+            CHECK(std::fabs(qx - px) < 0.5 && std::fabs(qy - py) < 0.5,
+                  "B3.8 : zoom arriere - le point vise reste sous le curseur");
+            CHECK((g_cam.target - t1).norm() > 1e-9,
+                  "B3.8 : zoom arriere = la cible camera s'eloigne du point vise");
+        }
+        {   /* curseur dans le VIDE : le plan de travail (par la cible, face a
+               la camera) sert de cible - meme stabilite */
+            g_cam.dist = 20.0; g_cam.target = Vec3(0, 0.5, 0);
+            const Vec3 Pv2 = g_cam.target + g_cam.right() * 1.5 + g_cam.up() * 0.8;
+            pixelDe(Pv2, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            onScroll(W, 0, 1.0);
+            CHECK(g_cam.dist < 20.0, "B3.8 : vide = le zoom fonctionne quand meme");
+            pixelDe(Pv2, qx, qy);
+            CHECK(std::fabs(qx - px) < 0.5 && std::fabs(qy - py) < 0.5,
+                  "B3.8 : vide - le point du plan de travail reste sous le curseur");
+        }
+        {   /* bornes : molette sans curseur (nullptr) = pur dolly comme avant */
+            g_cam.dist = 9.0;
+            onScroll(nullptr, 0, 1000);
+            CHECK(g_cam.dist == 0.02, "B3.8 : borne de zoom avant 0.02 (sans curseur, pur dolly)");
+            onScroll(nullptr, 0, -1000);
+            CHECK(g_cam.dist == 4000.0, "B3.8 : borne de zoom arriere 4000 (sans curseur, pur dolly)");
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_cam = g_camHome;
+    }
+
     { /* B3.3 : edition du balayage - poignees profil + chemin, O = cible */
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
