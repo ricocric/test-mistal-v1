@@ -809,6 +809,18 @@ Questions ouvertes a trancher avec l'utilisateur :
     sur un solide touche que si son offset a l'ecran est quasi nul
     (seuil 4 px) ; filRayHit gagne un RAFFINEMENT local autour du meilleur
     pas (erreur << 1 px) et sort la distance perpendiculaire (outDist) ;
+  - **B3.10a-ter POIGNEES VISIBLES DES L'APPROCHE** (retour test :
+    "les poignees de placement ne sont jamais apparues") - diagnostic : en
+    B3.10a les accroches de TOUS les fils etaient allumees en permanence
+    (c'est ce qui guidait l'utilisateur... et faisait croire au fil
+    voisin selectionne) ; en B3.10a-bis elles ne s'allumaient qu'une fois
+    le rayon DANS la zone de capture, c'est-a-dire a l'instant du clic :
+    invisibles pour guider. **FAIT (B3.10a-ter, 636 verifications, 0
+    echec, ASan propre)** : zone de SURVOL = 3 x zone de capture
+    (sweepTolVise, UN SEUL CHEMIN DE CODE) - le fil vise allume ses
+    poignees (orange) des l'approche, la capture (magenta, pincement au
+    clic) reste a filPickTol, et CE QUI EST ALLUME EST CLIQUABLE (survol
+    et clic partagent la meme visee large) ;
   - **B3.10b ORIENTATION 3 AXES maitrisee** ("on ne maitrise toujours pas
     l'orientation dans les 3 axes de la forme a attacher, resultat
     folklorique") : DIAGNOSTIC = la frame du balayage est ancoree sur la

@@ -49,7 +49,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.10a-bis";  /* retours test : spline fermee balayee = cloture conservee ; capture d'accroche restreinte au fil VISE ; selection fil/solide comparee en espace ecran */
+static const char* BUILD_VERSION = "B3.10a-ter";  /* retours test : poignees du fil vise allumees des l'APPROCHE (zone de survol 3 x zone de capture), ce qui est allume est cliquable */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -2887,7 +2887,9 @@ static bool sweepFaceValide(const Object& o) {
 static bool sweepAccroches(const Object& o, std::vector<Vec3>& acc);
 static bool sweepConnSurFil(const Vec3& org, const Vec3& dir, int idxFil, Vec3& outConn);
 static bool sweepConnCapt(const Vec3& org, const Vec3& dir, int skip,
-                          Vec3& outConn, int* outFil = nullptr);
+                          Vec3& outConn, int* outFil = nullptr,
+                          double tolVis = -1.0);
+static double sweepTolVise();
 static bool sweepConvertTo(Object& profil, Object& chemin,
                            const Vec3* conn = nullptr) {
     if (&profil == &chemin) {
@@ -3006,7 +3008,11 @@ static void sweepClick(GLFWwindow* w) {
        l'accroche n'est captee que sur le fil VISE (jamais sur un voisin) */
     Vec3 conn(0, 0, 0);
     int hit = -1;
-    const bool connOk = sweepConnCapt(org, dir, g_sweepProfil, conn, &hit);
+    /* B3.10a-ter : visee LARGE (meme zone que l'allumage des poignees) -
+       ce qui est allume est cliquable ; la connexion n'est pincee que si
+       une accroche est reellement captee (zone de capture, plus etroite) */
+    const bool connOk = sweepConnCapt(org, dir, g_sweepProfil, conn, &hit,
+                                      sweepTolVise());
     if (hit < 0) {
         flashBand("Balayage : aucun fil vise - cliquez un fil (ligne, spline, arc)");
         userMsg("balayage : aucun fil vise - cliquez un fil (ligne, spline, arc) ; Echap = annuler");
@@ -4585,25 +4591,40 @@ static bool sweepConnSurFil(const Vec3& org, const Vec3& dir, int idxFil, Vec3& 
    sur un voisin). outFil (optionnel) = index du fil vise, MEME sans
    accroche captee. */
 static bool sweepConnCapt(const Vec3& org, const Vec3& dir, int skip,
-                          Vec3& outConn, int* outFil) {
+                          Vec3& outConn, int* outFil, double tolVis) {
     const double tol = filPickTol();
+    /* B3.10a-ter (retour test : "les poignees de placement ne sont jamais
+       apparues") : la VISEE (allumage des poignees) porte sur une zone plus
+       LARGE que la capture (3 x filPickTol) - en B3.10a-bis les poignees ne
+       s'allumaient qu'une fois le rayon DANS la zone de capture, c'est-a-
+       dire a l'instant du clic : invisibles pour guider l'approche. La
+       capture (magenta, pincement au clic) reste a filPickTol. */
+    const double tolAim = (tolVis > 0.0) ? tolVis : tol;
     int hit = -1;
     double bestT = 1e300;
     for (size_t i = 0; i < g_objs.size(); ++i) {
         if ((int)i == skip) continue;
-        const double t = filRayHit(org, dir, g_objs[i], tol);
+        const double t = filRayHit(org, dir, g_objs[i], tolAim);
         if (t >= 0.0 && t < bestT) { bestT = t; hit = (int)i; }
     }
     if (outFil) *outFil = hit;
     if (hit < 0) return false;
     return sweepConnSurFil(org, dir, hit, outConn);
 }
-/* B3.10a : survol du stage 2 - rafraichit l'accroche captee sous le curseur */
+/* B3.10a-ter : zone de SURVOL (allumage des poignees du fil vise) = 3 fois
+   la zone de capture - l'utilisateur se guide par les poignees (comme au
+   copier-coller B3.9b), la capture reste precise. UN SEUL CHEMIN DE CODE :
+   survol ET clic utilisent la meme visee large, ce qui est allume est
+   cliquable. */
+static double sweepTolVise() { return filPickTol() * 3.0; }
+/* B3.10a : survol du stage 2 - rafraichit le fil vise (poignees) et
+   l'accroche captee sous le curseur */
 static void sweepTrackCursor(GLFWwindow* w) {
     Vec3 org, dir, conn(0, 0, 0);
     g_sweepConnFil = -1;
     g_sweepConnOk = rayFromMouse(w, org, dir)
-                 && sweepConnCapt(org, dir, g_sweepProfil, conn, &g_sweepConnFil);
+                 && sweepConnCapt(org, dir, g_sweepProfil, conn, &g_sweepConnFil,
+                                  sweepTolVise());
     if (g_sweepConnOk) g_sweepConn = conn;
 }
 /* rotation de l'objet autour de l'accroche (monde) : pos ET donnees locales

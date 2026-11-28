@@ -1209,6 +1209,12 @@ globale corrigee par le volume signe (normales exterieures) ;
   rectangle selectionne le rectangle meme avec des fils voisins dans la
   tolerance du rayon) + raffinement de filRayHit (distance perpendiculaire
   fiable) ; **634, 0 echec** (ASan propre).
+- **B3.10a-ter (poignees visibles des l'approche)** : les accroches du fil
+  vise s'allument (orange) dans une zone de SURVOL 3 fois plus large que
+  la zone de capture (en B3.10a-bis elles n'apparaissaient qu'a l'instant
+  du clic : invisibles pour guider) ; la capture (magenta, pincement)
+  reste precise, et ce qui est allume est cliquable ; **636, 0 echec**
+  (ASan propre).
 
 ## Organiseur des prochains lots
 

@@ -2793,6 +2793,20 @@ int main() {
             const bool okB = sweepConnCapt(Vec3(-5,0,13.5), Vec3(1,0,0), -1, conn, &filVise);
             CHECK(okB && filVise == 1 && (conn - Vec3(-0.2,0,13.5)).norm() < 1e-9,
                   "B3.10a-bis : rayon vers B = fil VISE B, sommet de B capte");
+            /* B3.10a-ter : VISEE LARGE (poignees allumees des l'approche) -
+               rayon a 1 du fil : entre la zone de capture (0.33) et la zone
+               de survol (0.99) -> le fil est VISE (poignees allumees) mais
+               aucune accroche captee (pas de magenta, pas de pincement) */
+            filVise = -1;
+            const bool okLoin = sweepConnCapt(Vec3(5,0,14), Vec3(-1,0,0), -1, conn,
+                                              &filVise, sweepTolVise());
+            CHECK(!okLoin && filVise == 0,
+                  "B3.10a-ter : survol a 1 du fil (zone de survol) = fil VISE allume sans capture");
+            filVise = -1;
+            const bool okSom = sweepConnCapt(Vec3(5,0,10), Vec3(-1,0,0), -1, conn,
+                                             &filVise, sweepTolVise());
+            CHECK(okSom && filVise == 0 && (conn - Vec3(0,0,10)).norm() < 1e-9,
+                  "B3.10a-ter : survol sur le sommet = capture (magenta), meme visee large");
         }
         g_objs.clear();
         g_cam.dist = distSauve;
