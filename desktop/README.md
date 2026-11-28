@@ -1193,6 +1193,14 @@ globale corrigee par le volume signe (normales exterieures) ;
   Maj pendant clic droit tenu inclus ; le zoom sur le curseur (B3.8)
   reste le complement ; les deux gestes cohabitent ; **609, 0 echec**
   (ASan propre).
+- **B3.10a (cycle follow me, retour de test)** : CONNEXION ACCROCHEE au
+  stage 2 du balayage, facon copier-coller - les accroches du fil
+  (sommets + milieux) s'allument (orange), celle captee sous le curseur
+  passe (magenta) ; le clic pince la connexion DES LA POSE : le fil
+  demarre a la station captee (sens inverse si l'autre bout, depart tourne
+  si le fil est ferme) et l'accroche du profil la plus proche est pincee
+  (traceAccroche) ; sans accroche captee = collage automatique B3.5
+  intact ; **626, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 

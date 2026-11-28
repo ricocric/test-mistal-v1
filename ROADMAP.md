@@ -773,6 +773,49 @@ Questions ouvertes a trancher avec l'utilisateur :
   systematique (modes armes, selection dans le vide), Maj + clic droit =
   pan dans tous les modes (Maj pendant clic droit tenu inclus) ; le zoom
   sur le curseur (B3.8) reste le complement ; les deux gestes cohabitent.
+- **B3.10 BALAYAGE (follow me) - deux precisions importantes de l'utilisateur
+  (CONCEPTION posee AVANT code, a valider)** :
+  - **B3.10a ACCROCHE du point de connexion au lancement, facon
+    copier-coller** ("il faut pouvoir accrocher le point de collage choisi
+    comme on accroche pendant les copier coller") : au stage 2 du
+    balayage (visee du fil), les accroches du fil (sommets + milieux de
+    segments) s'allument (orange) et la cible captee passe (magenta),
+    MEME grammaire que le magnetisme du collage (B3.9b) ; le clic pose la
+    connexion a l'accroche du fil captee dans la tolerance filPickTol
+    (traceAccroche pincee DES LA POSE, plus besoin de l'editer apres
+    coup) ; sans accroche captee = comportement actuel (automatique) ;
+    reutilisation de collAccroches (UN SEUL CHEMIN DE CODE) ;
+    **FAIT (B3.10a, 626 verifications, 0 echec, ASan propre)** : helper
+    unique sweepConnCapt (survol ET clic), poignees drawSweepHandles au
+    stage 2 (accroches des fils orange, captee magenta) ; au clic, la
+    connexion est pincee des la pose : le fil demarre a la STATION captee
+    (sens inverse si l'autre bout d'une ligne, depart tourne si le fil est
+    ferme ; milieux et stations interieures = pincement seul en v1) et
+    traceAccroche = accroche du PROFIL la plus proche du point capte ;
+    sans capte = collage automatique B3.5 intact ;
+  - **B3.10b ORIENTATION 3 AXES maitrisee** ("on ne maitrise toujours pas
+    l'orientation dans les 3 axes de la forme a attacher, resultat
+    folklorique") : DIAGNOSTIC = la frame du balayage est ancoree sur la
+    NORMALE de la face (traceVec) projetee - l'orientation DANS le plan
+    du profil (3e axe) n'est pas contrainte au lancement, d'ou les
+    retournements ; CORRECTIF fidele Follow Me : l'ANNEAU 0 = le profil
+    EXACTEMENT tel que pose (AUCUNE re-orientation imposee au lancement,
+    pas de rotation initiale par traceVec), les stations suivantes =
+    transport parallele le long du chemin (deja en place, pas de
+    torsion) ; le roll (B3.6b) reste le reglage fin de l'orientation
+    autour du chemin, editable apres coup ;
+  - **B3.10c DEPLOIEMENT CONTROLE A LA MAIN (option complementaire,
+    indispensable aux objets evolues : routes, couloirs, tuyauteries,
+    jonctions)** : pouvoir ARRETER le deploiement EN COURS DE ROUTE sur
+    le fil - la longueur balayee devient un PARAMETRE de construction
+    (principe B2.7e : regenerable), reglee par une POIGNEE le long du fil
+    (drag le long du chemin, magnetisme sur les accroches du fil, saisie
+    numerique possible) ; l'arret est VALIDE a toute station (cap sur le
+    profil plein, bord ouvert sinon) ; depuis le point d'arret, un NOUVEAU
+    balayage peut repartir (jonction en T / Y : lever les fils du chemin
+    restant ou retracer un fil depuis ce point) ; les COMMANDES du
+    deploiement (arret, reprise, longueur) prennent place dans le MENU
+    CONTEXTEL (retour utilisateur : il est justement fait pour ca) ;
 - **B3.9 v2 (backlog, apres validation utilisateur)** : face-contre-face
   avec ALIGNEMENT DES NORMALES (v1 = translation seule pour face/face),
   magnetisme multi (v1 = mono seulement), perf facesLogiques sur gros

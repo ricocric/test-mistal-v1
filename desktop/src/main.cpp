@@ -49,7 +49,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.9d";   /* refonte collage : faces logiques, magnetisme au deplacement (position + orientation), Ctrl+V pres du curseur, poignees de la cible allumees pendant le magnetisme */
+static const char* BUILD_VERSION = "B3.10a";  /* balayage : connexion accrochee au stage 2 (facon copier-coller), accroches du fil allumees */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -2829,9 +2829,14 @@ static bool extrudeConvertTo(Object& o, const Extrude& dd, double d) {
    reste dans l'objet - extraire le chemin = backlog B5+). */
 static int g_sweepStage = 0;            /* 0 = inactif ; 1 = attend la FACE ; 2 = attend le FIL */
 static int g_sweepProfil = -1;          /* index de l'objet face (clic 1) */
+/* B3.10a : accroche du fil captee sous le curseur au stage 2 (facon
+   copier-coller) - point de connexion MONDE propose au clic */
+static Vec3 g_sweepConn(0, 0, 0);
+static bool g_sweepConnOk = false;
 static void sweepCancel() {
     g_sweepStage = 0;
     g_sweepProfil = -1;
+    g_sweepConnOk = false;
     userMsg("mode selection");
 }
 /* B3.3d (retour test) : une FACE de balayage = feuille tracee avec surface.
@@ -2842,7 +2847,12 @@ static bool sweepFaceValide(const Object& o) {
     return o.traceType != 0 && o.traceType != 8 && o.traceType != 9
         && !o.tri.empty();
 }
-static bool sweepConvertTo(Object& profil, Object& chemin) {
+/* B3.10a : definies plus bas (apres collAccroches) - lecon B1.7b :
+   declarer AVANT la premiere utilisation */
+static bool sweepAccroches(const Object& o, std::vector<Vec3>& acc);
+static bool sweepConnCapt(const Vec3& org, const Vec3& dir, int skip, Vec3& outConn);
+static bool sweepConvertTo(Object& profil, Object& chemin,
+                           const Vec3* conn = nullptr) {
     if (&profil == &chemin) {
         flashBand("Balayage : le chemin doit etre un AUTRE objet (un fil)");
         userMsg("balayage : le chemin doit etre un AUTRE objet (un fil)");
@@ -2876,6 +2886,46 @@ static bool sweepConvertTo(Object& profil, Object& chemin) {
     profil.traceChemin = std::move(chem);
     profil.traceVec = profil.n.empty() ? Vec3(0, 1, 0) : profil.n[0];   /* roll : normale de la face */
     profil.traceType = 9;
+    /* B3.10a : ACCROCHE du point de connexion, facon copier-coller - si une
+       accroche du fil (sommet ou milieu de segment) etait captee au clic, la
+       connexion est PINCEE des la pose (traceAccroche, MEME parametre que
+       l'edition B3.6a) : le fil demarre a la STATION captee (sens inverse si
+       c'etait l'autre bout d'une ligne, depart tourne si le fil est ferme)
+       et l'accroche du PROFIL la plus proche du point capte est pincee.
+       Sans accroche captee : collage automatique B3.5 intact. L'alignement
+       de station ne porte que sur la ligne (type 1) : splines et arcs
+       suivront (B3.10b/B3.10c). */
+    if (conn) {
+        const Vec3 connL = (*conn - profil.pos) * (1.0 / profil.scl);
+        std::vector<Vec3>& ch = profil.traceChemin;
+        if (profil.traceCheminType == 1 && ch.size() >= 2) {
+            size_t rBest = 0;
+            double dBest = 1e300;
+            for (size_t r = 0; r < ch.size(); ++r) {
+                const double d = (ch[r] - connL).norm();
+                if (d < dBest) { dBest = d; rBest = r; }
+            }
+            if (profil.traceCheminFerme) {
+                if (rBest > 0) {                 /* la boucle demarre a la station captee */
+                    std::vector<Vec3> rot(ch.begin() + rBest, ch.end());
+                    rot.insert(rot.end(), ch.begin(), ch.begin() + rBest);
+                    ch = std::move(rot);
+                }
+            } else if (rBest == ch.size() - 1) { /* capte au bout : parcourir depuis ce bout */
+                std::reverse(ch.begin(), ch.end());
+            }
+        }
+        std::vector<Vec3> accP;
+        if (sweepAccroches(profil, accP) && !accP.empty()) {
+            size_t aBest = 0;
+            double dA = 1e300;
+            for (size_t j = 0; j < accP.size(); ++j) {
+                const double d = (accP[j] - connL).norm();
+                if (d < dA) { dA = d; aBest = j; }
+            }
+            profil.traceAccroche = (int)aBest;
+        }
+    }
     traceRegen(profil);
     return true;
 }
@@ -2904,6 +2954,7 @@ static void sweepClick(GLFWwindow* w) {
         }
         g_sweepProfil = hit;
         g_sweepStage = 2;
+        g_sweepConnOk = false;
         userMsg("balayage : %s capte - cliquez le FIL chemin (ligne, spline, arc) ; Echap = annuler",
                     g_objs[(size_t)hit].name.c_str());
         return;
@@ -2921,9 +2972,13 @@ static void sweepClick(GLFWwindow* w) {
         userMsg("balayage : aucun fil vise - cliquez un fil (ligne, spline, arc) ; Echap = annuler");
         return;
     }
+    /* B3.10a : accroche du fil captee pres du clic (facon copier-coller) -
+       meme grammaire que le magnetisme du collage (B3.9) */
+    Vec3 conn(0, 0, 0);
+    const bool connOk = sweepConnCapt(org, dir, g_sweepProfil, conn);
     const int ip = g_sweepProfil;
     Object& profil = g_objs[(size_t)ip];
-    if (!sweepConvertTo(profil, g_objs[(size_t)hit])) return;
+    if (!sweepConvertTo(profil, g_objs[(size_t)hit], connOk ? &conn : nullptr)) return;
     const std::string nomFil = g_objs[(size_t)hit].name;
     g_objs.erase(g_objs.begin() + hit);            /* chemin consomme */
     selectOnly(ip < hit ? ip : ip - 1);
@@ -2931,6 +2986,8 @@ static void sweepClick(GLFWwindow* w) {
     g_sweepProfil = -1;
     userMsg("balayage pose : %s (le fil \"%s\" est consomme - ses points restent dans les parametres)",
                 profil.name.c_str(), nomFil.c_str());
+    if (connOk)
+        userMsg("balayage : connexion accrochee au point capte du fil");
     userMsg("mode selection");
 }
 
@@ -4468,6 +4525,37 @@ static void collAccroches(const Object& o, std::vector<CollAcc>& out) {
         out.push_back({ o.pos + (o.v[(size_t)e.first] + o.v[(size_t)e.second]) * (0.5 * o.scl),
                         e.first, e.second });
 }
+/* B3.10a : accroche du fil la plus proche du point vise (facon copier-coller)
+   - sert au survol du stage 2 (poignees) ET au clic (UN SEUL CHEMIN DE
+   CODE). Vrai si une accroche (sommet ou milieu de segment d'un fil) est
+   dans la tolerance filPickTol du point d'impact du rayon ; outConn = point
+   MONDE de l'accroche captee. */
+static bool sweepConnCapt(const Vec3& org, const Vec3& dir, int skip, Vec3& outConn) {
+    const double tol = filPickTol();
+    const Vec3 dn = normalized(dir);
+    double bestD = tol;
+    bool ok = false;
+    for (size_t i = 0; i < g_objs.size(); ++i) {
+        if ((int)i == skip) continue;
+        const double t = filRayHit(org, dir, g_objs[i], tol);
+        if (t < 0.0) continue;
+        const Vec3 impact = org + dn * t;
+        std::vector<CollAcc> acc;
+        collAccroches(g_objs[i], acc);
+        for (const CollAcc& a : acc) {
+            const double d = (a.p - impact).norm();
+            if (d < bestD) { bestD = d; outConn = a.p; ok = true; }
+        }
+    }
+    return ok;
+}
+/* B3.10a : survol du stage 2 - rafraichit l'accroche captee sous le curseur */
+static void sweepTrackCursor(GLFWwindow* w) {
+    Vec3 org, dir, conn(0, 0, 0);
+    g_sweepConnOk = rayFromMouse(w, org, dir)
+                 && sweepConnCapt(org, dir, g_sweepProfil, conn);
+    if (g_sweepConnOk) g_sweepConn = conn;
+}
 /* rotation de l'objet autour de l'accroche (monde) : pos ET donnees locales
    tournent ensemble (B2.7e : les parametres de construction suivent la
    geometrie, une regen retrouve la meme forme) */
@@ -5791,6 +5879,45 @@ static void drawDragHandles() {
     glEnable(GL_DEPTH_TEST);
 }
 
+/* B3.10a : poignees du stage 2 du balayage - les accroches des fils
+   (sommets + milieux) s'allument en ORANGE et l'accroche captee sous le
+   curseur passe en MAGENTA, meme grammaire que le magnetisme du collage
+   (B3.9b) : le clic posera la connexion sur l'accroche captee. Pur : ne
+   fait que lire l'etat. */
+static void drawSweepHandles() {
+    if (g_sweepStage != 2 || g_sweepProfil < 0
+        || g_sweepProfil >= (int)g_objs.size()) return;
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    const double s = 0.07;
+    glColor3d(1.0, 0.55, 0.1);
+    for (size_t i = 0; i < g_objs.size(); ++i) {
+        if ((int)i == g_sweepProfil) continue;
+        if (!g_objs[i].tri.empty() || g_objs[i].v.size() < 2) continue;  /* fils seulement */
+        std::vector<CollAcc> acc;
+        collAccroches(g_objs[i], acc);
+        for (const CollAcc& a : acc) {
+            glBegin(GL_QUADS);
+            glVertex3d(a.p.x - s, a.p.y, a.p.z - s);
+            glVertex3d(a.p.x + s, a.p.y, a.p.z - s);
+            glVertex3d(a.p.x + s, a.p.y, a.p.z + s);
+            glVertex3d(a.p.x - s, a.p.y, a.p.z + s);
+            glEnd();
+        }
+    }
+    if (g_sweepConnOk) {
+        glColor3d(0.95, 0.2, 0.85);
+        const double s2 = s * 1.8;
+        glBegin(GL_QUADS);
+        glVertex3d(g_sweepConn.x - s2, g_sweepConn.y, g_sweepConn.z - s2);
+        glVertex3d(g_sweepConn.x + s2, g_sweepConn.y, g_sweepConn.z - s2);
+        glVertex3d(g_sweepConn.x + s2, g_sweepConn.y, g_sweepConn.z + s2);
+        glVertex3d(g_sweepConn.x - s2, g_sweepConn.y, g_sweepConn.z + s2);
+        glEnd();
+    }
+    glEnable(GL_DEPTH_TEST);
+}
+
 /* ------------------------------------------------------------------ */
 /* Callbacks                                                           */
 /* ------------------------------------------------------------------ */
@@ -6858,7 +6985,7 @@ static std::string statusPrompt() {
     if (g_sweepStage == 1)
         return "Balayage : cliquez la FACE a extruder le long d'un chemin (feuille tracee) | Echap = annuler";
     if (g_sweepStage == 2)
-        return "Balayage : cliquez le FIL chemin (ligne, spline, arc) | Echap = annuler";
+        return "Balayage : cliquez le FIL chemin - pres d'un sommet ou d'un milieu, la connexion s'y accroche | Echap = annuler";
     if (g_collStage)
         return "Collage : cliquez la cible sur un AUTRE objet (sommet, arete, face) | Echap ou clic droit = annuler";   /* B3.7 */
     if (g_lineActive)
@@ -7152,6 +7279,8 @@ int main() {
             polyTrackCursor(win);     /* B2.6 : apercu du polygone vers le curseur */
         } else if (g_splMode) {
             splTrackCursor(win);      /* B2.7 : apercu de la spline vers le curseur */
+        } else if (g_sweepStage == 2) {
+            sweepTrackCursor(win);    /* B3.10a : accroche du fil sous le curseur */
         }
         updateWindowTitle(win);
         render();
@@ -7164,6 +7293,7 @@ int main() {
         drawSplinePreview();
         drawEditHandles();       /* B2.7e : poignees du trace en edition */
         drawDragHandles();       /* B3.9b : accroches visibles pendant le deplacement fin */
+        drawSweepHandles();      /* B3.10a : accroches du fil au stage 2 du balayage */
         drawStatusBand();
         glfwSwapBuffers(win);
         glfwPollEvents();

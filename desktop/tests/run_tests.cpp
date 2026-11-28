@@ -2620,6 +2620,117 @@ int main() {
         g_polyPts.clear(); g_lineMode = false; lineReset();
     }
 
+    /* ===== B3.10a : connexion accrochee au stage 2 (facon copier-coller) ===== */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        const double distSauve = g_cam.dist;
+        g_cam.dist = 14.0;                    /* tolerance filPickTol = 0.33 */
+        /* capture : rayon vise un sommet du fil = accroche captee ; rayon
+           loin du fil = rien (meme helper que le survol et le clic) */
+        {
+            Object fil; fil.name = "Ligne";
+            fil.pos = Vec3(0, 0, 0); fil.scl = 1.0;
+            fil.v = { Vec3(0,0,10), Vec3(0,0,20) };
+            computeObjectDerived(fil);
+            g_objs.push_back(fil);
+            Vec3 conn(0, 0, 0);
+            CHECK(sweepConnCapt(Vec3(5, 0, 10), Vec3(-1, 0, 0), -1, conn),
+                  "B3.10a : rayon vise un sommet du fil = accroche captee");
+            CHECK((conn - Vec3(0, 0, 10)).norm() < 1e-9,
+                  "B3.10a : le point capte = le sommet vise");
+            CHECK(!sweepConnCapt(Vec3(5, 5, 10), Vec3(-1, 0, 0), -1, conn),
+                  "B3.10a : rayon a 5 du fil = aucune accroche captee");
+        }
+        g_objs.clear();
+        /* pose avec accroche captee a l'AUTRE bout de la ligne : le fil est
+           parcouru depuis ce bout ET l'accroche du profil la plus proche du
+           point capte est pincee des la pose (ici un coin du polygone pose
+           exactement sur le point capte) */
+        g_polyPts = { Vec3(0,0,20), Vec3(4,0,20), Vec3(4,0,24), Vec3(0,0,24) };
+        polyPose();
+        {
+            Object chA; chA.name = "Ligne";
+            chA.traceType = 1; chA.traceFerme = 0;
+            chA.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            g_objs.push_back(chA);
+            const size_t ipA = g_objs.size() - 2, icA = g_objs.size() - 1;
+            const Vec3 connA(0, 0, 20);
+            CHECK(sweepConvertTo(g_objs[ipA], g_objs[icA], &connA),
+                  "B3.10a : pose avec accroche captee acceptee");
+            CHECK(g_objs[ipA].traceAccroche >= 0,
+                  "B3.10a : accroche du profil PINCEE des la pose");
+            const Vec3 debA = (connA - g_objs[ipA].pos) * (1.0 / g_objs[ipA].scl);
+            CHECK((g_objs[ipA].traceChemin[0] - debA).norm() < 1e-9,
+                  "B3.10a : capte au bout = fil parcouru depuis ce bout (sens inverse)");
+            std::vector<Vec3> accA;
+            CHECK(sweepAccroches(g_objs[ipA], accA)
+                  && g_objs[ipA].traceAccroche < (int)accA.size(),
+                  "B3.10a : accroche pincee valide");
+            const Vec3 pa = g_objs[ipA].pos + g_objs[ipA].v[0] * g_objs[ipA].scl;
+            CHECK((pa - connA).norm() < 1e-9,
+                  "B3.10a : le coin pince est pose EXACTEMENT sur le point capte");
+        }
+        g_objs.clear(); g_polyPts.clear();
+        /* pose SANS accroche captee = comportement automatique B3.5 intact */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object chB; chB.name = "Ligne";
+            chB.traceType = 1; chB.traceFerme = 0;
+            chB.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            g_objs.push_back(chB);
+            const size_t ipB = g_objs.size() - 2, icB = g_objs.size() - 1;
+            CHECK(sweepConvertTo(g_objs[ipB], g_objs[icB]),
+                  "B3.10a : pose sans accroche captee acceptee");
+            CHECK(g_objs[ipB].traceAccroche == -1,
+                  "B3.10a : sans capte = aucune accroche pincee (B3.5 intact)");
+            const Vec3 debB = (Vec3(0,0,10) - g_objs[ipB].pos) * (1.0 / g_objs[ipB].scl);
+            CHECK((g_objs[ipB].traceChemin[0] - debB).norm() < 1e-9,
+                  "B3.10a : sans capte = depart du fil intact");
+        }
+        g_objs.clear(); g_polyPts.clear();
+        /* MILIEU de segment capte : accroche pincee, depart du fil intact (v1) */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object chC; chC.name = "Ligne";
+            chC.traceType = 1; chC.traceFerme = 0;
+            chC.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            g_objs.push_back(chC);
+            const size_t ipC = g_objs.size() - 2, icC = g_objs.size() - 1;
+            const Vec3 connC(0, 0, 15);
+            CHECK(sweepConvertTo(g_objs[ipC], g_objs[icC], &connC),
+                  "B3.10a : pose avec MILIEU capte acceptee");
+            CHECK(g_objs[ipC].traceAccroche >= 0,
+                  "B3.10a : milieu capte = accroche du profil pincee aussi");
+            const Vec3 debC = (Vec3(0,0,10) - g_objs[ipC].pos) * (1.0 / g_objs[ipC].scl);
+            CHECK((g_objs[ipC].traceChemin[0] - debC).norm() < 1e-9,
+                  "B3.10a : milieu capte = depart du fil intact (v1)");
+        }
+        g_objs.clear(); g_polyPts.clear();
+        /* ligne FERMEE : le depart de la boucle tourne a la station captee */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object chD; chD.name = "Ligne";
+            chD.traceType = 1; chD.traceFerme = 1;
+            chD.tracePts = { Vec3(0,0,30), Vec3(0,0,36), Vec3(4,0,36), Vec3(4,0,30) };
+            g_objs.push_back(chD);
+            const size_t ipD = g_objs.size() - 2, icD = g_objs.size() - 1;
+            const Vec3 connD(4, 0, 36);
+            CHECK(sweepConvertTo(g_objs[ipD], g_objs[icD], &connD),
+                  "B3.10a : pose sur ligne FERMEE acceptee");
+            const Vec3 debD = (connD - g_objs[ipD].pos) * (1.0 / g_objs[ipD].scl);
+            CHECK((g_objs[ipD].traceChemin[0] - debD).norm() < 1e-9,
+                  "B3.10a : ligne fermee = depart de la boucle tourne a la station captee");
+            CHECK(g_objs[ipD].traceChemin.size() == (size_t)4
+                  && g_objs[ipD].traceCheminFerme == 1,
+                  "B3.10a : ligne fermee = boucle intacte (4 stations)");
+        }
+        g_cam.dist = distSauve;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
+    }
+
     { /* B3.6a-bis : fils SELECTIONNABLES devant un solide (splines par
          controle incaptables, retour test) + pan Maj+clic droit robuste
          (ordre du geste libre) + ALTITUDE des poignees conservee */
