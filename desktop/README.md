@@ -1215,6 +1215,17 @@ globale corrigee par le volume signe (normales exterieures) ;
   du clic : invisibles pour guider) ; la capture (magenta, pincement)
   reste precise, et ce qui est allume est cliquable ; **636, 0 echec**
   (ASan propre).
+- **B3.10a-quater (poignees du PROFIL au stage 2, retour de test "je
+  n'ai jamais vu les poignees du rectangle")** : cause racine = au stage 2
+  le profil n'est PAS ENCORE converti (traceType brut, traceProfil non
+  pose) et sweepAccroches echouait ; la chaine du profil se lit desormais
+  sur traceType pour un profil brut (types 8/9 inchanges) ; les accroches
+  du PROFIL s'allument AUSSI (orange) des le stage 2 (grammaire
+  copier-coller B3.9b : les DEUX cotes de la connexion sont visibles), et
+  si une accroche du fil est captee, celle du profil qui sera PINCEE a la
+  pose passe en MAGENTA (plus grande) - MEME choix que le pincement via le
+  helper unique sweepAccrocheProfilProche (pose + dessin, UN SEUL CHEMIN
+  DE CODE) ; **643, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 
