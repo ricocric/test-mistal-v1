@@ -876,7 +876,20 @@ Questions ouvertes a trancher avec l'utilisateur :
     balayage peut repartir (jonction en T / Y : lever les fils du chemin
     restant ou retracer un fil depuis ce point) ; les COMMANDES du
     deploiement (arret, reprise, longueur) prennent place dans le MENU
-    CONTEXTEL (retour utilisateur : il est justement fait pour ca) ;
+    CONTEXTEL (retour utilisateur : il est justement fait pour ca). **FAIT
+    v1 (B3.10c, 674 verifications, 0 echec, ASan propre)** : traceStop =
+    longueur balayee (unites locales, PARAMETRE regenerable, persiste
+    "stop N", -1 = tout le fil) ; sweepApplyStop tronque le chemin
+    echantillonne + station interpolee exacte a l'arret, cap si profil
+    plein ; MENU CONTEXTUEL : au stage 2 du balayage arme, clic droit =
+    "Balayer tout le fil (auto)" / "Tirer manuellement sur le fil" /
+    annuler (le mode manuel pose l'arret au POINT CLIQUE, arc via
+    filArcAt) ; sur un balayage pose : "Deployer sur tout le fil" /
+    "Tirer manuellement..." = stop-drag (poignee magenta le long du fil,
+    aimant stations/milieux, clic = valide, un pas undo) ; menus scindes
+    EDITION (annuler/copier/coller/dupliquer/supprimer/coller-sur) et
+    OUTILS (specifique dessin). Reste backlog : reprise depuis le point
+    d'arret (jonction T/Y), saisie numerique de la longueur ;
 - **B3.9 v2 (backlog, apres validation utilisateur)** : face-contre-face
   avec ALIGNEMENT DES NORMALES (v1 = translation seule pour face/face),
   magnetisme multi (v1 = mono seulement), perf facesLogiques sur gros

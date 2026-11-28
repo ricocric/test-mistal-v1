@@ -3028,6 +3028,159 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
     }
 
+    /* ===== B3.10c : arret en cours de route (traceStop) + tirer manuellement ===== */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        /* helpers d'arc */
+        {
+            Object fil; fil.name = "Ligne";
+            fil.pos = Vec3(0, 0, 0); fil.scl = 1.0;
+            fil.traceType = 1; fil.traceFerme = 0;
+            fil.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            fil.v = fil.tracePts;
+            computeObjectDerived(fil);
+            std::vector<Vec3> pts = { fil.pos + fil.v[0] * fil.scl, fil.pos + fil.v[1] * fil.scl };
+            double d = 0.0;
+            CHECK(std::fabs(pointPolyArc(pts, false, Vec3(0,0,15), d) - 5.0) < 1e-9 && d < 1e-9,
+                  "B3.10c : pointPolyArc - milieu du fil = arc 5, distance 0");
+            CHECK(std::fabs(rayPolyArc(Vec3(5,0,15), Vec3(-1,0,0), pts, false, d) - 5.0) < 1e-9 && d < 1e-9,
+                  "B3.10c : rayPolyArc - rayon vers le milieu du fil = arc 5");
+            CHECK(std::fabs(filArcAt(fil, Vec3(0,0,20)) - 10.0) < 1e-9,
+                  "B3.10c : filArcAt - bout du fil = arc 10");
+            CHECK(std::fabs(filArcAt(fil, Vec3(0,0,10)) - 0.0) < 1e-9,
+                  "B3.10c : filArcAt - depart du fil = arc 0");
+        }
+        /* sweepApplyStop : troncature + station interpolee exacte */
+        {
+            Object o; o.traceStop = -1.0;
+            std::vector<Vec3> chem = { Vec3(0,0,0), Vec3(0,0,10), Vec3(10,0,10) };
+            bool boucle = false;
+            o.traceStop = 5.0; sweepApplyStop(o, chem, boucle);
+            CHECK(chem.size() == 2 && (chem[1] - Vec3(0,0,5)).norm() < 1e-9 && !boucle,
+                  "B3.10c : sweepApplyStop - arret a 5 (ouvert) = 2 stations, derniere interpolee (0,0,5)");
+            chem = { Vec3(0,0,0), Vec3(0,0,10), Vec3(10,0,10) }; boucle = false;
+            o.traceStop = 15.0; sweepApplyStop(o, chem, boucle);
+            CHECK(chem.size() == 3 && (chem[2] - Vec3(5,0,10)).norm() < 1e-9,
+                  "B3.10c : sweepApplyStop - arret a 15 = 3 stations, derniere (5,0,10)");
+            chem = { Vec3(0,0,0), Vec3(0,0,10), Vec3(10,0,10) }; boucle = false;
+            o.traceStop = 100.0; sweepApplyStop(o, chem, boucle);
+            CHECK(chem.size() == 3 && !boucle,
+                  "B3.10c : sweepApplyStop - arret >= total = tout le fil inchange (chemin ouvert inchange)");
+            chem = { Vec3(0,0,0), Vec3(0,0,10), Vec3(10,0,10) }; boucle = true;
+            o.traceStop = 25.0; sweepApplyStop(o, chem, boucle);   /* cloture (10,0,10)->(0,0,0), long 14.142 ; arc 25 = 20 + 5 sur la cloture */
+            const Vec3 attendu = Vec3(10,0,10) + normalized(Vec3(0,0,0) - Vec3(10,0,10)) * 5.0;
+            CHECK(!boucle && chem.size() == 4 && (chem[3] - attendu).norm() < 1e-9,
+                  "B3.10c : sweepApplyStop - boucle, arret a 25 = 3 stations + cloture interpolee a 5 du coin, chemin ouvert");
+        }
+        /* pose avec arret manuel via sweepConvertTo(stopLocal) */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object ch; ch.name = "Ligne";
+            ch.pos = Vec3(0,0,0); ch.scl = 1.0;
+            ch.traceType = 1; ch.traceFerme = 0;
+            ch.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            ch.v = ch.tracePts;
+            computeObjectDerived(ch);
+            g_objs.push_back(ch);
+        }
+        const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+        CHECK(sweepConvertTo(g_objs[ip], g_objs[ic], nullptr, 5.0),
+              "B3.10c : pose avec arret manuel (stopLocal = 5) acceptee");
+        CHECK(std::fabs(g_objs[ip].traceStop - 5.0) < 1e-12,
+              "B3.10c : traceStop memorise (parametre de construction regenerable)");
+        CHECK(g_objs[ip].v.size() == 8,
+              "B3.10c : arret a mi-longueur = 2 anneaux (station d'arret interpolee)");
+        {
+            bool z10 = true, z15 = true;
+            for (size_t k = 0; k < 4; ++k) {
+                const Vec3 pw = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                if (std::fabs(pw.z - 10.0) > 1e-9) z10 = false;
+            }
+            for (size_t k = 4; k < 8; ++k) {
+                const Vec3 pw = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                if (std::fabs(pw.z - 15.0) > 1e-9) z15 = false;
+            }
+            CHECK(z10 && z15, "B3.10c : anneau d'arret a z = 15 (mi-longueur du fil)");
+        }
+        CHECK(g_objs[ip].tri.size() == (size_t)(3 * 12),
+              "B3.10c : cap pose a l'arret (profil plein, chemin effectif ouvert) : 12 tris");
+        CHECK(std::fabs(signedVolume(g_objs[ip]) - 80.0) < 1e-6,
+              "B3.10c : volume = aire 16 x longueur balayee 5 = 80");
+        g_objs[ip].traceStop = -1.0;
+        traceRegen(g_objs[ip]);
+        CHECK(std::fabs(signedVolume(g_objs[ip]) - 160.0) < 1e-6,
+              "B3.10c : traceStop = -1 = tout le fil (volume 160 retrouve)");
+        /* persistance : stop survit au save/load (peek en cascade apres roll) */
+        {
+            g_objs[ip].traceStop = 5.0;
+            traceRegen(g_objs[ip]);
+            std::string err;
+            const std::string p = tmpPath("b310c_stop.s3projet");
+            CHECK(saveProject(p, err), "B3.10c : enregistrement (stop 5)");
+            const size_t nA = g_objs.size();
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), "B3.10c : relecture");
+            const bool ok = g_objs.size() == nA && g_objs[ip].traceType == 9
+                      && std::fabs(g_objs[ip].traceStop - 5.0) < 1e-9;
+            CHECK(ok, "B3.10c : stop relu (ligne optionnelle apres roll)");
+            if (ok) {
+                traceRegen(g_objs[ip]);
+                CHECK(std::fabs(signedVolume(g_objs[ip]) - 80.0) < 1e-6,
+                      "B3.10c : geometrie relue = arret a 5 applique par la regen (volume 80)");
+            }
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
+        /* pose MANUELLE via sweepClick au stage 2 (curseur au milieu du fil) */
+        {
+            GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+            g_winW = 1600; g_winH = 900;
+            g_cam = g_camHome;
+            g_cam.target = Vec3(0, 0, 15); g_cam.dist = 25.0;
+            g_editMode = false; g_editObj = -1; g_editGrab = -1;
+            g_rightDown = false; g_mode = M_None;
+            g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+            polyPose();
+            {
+                Object ch; ch.name = "Ligne";
+                ch.pos = Vec3(0,0,0); ch.scl = 1.0;
+                ch.traceType = 1; ch.traceFerme = 0;
+                ch.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+                ch.v = ch.tracePts;
+                computeObjectDerived(ch);
+                g_objs.push_back(ch);
+            }
+            const size_t ip2 = g_objs.size() - 2;
+            g_sweepStage = 2;
+            g_sweepProfil = (int)ip2;
+            g_sweepManuel = true;
+            auto pixelDe = [](const Vec3& c, double& px, double& py) {
+                const double t = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+                const Vec3 d = normalized(c - g_cam.pos());
+                const double df = dot(d, g_cam.forward());
+                const double aspect = (double)g_winW / (double)g_winH;
+                const double ndcX = dot(d, g_cam.right()) / (df * t * aspect);
+                const double ndcY = dot(d, g_cam.up()) / (df * t);
+                px = (ndcX + 1.0) * 0.5 * (double)g_winW;
+                py = (1.0 - ndcY) * 0.5 * (double)g_winH;
+            };
+            extern double g_stubCursorX, g_stubCursorY;
+            double px, py;
+            pixelDe(Vec3(0, 0, 15), px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            sweepClick(W);
+            CHECK(g_sweepStage == 0 && g_sweepManuel == false,
+                  "B3.10c : sweepClick stage 2 manuel = pose, mode manuel desarme");
+            CHECK(g_objs[ip2].traceType == 9 && std::fabs(g_objs[ip2].traceStop - 5.0) < 2e-3,
+                  "B3.10c : arret pose au point clique (milieu du fil = arc 5, tolerance pixel)");
+            CHECK(std::fabs(signedVolume(g_objs[ip2]) - 80.0) < 0.05,
+                  "B3.10c : tube manuel = volume 80 (moitie du fil balayee, tolerance pixel)");
+            g_cam = g_camHome;
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
+        g_sweepStage = 0; g_sweepProfil = -1; g_sweepManuel = false; g_stopDrag = -1; g_stopPreview = -1.0;
+    }
+
     { /* B3.6a-bis : fils SELECTIONNABLES devant un solide (splines par
          controle incaptables, retour test) + pan Maj+clic droit robuste
          (ordre du geste libre) + ALTITUDE des poignees conservee */

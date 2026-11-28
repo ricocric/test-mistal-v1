@@ -49,7 +49,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.10b-bis";  /* normale de l'anneau 0 placee PARALLELE a l'axe du fil par rotation minimale autour de la poignee selectionnee (pivot A) ; transport parallele ensuite, roll B3.6b = reglage fin */
+static const char* BUILD_VERSION = "B3.10c";  /* deploiement controle a la main : traceStop (longueur balayee, regenerable), menu contextuel auto/manuel, tirer manuellement ; menus scindes Edition/Outils */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -157,6 +157,9 @@ struct Object {
                                    -1 = collage intelligent au trace) */
     double traceRoll = 0.0;     /* B3.6b : rotation du profil autour du fil, DEGRES
                                    (0 = defaut "coller plat" B3.5, persiste "roll N") */
+    double traceStop = -1.0;    /* B3.10c : type 9 = longueur BALAYEE le long du chemin
+                                   (unites LOCALES du profil, -1 = tout le fil) ;
+                                   arret en cours de route, persiste "stop N" */
 };
 
 static std::vector<Object> g_objs;
@@ -1604,6 +1607,11 @@ static bool saveProject(const std::string& path, std::string& err) {
                 std::snprintf(rl, sizeof(rl), "%.10g", o.traceRoll);
                 f << "roll " << rl << "\n";
             }
+            if (o.traceType == 9 && o.traceStop >= 0.0) {   /* B3.10c : arret en cours de route */
+                char sl[48];
+                std::snprintf(sl, sizeof(sl), "%.10g", o.traceStop);
+                f << "stop " << sl << "\n";
+            }
         }
     }
     if (!f) { err = "ecriture interrompue"; return false; }
@@ -1732,16 +1740,39 @@ static bool loadProject(const std::string& path, std::string& err) {
                         std::getline(f, finR);          /* milieu de ligne : fin puis peek */
                         std::getline(f, probeR);
                     }
+                    bool rollLue = false;
                     if (!f.eof() && trimStr(probeR).rfind("roll ", 0) == 0) {
                         std::istringstream ir(probeR);
                         std::string tagR;
                         if (!(ir >> tagR >> o.traceRoll)) {
                             err = "fichier corrompu (roll)"; return false;
                         }
+                        rollLue = true;
                     } else {
                         f.clear();
                         f.seekg(avantRoll);
                         o.traceRoll = 0.0;
+                    }
+                    /* B3.10c : ligne optionnelle "stop N" (longueur balayee ;
+                       -1 ou absent = tout le fil) - peek APRES l'eventuel roll */
+                    const std::streampos avantStop = f.tellg();
+                    std::string finS, probeS;
+                    if (rollLue)
+                        std::getline(f, probeS);
+                    else {
+                        std::getline(f, finS);
+                        std::getline(f, probeS);
+                    }
+                    if (!f.eof() && trimStr(probeS).rfind("stop ", 0) == 0) {
+                        std::istringstream isx(probeS);
+                        std::string tagS;
+                        if (!(isx >> tagS >> o.traceStop) || o.traceStop < 0.0) {
+                            err = "fichier corrompu (stop)"; return false;
+                        }
+                    } else {
+                        f.clear();
+                        f.seekg(avantStop);
+                        o.traceStop = -1.0;
                     }
                 }
             } else {
@@ -1828,6 +1859,9 @@ enum {
     IDM_ANNULER,               /* B3.6z : annuler (Ctrl+Z) */
     IDM_RETABLIR,              /* B3.6z : retablir (Ctrl+Y / Ctrl+Maj+Z) */
     IDM_COLLER_SUR,            /* B3.7 : collage generique 2 objets (menu contextuel) */
+    IDM_SWEEP_AUTO,            /* B3.10c : deploiement AUTO sur tout le fil (menu contextuel) */
+    IDM_SWEEP_MANUEL,          /* B3.10c : TIRER MANUELLEMENT le deploiement le long du fil */
+    IDM_SWEEP_CANCEL,          /* B3.10c : annuler le balayage arme (menu contextuel) */
     IDM_PROJET_RECENT,         /* B3.2d : base des fichiers recents (+0..7, contigus) ;
                                   B3.6zb : DEPLACE en fin d'enum - la base etait au
                                   milieu (9) et empietait sur INFO/DUPLICATE/DELETE
@@ -1978,33 +2012,67 @@ static void handleMenuAction(int id) {
     }
 }
 
+/* B3/B3.10c : etat du balayage DECLARE TOT (lu par le menu contextuel,
+   lecon B1.7b : declarer avant la premiere utilisation) */
+static int g_sweepStage = 0;            /* 0 = inactif ; 1 = attend la FACE ; 2 = attend le FIL */
+static int g_sweepProfil = -1;          /* index de l'objet face (clic 1) */
+/* B3.10a : accroche du fil captee sous le curseur au stage 2 (facon
+   copier-coller) - point de connexion MONDE propose au clic */
+static Vec3 g_sweepConn(0, 0, 0);
+static bool g_sweepConnOk = false;
+static int g_sweepConnFil = -1;         /* B3.10a-bis : fil VISE sous le curseur */
+static bool g_sweepManuel = false;      /* B3.10c : stage 2 en mode "tirer manuellement" */
+static int g_stopDrag = -1;             /* B3.10c : objet type 9 en cours de "tirer manuellement" */
+static double g_stopPreview = -1.0;     /* B3.10c : apercu de l'arret (unites locales) */
+
 static void showContextMenu(GLFWwindow* w) {
-    /* le menu contextuel ne concerne qu'un objet deja selectionne (clic gauche) */
-    if (g_selected < 0 || g_selected >= (int)g_objs.size()) {
-        userMsg("menu contextuel : selectionnez d'abord un objet (clic gauche)");
-        return;
-    }
     (void)w;
-    const std::string info = objectInfo(g_objs[(size_t)g_selected]);
-    userMsg("%s", info.c_str());
 #ifdef _WIN32
     HMENU m = CreatePopupMenu();
-    AppendMenuA(m, MF_STRING, IDM_INFO_OBJECT, "&Infos objet");
-    AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuA(m, MF_STRING, IDM_DELETE_OBJECT, "Suppri&mer\tSuppr");
-    AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuA(m, MF_STRING, IDM_DUPLICATE, "&Dupliquer...");
-    AppendMenuA(m, MF_STRING, IDM_COLLER_SUR, "&Coller sur...");   /* B3.7 */
+    if (g_sweepStage) {
+        /* B3.10c : choix du deploiement au menu contextuel (balayage arme) */
+        AppendMenuA(m, MF_STRING | (g_sweepManuel ? MF_UNCHECKED : MF_CHECKED),
+                    IDM_SWEEP_AUTO, "&Balayer tout le fil (auto)");
+        AppendMenuA(m, MF_STRING | (g_sweepManuel ? MF_CHECKED : MF_UNCHECKED),
+                    IDM_SWEEP_MANUEL, "&Tirer manuellement sur le fil");
+        AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
+        AppendMenuA(m, MF_STRING, IDM_SWEEP_CANCEL, "&Annuler le balayage\tEchap");
+    } else {
+        /* le menu contextuel objet ne concerne qu'un objet deja selectionne */
+        if (g_selected < 0 || g_selected >= (int)g_objs.size()) {
+            DestroyMenu(m);
+            userMsg("menu contextuel : selectionnez d'abord un objet (clic gauche)");
+            return;
+        }
+        const std::string info = objectInfo(g_objs[(size_t)g_selected]);
+        userMsg("%s", info.c_str());
+        AppendMenuA(m, MF_STRING, IDM_INFO_OBJECT, "&Infos objet");
+        AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
+        AppendMenuA(m, MF_STRING, IDM_TOOL_COPY, "&Copier\tCtrl+C");
+        AppendMenuA(m, MF_STRING, IDM_TOOL_PASTE, "Co&ller\tCtrl+V");
+        AppendMenuA(m, MF_STRING, IDM_DUPLICATE, "&Dupliquer...");
+        AppendMenuA(m, MF_STRING, IDM_DELETE_OBJECT, "Suppri&mer\tSuppr");
+        AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
+        AppendMenuA(m, MF_STRING, IDM_COLLER_SUR, "&Coller sur...");   /* B3.7 */
+        if (g_objs[(size_t)g_selected].traceType == 9) {   /* B3.10c : deploiement d'un balayage pose */
+            AppendMenuA(m, MF_SEPARATOR, 0, nullptr);
+            AppendMenuA(m, MF_STRING, IDM_SWEEP_AUTO, "&Deployer sur tout le fil");
+            AppendMenuA(m, MF_STRING, IDM_SWEEP_MANUEL, "T&irer manuellement...");
+        }
+    }
     POINT pt;
     GetCursorPos(&pt);
     SetForegroundWindow(glfwGetWin32Window(w));
     const int id = (int)TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, glfwGetWin32Window(w), nullptr);
     DestroyMenu(m);
     if (id == 0) return;
-    if (id == IDM_INFO_OBJECT) showInfoDialog("Infos objet", info);
+    if (id == IDM_INFO_OBJECT && g_selected >= 0 && g_selected < (int)g_objs.size())
+        showInfoDialog("Infos objet", objectInfo(g_objs[(size_t)g_selected]));
     else handleMenuAction(id);
 #else
     (void)w;
+    if (g_sweepStage == 0 && (g_selected < 0 || g_selected >= (int)g_objs.size()))
+        userMsg("menu contextuel : selectionnez d'abord un objet (clic gauche)");
 #endif
 }
 
@@ -2317,6 +2385,20 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(file, MF_STRING, IDM_QUIT, "&Quitter");
     HMENU bar = CreateMenu();
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)file, "&Fichier");
+    /* B3.10c : menu EDITION (commandes habituelles : annuler/copier/coller/
+       dupliquer/supprimer/coller-sur) - scinde d'avec Outils (specifique
+       dessin) ; labels ASCII (fonte bitmap 32..127) */
+    HMENU edition = CreatePopupMenu();
+    AppendMenuA(edition, MF_STRING, IDM_ANNULER, "&Annuler\tCtrl+Z");   /* B3.6z : en tete */
+    AppendMenuA(edition, MF_STRING, IDM_RETABLIR, "&Retablir\tCtrl+Y");
+    AppendMenuA(edition, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(edition, MF_STRING, IDM_TOOL_COPY, "&Copier\tCtrl+C");
+    AppendMenuA(edition, MF_STRING, IDM_TOOL_PASTE, "Co&ller\tCtrl+V");
+    AppendMenuA(edition, MF_STRING, IDM_DUPLICATE, "&Dupliquer...");
+    AppendMenuA(edition, MF_STRING, IDM_DELETE_OBJECT, "Suppri&mer\tSuppr");
+    AppendMenuA(edition, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(edition, MF_STRING, IDM_COLLER_SUR, "&Coller sur...");   /* B3.7 */
+    AppendMenuA(bar, MF_POPUP, (UINT_PTR)edition, "E&dition");
     /* menu Affichage : rappel + orientation de la barre d'outils (B1.1) ;
        le menu Preferences reprendra ce role pour tous les choix au vol */
     HMENU aff = CreatePopupMenu();
@@ -2354,9 +2436,6 @@ static void attachMenus(GLFWwindow* win) {
        qui les propose (regle B1.7c) ; les 5 profils B2 y entreront au fil
        des lots ; delegation automatique : id >= kIdCommandStart */
     HMENU outils = CreatePopupMenu();
-    AppendMenuA(outils, MF_STRING, IDM_ANNULER, "&Annuler\tCtrl+Z");   /* B3.6z : en tete */
-    AppendMenuA(outils, MF_STRING, IDM_RETABLIR, "&Retablir\tCtrl+Y");
-    AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(outils, MF_STRING, IDM_TOOL_SELECT, "&Selection\tEchap");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_EDIT, "&Editer un trace\tE");   /* B2.7e */
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);   /* B2.7c : groupes de variantes separes */
@@ -2377,9 +2456,6 @@ static void attachMenus(GLFWwindow* win) {
     AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(outils, MF_STRING, IDM_TOOL_FRAME, "&Cadrer la selection\tF");
     AppendMenuA(outils, MF_STRING, IDM_TOOL_HOME, "Vue d'&origine\tH");
-    AppendMenuA(outils, MF_SEPARATOR, 0, nullptr);
-    AppendMenuA(outils, MF_STRING, IDM_TOOL_COPY, "&Copier\tCtrl+C");
-    AppendMenuA(outils, MF_STRING, IDM_TOOL_PASTE, "Co&ller\tCtrl+V");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)outils, "&Outils");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)aff, "&Affichage");
     SetMenu(hwnd, bar);
@@ -2860,18 +2936,12 @@ static bool extrudeConvertTo(Object& o, const Extrude& dd, double d) {
    balayee le long d'un fil (ligne, spline, arc). Chemin CONSUMME (comme le
    profil en E3) : ses points sont absorbes dans les parametres (l'info
    reste dans l'objet - extraire le chemin = backlog B5+). */
-static int g_sweepStage = 0;            /* 0 = inactif ; 1 = attend la FACE ; 2 = attend le FIL */
-static int g_sweepProfil = -1;          /* index de l'objet face (clic 1) */
-/* B3.10a : accroche du fil captee sous le curseur au stage 2 (facon
-   copier-coller) - point de connexion MONDE propose au clic */
-static Vec3 g_sweepConn(0, 0, 0);
-static bool g_sweepConnOk = false;
-static int g_sweepConnFil = -1;         /* B3.10a-bis : fil VISE sous le curseur */
 static void sweepCancel() {
     g_sweepStage = 0;
     g_sweepProfil = -1;
     g_sweepConnOk = false;
     g_sweepConnFil = -1;
+    g_sweepManuel = false;              /* B3.10c */
     userMsg("mode selection");
 }
 /* B3.3d (retour test) : une FACE de balayage = feuille tracee avec surface.
@@ -2886,13 +2956,14 @@ static bool sweepFaceValide(const Object& o) {
    declarer AVANT la premiere utilisation */
 static bool sweepAccroches(const Object& o, std::vector<Vec3>& acc);
 static int sweepAccrocheProfilProche(const Object& profil, const Vec3& connW);
+static double filArcAt(const Object& fil, const Vec3& p);   /* B3.10c : arc au point d'impact */
 static bool sweepConnSurFil(const Vec3& org, const Vec3& dir, int idxFil, Vec3& outConn);
 static bool sweepConnCapt(const Vec3& org, const Vec3& dir, int skip,
                           Vec3& outConn, int* outFil = nullptr,
                           double tolVis = -1.0);
 static double sweepTolVise();
 static bool sweepConvertTo(Object& profil, Object& chemin,
-                           const Vec3* conn = nullptr) {
+                           const Vec3* conn = nullptr, double stopLocal = -1.0) {
     if (&profil == &chemin) {
         flashBand("Balayage : le chemin doit etre un AUTRE objet (un fil)");
         userMsg("balayage : le chemin doit etre un AUTRE objet (un fil)");
@@ -2964,6 +3035,7 @@ static bool sweepConvertTo(Object& profil, Object& chemin,
         const int aPince = sweepAccrocheProfilProche(profil, *conn);
         if (aPince >= 0) profil.traceAccroche = aPince;
     }
+    profil.traceStop = stopLocal;        /* B3.10c : arret en cours de route (-1 = tout le fil) */
     traceRegen(profil);
     return true;
 }
@@ -3015,16 +3087,29 @@ static void sweepClick(GLFWwindow* w) {
     }
     const int ip = g_sweepProfil;
     Object& profil = g_objs[(size_t)ip];
-    if (!sweepConvertTo(profil, g_objs[(size_t)hit], connOk ? &conn : nullptr)) return;
+    /* B3.10c : mode "tirer manuellement" (menu contextuel) - l'arret du
+       deploiement = le point clique sur le fil (arc au point d'impact) */
+    double stopLocal = -1.0;
+    if (g_sweepManuel) {
+        const double t = filRayHit(org, dir, g_objs[(size_t)hit], sweepTolVise());
+        if (t >= 0.0) {
+            const Vec3 impact = org + normalized(dir) * t;
+            stopLocal = filArcAt(g_objs[(size_t)hit], impact) * (1.0 / profil.scl);
+        }
+    }
+    if (!sweepConvertTo(profil, g_objs[(size_t)hit], connOk ? &conn : nullptr, stopLocal)) return;
     const std::string nomFil = g_objs[(size_t)hit].name;
     g_objs.erase(g_objs.begin() + hit);            /* chemin consomme */
     selectOnly(ip < hit ? ip : ip - 1);
     g_sweepStage = 0;
     g_sweepProfil = -1;
+    g_sweepManuel = false;                          /* B3.10c : mode manuel a un coup */
     userMsg("balayage pose : %s (le fil \"%s\" est consomme - ses points restent dans les parametres)",
                 profil.name.c_str(), nomFil.c_str());
     if (connOk)
         userMsg("balayage : connexion accrochee au point capte du fil");
+    if (stopLocal >= 0.0)
+        userMsg("balayage : deploiement ARRETE au point clique (longueur %.3f) - menu contextuel = tirer encore / tout le fil", stopLocal);
     userMsg("mode selection");
 }
 
@@ -4562,6 +4647,66 @@ static void collAccroches(const Object& o, std::vector<CollAcc>& out) {
         out.push_back({ o.pos + (o.v[(size_t)e.first] + o.v[(size_t)e.second]) * (0.5 * o.scl),
                         e.first, e.second });
 }
+/* B3.10c : longueur d'arc le long d'une polyligne au point le plus proche de p */
+static double pointPolyArc(const std::vector<Vec3>& pts, bool boucle, const Vec3& p, double& outDist) {
+    outDist = 1e300;
+    const size_t n = pts.size();
+    if (n < 2) return 0.0;
+    const size_t nseg = boucle ? n : n - 1;
+    double bestD = 1e300, bestArc = 0.0, acc = 0.0;
+    for (size_t i = 0; i < nseg; ++i) {
+        const Vec3 a = pts[i];
+        const Vec3 b = pts[(i + 1) % n];
+        const Vec3 ab = b - a;
+        const double l2 = dot(ab, ab);
+        double t = l2 > 1e-18 ? dot(p - a, ab) / l2 : 0.0;
+        if (t < 0.0) t = 0.0;
+        if (t > 1.0) t = 1.0;
+        const double d = (a + ab * t - p).norm();
+        if (d < bestD) { bestD = d; bestArc = acc + std::sqrt(l2) * t; }
+        acc += std::sqrt(l2);
+    }
+    outDist = bestD;
+    return bestArc;
+}
+/* B3.10c : arc le long de la polyligne au point le plus proche du RAYON (org,dir) */
+static double rayPolyArc(const Vec3& org, const Vec3& dirIn, const std::vector<Vec3>& pts,
+                         bool boucle, double& outDist) {
+    outDist = 1e300;
+    const size_t n = pts.size();
+    if (n < 2) return 0.0;
+    const Vec3 u = normalized(dirIn);
+    const size_t nseg = boucle ? n : n - 1;
+    double bestD = 1e300, bestArc = 0.0, acc = 0.0;
+    for (size_t i = 0; i < nseg; ++i) {
+        const Vec3 a = pts[i];
+        const Vec3 b = pts[(i + 1) % n];
+        const Vec3 v = b - a;
+        const Vec3 w = org - a;
+        const double uu = dot(u, u), uv = dot(u, v), vv = dot(v, v);
+        const double den = uu * vv - uv * uv;
+        double s = 0.0, t = 0.0;
+        if (den > 1e-18) {
+            s = (uv * dot(v, w) - vv * dot(u, w)) / den;
+            t = (uu * dot(v, w) - uv * dot(u, w)) / den;
+            if (t < 0.0) { t = 0.0; s = -dot(u, w) / uu; }
+            else if (t > 1.0) { t = 1.0; s = (uv - dot(u, w)) / uu; }
+            if (s < 0.0) s = 0.0;
+        }
+        const double d = (w + u * s - v * t).norm();
+        if (d < bestD) { bestD = d; bestArc = acc + std::sqrt(vv) * t; }
+        acc += std::sqrt(vv);
+    }
+    outDist = bestD;
+    return bestArc;
+}
+/* B3.10c : arc MONDE le long du fil pose (v) au point le plus proche de p */
+static double filArcAt(const Object& fil, const Vec3& p) {
+    std::vector<Vec3> pts(fil.v.size());
+    for (size_t i = 0; i < fil.v.size(); ++i) pts[i] = fil.pos + fil.v[i] * fil.scl;
+    double d;
+    return pointPolyArc(pts, fil.traceFerme != 0, p, d);
+}
 /* B3.10a-bis (retour test : "c'est le fil voisin qui est selectionne") : la
    capture ne porte que sur le fil DESIGNe - jamais sur un autre objet. */
 static bool sweepConnSurFil(const Vec3& org, const Vec3& dir, int idxFil, Vec3& outConn) {
@@ -4884,6 +5029,51 @@ static int sweepAccrocheProfilProche(const Object& profil, const Vec3& connW) {
     return best;
 }
 
+/* B3.10c : arret en cours de route - applique traceStop (longueur balayee,
+   unites LOCALES du profil le long du chemin echantillonne) : chem tronque +
+   station interpolee exacte a l'arret ; < 0 ou >= total = tout le fil ;
+   un arret rend le chemin EFFECTIF ouvert (cap si profil plein) */
+static void sweepApplyStop(const Object& o, std::vector<Vec3>& chem, bool& boucle) {
+    if (o.traceStop < 0.0 || chem.size() < 2) return;
+    std::vector<Vec3> ext = chem;
+    if (boucle) ext.push_back(chem[0]);           /* segment de cloture */
+    const size_t m = ext.size();
+    std::vector<double> L(m, 0.0);
+    for (size_t i = 1; i < m; ++i) L[i] = L[i - 1] + (ext[i] - ext[i - 1]).norm();
+    const double total = L[m - 1];
+    double stop = o.traceStop;
+    if (stop >= total - 1e-12) return;             /* tout le fil */
+    if (stop < 1e-12) stop = 1e-12;
+    boucle = false;                                 /* arret = chemin effectif ouvert */
+    size_t j = 0;
+    while (j + 1 < m && L[j + 1] < stop) ++j;
+    chem.assign(ext.begin(), ext.begin() + (j + 1));
+    const double seg = L[j + 1] - L[j];
+    if (stop > L[j] + 1e-12 && seg > 1e-12)
+        chem.push_back(ext[j] + (ext[j + 1] - ext[j]) * ((stop - L[j]) / seg));
+}
+/* B3.10c : point MONDE du chemin COMPLET (boucle comprise) a l'arc local donne */
+static Vec3 sweepStopWorld(const Object& o, double arcLocal) {
+    std::vector<Vec3> chem;
+    if (!traceCheminChain(o, chem) || chem.size() < 2) return o.pos;
+    std::vector<Vec3> ext = chem;
+    const bool boucle = o.traceCheminFerme != 0;
+    if (boucle) ext.push_back(chem[0]);
+    const size_t m = ext.size();
+    double acc = 0.0;
+    for (size_t i = 1; i < m; ++i) {
+        const double seg = (ext[i] - ext[i - 1]).norm();
+        if (arcLocal <= acc + seg || i + 1 == m) {
+            double t = seg > 1e-12 ? (arcLocal - acc) / seg : 0.0;
+            if (t < 0.0) t = 0.0;
+            if (t > 1.0) t = 1.0;
+            const Vec3 p = ext[i - 1] + (ext[i] - ext[i - 1]) * t;
+            return o.pos + p * o.scl;
+        }
+        acc += seg;
+    }
+    return o.pos + ext[m - 1] * o.scl;
+}
 /* B3 : REGEN du balayage - anneaux du profil transportes le long du chemin
    (transport parallele projete = pas de torsion, arbitrage v1) ; B3.10b :
    l'ANNEAU 0 = le profil EXACTEMENT tel que pose (frame de la station 0 =
@@ -4902,8 +5092,9 @@ static void traceRegenSweep(Object& o) {
                     || o.traceProfil == 4 || o.traceProfil == 5 || o.traceProfil == 7);
     const size_t rimBase = aCentre ? 1 : 0;
     const size_t nBase = aCentre ? n + 1 : n;
+    bool boucle = o.traceCheminFerme != 0;
+    sweepApplyStop(o, chem, boucle);            /* B3.10c : arret en cours de route (traceStop) */
     const size_t nRings = chem.size();
-    const bool boucle = o.traceCheminFerme != 0;
     const size_t nsegPath = boucle ? nRings : nRings - 1;
     /* normale de reference du roll (traceVec = normale de la face au balayage) */
     Vec3 Nv = o.traceVec;
@@ -6157,7 +6348,12 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_polyMode) { polyFinish(); return; }   /* B2.6b : clic droit = valide (ferme la surface) */
         if (g_splMode) { splFinish(); return; }   /* B2.7 : clic droit = valide (courbe ouverte) */
         if (g_editMode) return;   /* B3.6a-bis : la sortie d'edition passe au relachement (le presse peut devenir un pan si Maj arrive) */
-        if (g_sweepStage) { sweepCancel(); return; }   /* B3 : clic droit = annule le balayage */
+        if (g_stopDrag >= 0) {   /* B3.10c : clic droit = annule le "tirer manuellement" */
+            g_stopDrag = -1; g_stopPreview = -1.0;
+            userMsg("tirer manuellement annule");
+            return;
+        }
+        if (g_sweepStage) { showContextMenu(w); return; }   /* B3.10c : clic droit = menu contextuel (auto / manuel / annuler) */
         if (g_collStage) { collCancel("collage annule"); return; }   /* B3.7 : clic droit = annule */
         if (g_lineMode) { lineFinish(); return; }   /* B2.1 : le clic droit FINIT (segments deja cliques poses) */
         if (g_ppActive) {
@@ -6182,6 +6378,18 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
+        if (g_stopDrag >= 0) {   /* B3.10c : clic = VALIDE l'arret du "tirer manuellement" */
+            if (g_stopDrag < (int)g_objs.size() && g_objs[(size_t)g_stopDrag].traceType == 9
+                && g_stopPreview >= 0.0) {
+                Object& o = g_objs[(size_t)g_stopDrag];
+                undoSnapshot("arret du balayage");
+                o.traceStop = g_stopPreview;
+                traceRegen(o);
+                userMsg("balayage arrete a la longueur %.3f - menu contextuel : tirer encore / tout le fil", o.traceStop);
+            }
+            g_stopDrag = -1; g_stopPreview = -1.0;
+            return;
+        }
         /* REGLE NAVIGATION (retour test B3.7b, generalisee) : Maj + clic G =
            PAN, systematiquement dans tous les modes ARMES (ligne, rectangle,
            cercle, arc, polygone, spline, balayage, collage, push/pull arme,
@@ -6658,6 +6866,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         }
         if ((mods & GLFW_MOD_CONTROL) && keyIsLetter(key, scancode, 'Y')) { undoRetablit(); return; }
         if (key == GLFW_KEY_ESCAPE) {
+            if (g_stopDrag >= 0) { g_stopDrag = -1; g_stopPreview = -1.0; userMsg("tirer manuellement annule"); return; }   /* B3.10c */
             /* Echelle Echap : d'abord sortir de l'etat en cours (mode P/R en attente,
                puis deselection) ; Echap ne ferme JAMAIS l'application (rebonds de
                clavier) : fermeture volontaire par Fichier > Quitter uniquement. */
@@ -6790,6 +6999,48 @@ static void runToolCommand(int id) {
         return;
     case IDM_TOOL_PASTE:      /* = Ctrl+V */
         pasteClipboard();
+        return;
+    case IDM_SWEEP_AUTO:       /* B3.10c : deploiement AUTO sur tout le fil */
+        if (g_sweepStage) {
+            g_sweepManuel = false;
+            userMsg("balayage : tout le fil (auto) - cliquez le fil chemin");
+        } else if (g_selected >= 0 && g_selected < (int)g_objs.size()
+                   && g_objs[(size_t)g_selected].traceType == 9) {
+            Object& o = g_objs[(size_t)g_selected];
+            if (o.traceStop >= 0.0) {
+                undoSnapshot("deploiement sur tout le fil");
+                o.traceStop = -1.0;
+                traceRegen(o);
+                userMsg("balayage deploye sur tout le fil");
+            } else {
+                userMsg("balayage : deja sur tout le fil");
+            }
+        }
+        return;
+    case IDM_SWEEP_MANUEL:     /* B3.10c : tirer manuellement le deploiement */
+        if (g_sweepStage) {
+            g_sweepManuel = true;
+            userMsg("balayage : TIRER MANUELLEMENT - cliquez le fil : l'arret = le point clique");
+        } else if (g_selected >= 0 && g_selected < (int)g_objs.size()
+                   && g_objs[(size_t)g_selected].traceType == 9) {
+            Object& o = g_objs[(size_t)g_selected];
+            g_stopDrag = g_selected;
+            g_stopPreview = o.traceStop;            /* -1 = apercu mis a jour au curseur */
+            if (g_stopPreview < 0.0) {
+                std::vector<Vec3> chem;
+                if (traceCheminChain(o, chem) && chem.size() >= 2) {
+                    std::vector<Vec3> ext = chem;
+                    if (o.traceCheminFerme != 0) ext.push_back(chem[0]);
+                    double t = 0.0;
+                    for (size_t i = 1; i < ext.size(); ++i) t += (ext[i] - ext[i - 1]).norm();
+                    g_stopPreview = t;              /* tout le fil par defaut */
+                }
+            }
+            userMsg("tirer manuellement : deplacez le curseur le long du fil (poignee magenta), clic = arreter ici, Echap = annuler");
+        }
+        return;
+    case IDM_SWEEP_CANCEL:     /* B3.10c : annuler le balayage arme */
+        sweepCancel();
         return;
     case IDM_TOOL_LINE:        /* = touche L : ligne fermee en surface (B2.5) */
     case IDM_TOOL_LIGNE_FIL:   /* = Maj+L : ligne en fil ouvert (B2.5b) */
@@ -7422,6 +7673,36 @@ int main() {
         } else if (g_sweepStage == 2) {
             sweepTrackCursor(win);    /* B3.10a : accroche du fil sous le curseur */
         }
+        if (g_stopDrag >= 0 && g_stopDrag < (int)g_objs.size()
+            && g_objs[(size_t)g_stopDrag].traceType == 9) {
+            /* B3.10c : apercu de l'arret pendant le "tirer manuellement" - arc
+               au point du chemin le plus proche du rayon curseur, AIMENT sur
+               les stations et milieux du chemin (filPickTol) */
+            Vec3 org, dir;
+            Object& o = g_objs[(size_t)g_stopDrag];
+            if (rayFromMouse(win, org, dir)) {
+                std::vector<Vec3> chem;
+                if (traceCheminChain(o, chem) && chem.size() >= 2) {
+                    std::vector<Vec3> pw(chem.size());
+                    for (size_t i = 0; i < chem.size(); ++i) pw[i] = o.pos + chem[i] * o.scl;
+                    const bool boucleC = o.traceCheminFerme != 0;
+                    double dist;
+                    double arcW = rayPolyArc(org, dir, pw, boucleC, dist);
+                    if (dist <= filPickTol() * 3.0) {   /* meme zone de visee large que le balayage */
+                        std::vector<Vec3> ext = pw;
+                        if (boucleC) ext.push_back(pw[0]);
+                        double acc = 0.0;
+                        for (size_t i = 1; i < ext.size(); ++i) {
+                            const double seg = (ext[i] - ext[i - 1]).norm();
+                            if (std::fabs(arcW - acc) < filPickTol()) arcW = acc;
+                            if (std::fabs(arcW - (acc + seg * 0.5)) < filPickTol()) arcW = acc + seg * 0.5;
+                            acc += seg;
+                        }
+                        g_stopPreview = arcW * (1.0 / o.scl);
+                    }
+                }
+            }
+        }
         updateWindowTitle(win);
         render();
         drawAxisGuide();
@@ -7434,6 +7715,22 @@ int main() {
         drawEditHandles();       /* B2.7e : poignees du trace en edition */
         drawDragHandles();       /* B3.9b : accroches visibles pendant le deplacement fin */
         drawSweepHandles();      /* B3.10a : accroches du fil au stage 2 du balayage */
+        if (g_stopDrag >= 0 && g_stopDrag < (int)g_objs.size()
+            && g_objs[(size_t)g_stopDrag].traceType == 9 && g_stopPreview >= 0.0) {
+            /* B3.10c : poignee magenta de l'arret pendant le "tirer manuellement" */
+            const Vec3 p = sweepStopWorld(g_objs[(size_t)g_stopDrag], g_stopPreview);
+            glDisable(GL_LIGHTING);
+            glDisable(GL_DEPTH_TEST);
+            glColor3d(0.95, 0.2, 0.85);
+            const double s = 0.09;
+            glBegin(GL_QUADS);
+            glVertex3d(p.x - s, p.y, p.z - s);
+            glVertex3d(p.x + s, p.y, p.z - s);
+            glVertex3d(p.x + s, p.y, p.z + s);
+            glVertex3d(p.x - s, p.y, p.z + s);
+            glEnd();
+            glEnable(GL_DEPTH_TEST);
+        }
         drawStatusBand();
         glfwSwapBuffers(win);
         glfwPollEvents();

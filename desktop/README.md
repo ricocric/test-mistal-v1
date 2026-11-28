@@ -1241,6 +1241,15 @@ globale corrigee par le volume signe (normales exterieures) ;
   profil trace, pas de losange), prisme droit (volumes exacts) ; transport
   parallele inchange ensuite ; roll B3.6b = reglage fin ; **652, 0 echec**
   (ASan propre).
+- **B3.10c (deploiement controle a la main + menus)** : traceStop =
+  longueur balayee (parametre regenerable, persiste "stop N") ; arret en
+  cours de route avec station interpolee + cap ; menu contextuel : au
+  stage 2 "Balayer tout le fil (auto)" vs "Tirer manuellement sur le fil"
+  (arret au point clique), sur un tube "Deployer sur tout le fil" /
+  "Tirer manuellement..." (poignee magenta le long du fil, aimant
+  stations/milieux, un pas undo) ; menus scindes EDITION (annuler,
+  copier, coller, dupliquer, supprimer, coller-sur) et OUTILS (specifique
+  dessin) ; **674, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 
