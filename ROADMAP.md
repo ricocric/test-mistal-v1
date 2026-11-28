@@ -753,6 +753,14 @@ Questions ouvertes a trancher avec l'utilisateur :
   l'edition de profils (B3 chemins), l'edition directe (B5) et la lecture
   des structures (se rattachera naturellement a la vraie topologie de B6 :
   tri des aretes de bord = utilisees par UNE seule face) ;
+- ZOOM SUR LE CURSEUR (facon SketchUp) - demande explicite retour test
+  B3.7b ("le zoom avant se fait sur le centre de la zone pointee par le
+  curseur au lieu de la zone de travail... tres instinctif, rapide et
+  universel. A mettre en oeuvre dans le prochain bloc de code") : au
+  molette, deplacer aussi la cible camera vers le point vise par le curseur
+  (proportionnel au changement de dist : cible_new = point_vise +
+  (cible - point_vise) * dist_new/dist_old) ; recentrer une zone = zoom
+  arriere, deplacer le curseur dans le secteur, zoom avant ;
 - Deplacements aimantes / collisions (T2), groupes d'objets (T3)
 - Points de pivot choisis, mesures / cotes magnetees
 - Fermeture avec confirmation "projet modifie, enregistrer ?"
