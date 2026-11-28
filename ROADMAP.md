@@ -8,7 +8,8 @@ backlog est revu a chaque franchissement d'etape importante.
 
 - Export cible / multi, suppression multi, compteur, Ctrl+S (T1.6.x)
 - Multi-selection Ctrl+clic + actions multi (T1.7) + durcissement crash
-- Point de vue : pan molette/Shift, recentrage C (T1.8)
+- Point de vue : pan Maj+clic (B3.9d retabli) + zoom molette sur le
+  curseur (B3.8), recentrage C (T1.8)
 - Rotation multi cas 1 : axes propres (T1.9) + correctif gel bandeau (T1.9.1)
 - Rotation multi cas 2 : barycentre du groupe, bascule B a chaud (T1.10)
 - Deplacement de groupe : drag multi (T1.11)
@@ -668,8 +669,237 @@ Questions ouvertes a trancher avec l'utilisateur :
     - cibles v1 proposees : sommet de B, milieu d'arete, point au plus
       proche d'une arete (tolerance filPickTol), point d'une face
       (projection au plan) ;
+  - **B3.7 FAIT v1 (549 -> 563 verifs) - collage generique** (arbitrages
+    retenus, a confirmer apres les premiers essais utilisateur) :
+    1a. armement = menu contextuel "Coller sur..." (toggle, Echap ou
+        clic droit = annule), garde complete (aucun autre mode actif) ;
+    2a. accroche de A = la plus proche de la cible (sommets + milieux
+        d'aretes derives, comme B3.4/B3.5) ;
+    3b. cible ARETE de B = la cible reste sur l'arete ET l'arete de A
+        passant par l'accroche la mieux orientee S'ALIGNE sur l'arete
+        cible (angle <= 90 deg, rotation la plus courte) ; cible
+        sommet/face = translation seule ;
+    4a. pose definitive (pas de lien persistant), un pas undo "collage" ;
+    - cible = face d'abord (rayon/tri, les solides gagnent), fil sinon ;
+      snap : sommet de B si dans la tolerance, sinon point d'arete, sinon
+      impact exact du rayon sur la face ;
+    - **correctif collTourne** : la rotation rigide autour du pivot monde P
+      doit tourner les donnees LOCALES autour de l'ORIGINE du repere local
+      (p_new = R(p)) ; la premiere version tournait les locales autour de
+      pl = (P - pos)/scl, ce qui ajoutait une erreur de translation
+      R(pos-P) - (pos-P) : l'accroche collee sautait hors de la cible des
+      que l'objet source etait loin du pivot (le test l'a attrape avant
+      l'utilisateur) ;
+  - **B3.7b FAIT (retour test : "pas de pan/zoom pour choisir la face de
+    l'objet cible")** : navigation libre pendant le collage, memes regles
+    que l'edition (B3.3c/B3.6a-ter) : Maj+clic = pan, clic dans le vide =
+    orbite, molette = zoom ; le collage reste arme ; la recherche de cible
+    est extraite dans `collVise` (un seul chemin de code, partage par le
+    press et la pose) ;
+  - **B3.7c FAIT (regle navigation generalisee)** : Maj + clic G = PAN dans
+    TOUS les modes armes, systematique ("sauf si totalement impossible") -
+    exceptions : geste ACTIF (pp/rot en cours, drag de poignee, roll) et
+    edition (regle propre : poignee d'abord, pan sur clic sans effet) ; la
+    selection simple garde sa regle (Maj+clic sur un objet = le deplacer) ;
+    - NOTE v1 a confirmer : l'alignement choisit parmi TOUTES les aretes
+      derivees incidentes a l'accroche, DIAGONALES DU FAN comprises (une
+      boite tournee de 45 deg a une diagonale deja parallele a l'arete
+      cible = rien a rattraper) ; si l'usage le demande, on exclura les
+      diagonales (classification propre des aretes = vrai solide B6) ;
   - les arbitrages restants (interaction exacte du choix d'accroche au
     trace, comportement torique) seront poses au fil des tests utilisateur.
+- **B3.9 refonte du collage - FAIT (609 verifications, 0 echec, ASan
+  propre) ; retour test B3.7c : "aucune maitrise du collage... collage
+  fait sur le triangle, pas sur la face... pas de commande style ctrl c /
+  ctrl v" + precision : POIGNEES AFFICHEES et ORIENTATION MAITRISEE
+  pendant le deplacement fin. Mecanique generale dictee par
+  l'utilisateur : on selectionne
+  un objet et on le DEPLACE vers la cible, OU on le COPIE (Ctrl+C/Ctrl+V)
+  et on vient le placer face contre face, arete contre arete ou coin contre
+  coin, et on colle. Le collage devient possible a la FIN de tout
+  deplacement ou de toute copie ; il devient ACTIF si une partie (face,
+  arete, coin) entre dans la ZONE DE CAPTURE de l'objet voisin (magnetisme).
+  Deplacement = collage direct ; copie-collage = placement a proximite
+  selon la localisation du curseur, le collage fin se fera ensuite en mode
+  deplacement. Composantes :**
+  - **B3.9a FACES LOGIQUES** (resout "colle sur le triangle, pas sur la
+    face") : `facesLogiques(o, out)` regroupe les tris par PLAN quantifie
+    (normale + d, orientation canonique) ; aretes de BORD = utilisees par
+    UNE seule tri du groupe (la diagonale d'un fan de face plane est
+    utilisee deux fois -> exclue) ; une face de boite = 4 bords reels.
+    Integre dans `collClick` (snap d'arete sur les bords logiques de B,
+    alignement 3b sur les aretes de bord incidentes de A) et dans
+    `collAccroches` (sommets + milieux de BORDS logiques) ; le probleme
+    des diagonales a 45 deg disparait ;
+  - **B3.9b MAGNETISME au deplacement + POIGNEES VISIBLES** :
+    `magnetDelta(idxA, posA)` cherche la MEILLEURE paire (accroche de A
+    [sommet, milieu d'arete de bord logique] x cible d'un voisin [sommet,
+    milieu d'arete de bord, PROJECTION SUR FACE LOGIQUE si l'accroche est
+    a <= tol du plan et la projection est interieure a la face convexe])
+    dans la tolerance `filPickTol()` ; appliquee EN DIRECT dans
+    `updateDrag` (mono seulement v1 ; recalcul a chaque frame depuis
+    startPos+delta, PAS d'accumulation) ; ORIENTATION maitrisee v1 : paire
+    arete/arete = A tourne autour de la cible pour aligner son arete
+    (logique 3b reutilisee via collTourne, donnees locales restaurees a
+    chaque frame depuis la capture du beginDrag) ; coin/coin et face/face =
+    translation seule v1 (alignement des normales face/face = v2, note) ;
+    pendant le drag mono, les accroches de l'objet deplace sont DESSINEES
+    (orange) et la cible captee (magenta, plus grande) - l'utilisateur
+    voit quel accroche va se coller et choisit face/arete/coin ;
+    B3.9b suite (retour test valide : "les poignees de la cible s'allument
+    aussi, cela permet la precision maxi") : des que le magnetisme
+    s'exerce, les accroches de l'objet CIBLE s'allument aussi (orange) ;
+    le zoom molette reste actif pendant le drag ; le pan Maj+clic G
+    pendant un drag ACTIF est impossible par nature (bouton deja enfonce)
+    - geste de repli a definir si l'usage le demande (note) ;
+  - **B3.9c Ctrl+V pres du curseur** (copie-collage, "placement a
+    proximite selon localisation du curseur") : le groupe colle est
+    repositionne au point du sol projete sous le curseur
+    (lineGroundPoint) - CENTRE X/Z du groupe au sol, FOND de boite pose
+    sur le sol (y = 0) -, selectionne, pret au deplacement fin
+    magnetique ;
+    Ctrl+C/Ctrl+V existent deja (T1.12), seul le PLACEMENT change ;
+    sans curseur (tests) = ancien decalage +X ;
+  - Arbitrages v1 : magnétisme MONO seulement (multi = garde, note) ;
+    zone de capture = filPickTol (2 % de la distance camera + 0.05) ;
+    priorite cible : sommet < milieu d'arete < projection de face, la
+    plus proche gagne ; perf = accroches x cibles recalculees par frame
+    (note : a optimiser si grosses scenes) ; verif non-regression : les
+    tests de drag T1.x deposent loin de tout voisin (position exacte).
+- **B3.9d PAN RETABLI (retour utilisateur : "le maj + clic n'aurait pas du
+  etre supprime pour la camera") - FAIT (609 verifications, 0 echec, ASan
+  propre)** : revert de la tentative B3.9c (pan supprime) ; la regle
+  navigation B3.7c redevenue celle en vigueur : Maj + clic G = PAN
+  systematique (modes armes, selection dans le vide), Maj + clic droit =
+  pan dans tous les modes (Maj pendant clic droit tenu inclus) ; le zoom
+  sur le curseur (B3.8) reste le complement ; les deux gestes cohabitent.
+- **B3.10 BALAYAGE (follow me) - deux precisions importantes de l'utilisateur
+  (CONCEPTION posee AVANT code, a valider)** :
+  - **B3.10a ACCROCHE du point de connexion au lancement, facon
+    copier-coller** ("il faut pouvoir accrocher le point de collage choisi
+    comme on accroche pendant les copier coller") : au stage 2 du
+    balayage (visee du fil), les accroches du fil (sommets + milieux de
+    segments) s'allument (orange) et la cible captee passe (magenta),
+    MEME grammaire que le magnetisme du collage (B3.9b) ; le clic pose la
+    connexion a l'accroche du fil captee dans la tolerance filPickTol
+    (traceAccroche pincee DES LA POSE, plus besoin de l'editer apres
+    coup) ; sans accroche captee = comportement actuel (automatique) ;
+    reutilisation de collAccroches (UN SEUL CHEMIN DE CODE) ;
+    **FAIT (B3.10a, 626 verifications, 0 echec, ASan propre)** : helper
+    unique sweepConnCapt (survol ET clic), poignees drawSweepHandles au
+    stage 2 (accroches des fils orange, captee magenta) ; au clic, la
+    connexion est pincee des la pose : le fil demarre a la STATION captee
+    (sens inverse si l'autre bout d'une ligne, depart tourne si le fil est
+    ferme ; milieux et stations interieures = pincement seul en v1) et
+    traceAccroche = accroche du PROFIL la plus proche du point capte ;
+    sans capte = collage automatique B3.5 intact ;
+  - **B3.10a-bis CORRECTIFS du retour de test B3.10a** ("4 nok : fil ferme
+    avec une spline, le dernier segment disparait ; 4 suite : c'est le fil
+    voisin qui est selectionne, c'est le FIL qui montre des poignees, pas
+    le rectangle") - **FAIT (B3.10a-bis, 634 verifications, 0 echec, ASan
+    propre)** : (1) SPLINE FERMEE balayee = traceCheminFerme pose quel que
+    soit le type du fil (avant : seul le type 1 gardait traceFerme, la
+    boucle etait echantillonnee OUVERTE et sautait la cloture) ;
+    (2) capture d'accroche RESTREINTE au fil VISE : sweepConnSurFil
+    (capture sur le fil designe seulement) + sweepConnCapt vise le
+    meilleur filRayHit hors profil puis ne capte QUE sur ce fil (outFil
+    = fil vise meme sans accroche captee) ; drawSweepHandles n'allume
+    plus que les accroches du fil vise ; (3) la SELECTION fil/solide est
+    comparee en ESPACE ECRAN (regle B3.6a-bis affinee) : le fil ne gagne
+    sur un solide touche que si son offset a l'ecran est quasi nul
+    (seuil 4 px) ; filRayHit gagne un RAFFINEMENT local autour du meilleur
+    pas (erreur << 1 px) et sort la distance perpendiculaire (outDist) ;
+  - **B3.10a-ter POIGNEES VISIBLES DES L'APPROCHE** (retour test :
+    "les poignees de placement ne sont jamais apparues") - diagnostic : en
+    B3.10a les accroches de TOUS les fils etaient allumees en permanence
+    (c'est ce qui guidait l'utilisateur... et faisait croire au fil
+    voisin selectionne) ; en B3.10a-bis elles ne s'allumaient qu'une fois
+    le rayon DANS la zone de capture, c'est-a-dire a l'instant du clic :
+    invisibles pour guider. **FAIT (B3.10a-ter, 636 verifications, 0
+    echec, ASan propre)** : zone de SURVOL = 3 x zone de capture
+    (sweepTolVise, UN SEUL CHEMIN DE CODE) - le fil vise allume ses
+    poignees (orange) des l'approche, la capture (magenta, pincement au
+    clic) reste a filPickTol, et CE QUI EST ALLUME EST CLIQUABLE (survol
+    et clic partagent la meme visee large) ;
+  - **B3.10a-quater POIGNEES DU PROFIL AU STAGE 2** (retour test :
+    "je n'ai jamais vu les poignees du rectangle") - cause racine : au
+    stage 2 le profil n'est PAS ENCORE converti en balayage (traceType
+    brut, traceProfil non pose) : sweepAccroches echouait (traceProfilChain
+    lit traceProfil) -> aucune poignee de profil possible. **FAIT
+    (B3.10a-quater, 643 verifications, 0 echec, ASan propre)** :
+    sweepAccroches lit la chaine sur traceType pour un profil brut
+    (types 8/9 inchanges) ; au stage 2 les accroches du PROFIL s'allument
+    en orange elles aussi (grammaire copier-coller B3.9b : les DEUX cotes
+    de la connexion sont visibles), et si une accroche du fil est captee,
+    l'accroche du profil qui sera PINCEE a la pose passe en MAGENTA (plus
+    grande) - MEME choix que le pincement : helper unique
+    sweepAccrocheProfilProche (pose + dessin, UN SEUL CHEMIN DE CODE) ;
+  - **B3.10b ORIENTATION 3 AXES maitrisee** ("on ne maitrise toujours pas
+    l'orientation dans les 3 axes de la forme a attacher, resultat
+    folklorique") : DIAGNOSTIC = la frame du balayage est ancoree sur la
+    NORMALE de la face (traceVec) projetee - l'orientation DANS le plan
+    du profil (3e axe) n'est pas contrainte au lancement, d'ou les
+    retournements ; CORRECTIF fidele Follow Me : l'ANNEAU 0 = le profil
+    EXACTEMENT tel que pose (AUCUNE re-orientation imposee au lancement,
+    pas de rotation initiale par traceVec), les stations suivantes =
+    transport parallele le long du chemin (deja en place, pas de
+    torsion) ; le roll (B3.6b) reste le reglage fin de l'orientation
+    autour du chemin, editable apres coup. **FAIT (B3.10b, 651
+    verifications, 0 echec, ASan propre)** : frame de la station 0 = base
+    DU PLAN DU PROFIL (U0 = sommet le plus loin de l'accroche A, Bb0 =
+    Nv x U0, (U0,Bb0,Nv) direct = pas de miroir) ; coordonnees aa/bb lues
+    directement dans cette frame -> anneau 0 = chem[0] + prof[k] - A
+    EXACTEMENT (translation seule) ; transport parallele inchange pour les
+    stations suivantes ; poignee de roll PROJETEE sur le plan
+    perpendiculaire a l'axe (cercle du drag, rayon non nul) ; tests
+    volume-exact B3/B3.3 remplaces par invariants de section
+    perpendiculaire (aire = aire du profil, z constant par anneau,
+    volume signe > 0) ;
+  - **B3.10b-bis PLACEMENT DE LA NORMALE PARALLELE A L'AXE DU FIL** (retour
+    test B3.10b : "placement de la normale du rectangle, ou du cercle,
+    parallele a l'axe du fil, depuis la poignee selectionnee") - **FAIT
+    (B3.10b-bis, 652 verifications, 0 echec, ASan propre)** : a la station 0,
+    ROTATION MINIMALE autour du pivot A (poignee pincee) amenant la normale
+    Nv sur la tangente Tv[0] : l'anneau 0 = chem[0] + R(prof[k] - A) est
+    PERPENDICULAIRE au fil (normale parallele a l'axe), rotation rigide
+    (congruence avec le profil trace, pas de losange) ; stations suivantes =
+    transport parallele inchange ; roll B3.6b = reglage fin ; prisme droit
+    retrouve (volumes exacts 160/320 restaures dans les tests) ;
+  - **B3.10c DEPLOIEMENT CONTROLE A LA MAIN (option complementaire,
+    indispensable aux objets evolues : routes, couloirs, tuyauteries,
+    jonctions)** : pouvoir ARRETER le deploiement EN COURS DE ROUTE sur
+    le fil - la longueur balayee devient un PARAMETRE de construction
+    (principe B2.7e : regenerable), reglee par une POIGNEE le long du fil
+    (drag le long du chemin, magnetisme sur les accroches du fil, saisie
+    numerique possible) ; l'arret est VALIDE a toute station (cap sur le
+    profil plein, bord ouvert sinon) ; depuis le point d'arret, un NOUVEAU
+    balayage peut repartir (jonction en T / Y : lever les fils du chemin
+    restant ou retracer un fil depuis ce point) ; les COMMANDES du
+    deploiement (arret, reprise, longueur) prennent place dans le MENU
+    CONTEXTEL (retour utilisateur : il est justement fait pour ca). **FAIT
+    v1 (B3.10c, 674 verifications, 0 echec, ASan propre)** : traceStop =
+    longueur balayee (unites locales, PARAMETRE regenerable, persiste
+    "stop N", -1 = tout le fil) ; sweepApplyStop tronque le chemin
+    echantillonne + station interpolee exacte a l'arret, cap si profil
+    plein ; MENU CONTEXTUEL : au stage 2 du balayage arme, clic droit =
+    "Balayer tout le fil (auto)" / "Tirer manuellement sur le fil" /
+    annuler (le mode manuel pose l'arret au POINT CLIQUE, arc via
+    filArcAt) ; sur un balayage pose : "Deployer sur tout le fil" /
+    "Tirer manuellement..." = stop-drag (poignee magenta le long du fil,
+    aimant stations/milieux, clic = valide, un pas undo) ; menus scindes
+    EDITION (annuler/copier/coller/dupliquer/supprimer/coller-sur) et
+    OUTILS (specifique dessin). Reste backlog : reprise depuis le point
+    d'arret (jonction T/Y), saisie numerique de la longueur ;
+- **B3.9 v2 (backlog, apres validation utilisateur)** : face-contre-face
+  avec ALIGNEMENT DES NORMALES (v1 = translation seule pour face/face),
+  magnetisme multi (v1 = mono seulement), perf facesLogiques sur gros
+  imports (recalcul par frame) ; sensibilité aux effets de perspective :
+  la SELECTION fil/solide est traitee par B3.10a-bis (comparaison en
+  espace ecran) - le COLLAGE lui-meme reste a voir ; collage par COINS a
+  soigner (faces rarement de meme
+  taille) ; comportement porte/chambranle VALIDE (l'arete se colle sans
+  rotation face-contre-face, pivot sur l'arete - a completer avec la
+  maitrise des points de pivot, cf B8) ;
 - B8 pivot intelligent : ETUDE DE CONCEPTION avant code (nombreux cas de
   figure : sommet, face, point clique, coordonnees, centre du monde...)
 
@@ -716,6 +946,12 @@ Questions ouvertes a trancher avec l'utilisateur :
   l'edition de profils (B3 chemins), l'edition directe (B5) et la lecture
   des structures (se rattachera naturellement a la vraie topologie de B6 :
   tri des aretes de bord = utilisees par UNE seule face) ;
+- ZOOM SUR LE CURSEUR (facon SketchUp) - **B3.8 FAIT** (demande explicite
+  retour test B3.7b, mise en oeuvre immediate) : au molette, le point vise
+  (impact objet/fil, sinon plan de travail par la cible face a la camera)
+  reste SOUS LE CURSEUR, la cible camera glisse au rapport
+  dist_new/dist_old ; pas de 20 % et bornes inchanges ; molette sans
+  curseur = pur dolly ;
 - Deplacements aimantes / collisions (T2), groupes d'objets (T3)
 - Points de pivot choisis, mesures / cotes magnetees
 - Fermeture avec confirmation "projet modifie, enregistrer ?"

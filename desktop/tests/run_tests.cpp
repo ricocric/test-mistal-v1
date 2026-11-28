@@ -1156,8 +1156,10 @@ int main() {
         g_axisHeld[0] = g_axisHeld[1] = g_axisHeld[2] = false;
         g_objs.push_back(makeBoxObject("DA", Vec3(0, 0.5, 1.5), Vec3(0.5, 0.5, 0.5), colM));
         g_objs.push_back(makeBoxObject("DB", Vec3(0, 0.5, 3.0), Vec3(0.5, 0.25, 0.5), colM));
-        g_objs.push_back(makeBoxObject("DM", Vec3(0, 0.5, 0.0), Vec3(0.5, 0.5, 0.5), colM));
-        g_cam.target = Vec3(0, 0.5, 0);      /* le rayon central vise DM (hors multi) */
+        /* DM loin de DA/DB : B3.9b aimante le des qu'un accroche entre dans
+           la zone de capture, ce chemin historique verifie le cas SANS voisin */
+        g_objs.push_back(makeBoxObject("DM", Vec3(6, 0.5, 0.0), Vec3(0.5, 0.5, 0.5), colM));
+        g_cam.target = Vec3(6, 0.5, 0);      /* le rayon central vise DM (hors multi) */
         selectOnly(0);
         toggleSelect(1);
         g_lastClickTime = -100.0;
@@ -1209,13 +1211,18 @@ int main() {
         CHECK(g_clipboard.size() == 1 && g_clipboard[0].name == "CA" && g_pasteRepeat == 0,
               "copie : Ctrl+C capture l objet (copie entiere, serie remise a zero)");
         const double step = (g_objs[0].bmax.x - g_objs[0].bmin.x) * g_objs[0].scl + 0.25;
+        /* B3.9c : la copie est posee AU SOL SOUS LE CURSEUR (centre X/Z sur
+           le point vise, fond de boite a y = 0) ; la serie se decale d un pas */
+        Vec3 solV; bool okSol;
+        lineGroundPoint(W, okSol, solV);
+        CHECK(okSol, "colle : setup - le curseur vise le sol (placement B3.9c)");
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
         CHECK((int)g_objs.size() == 2 && g_objs[1].name == "CA (1)"
-              && (g_objs[1].pos - Vec3(step, 0.5, 0)).norm() < 1e-12
+              && (g_objs[1].pos - Vec3(solV.x, 0.5, solV.z)).norm() < 1e-12
               && g_selected == 1 && g_selMulti.empty(),
-              "colle : Ctrl+V pose 1 copie decalee d un pas, nommee CA (1), selectionnee");
+              "colle : Ctrl+V pose 1 copie AU SOL sous le curseur, nommee CA (1), selectionnee");
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
-        CHECK((int)g_objs.size() == 3 && (g_objs[2].pos - Vec3(2.0 * step, 0.5, 0)).norm() < 1e-12,
+        CHECK((int)g_objs.size() == 3 && (g_objs[2].pos - Vec3(solV.x + step, 0.5, solV.z)).norm() < 1e-12,
               "colle : Ctrl+V repete = serie visible (chaque collage decale encore d un pas)");
 
         /* copie multi : le GROUPE est pose, espacement interne identique */
@@ -1231,22 +1238,22 @@ int main() {
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
         const double step2 = (3.5 - (-0.5)) + 0.25;    /* largeur X du groupe copie + espace */
         CHECK((int)g_objs.size() == 4
-              && (g_objs[2].pos - Vec3(step2, 0.5, 0)).norm() < 1e-12
-              && (g_objs[3].pos - Vec3(3.0 + step2, 0.5, 0)).norm() < 1e-12
+              && (g_objs[2].pos - Vec3(solV.x - 1.5, 0.5, solV.z)).norm() < 1e-12
+              && (g_objs[3].pos - Vec3(solV.x + 1.5, 0.5, solV.z)).norm() < 1e-12
               && g_selected == 2 && g_selMulti.size() == 1 && g_selMulti[0] == 3,
-              "colle multi : le GROUPE est pose (espacement interne identique) et devient la selection");
+              "colle multi : le GROUPE est pose au sol sous le curseur (espacement interne identique)");
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
         CHECK((int)g_objs.size() == 6
-              && (g_objs[4].pos - Vec3(2.0 * step2, 0.5, 0)).norm() < 1e-12
-              && (g_objs[5].pos - Vec3(3.0 + 2.0 * step2, 0.5, 0)).norm() < 1e-12,
+              && (g_objs[4].pos - Vec3(solV.x - 1.5 + step2, 0.5, solV.z)).norm() < 1e-12
+              && (g_objs[5].pos - Vec3(solV.x + 1.5 + step2, 0.5, solV.z)).norm() < 1e-12,
               "colle multi : Ctrl+V suivant = nouvelle serie decalee d un pas supplementaire");
 
         /* le presse-papiers survit aux suppressions ; vide = rien pose */
         deleteObject(0);
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
         CHECK((int)g_objs.size() == 7
-              && (g_objs[5].pos - Vec3(3.0 * step2, 0.5, 0)).norm() < 1e-12
-              && (g_objs[6].pos - Vec3(3.0 + 3.0 * step2, 0.5, 0)).norm() < 1e-12,
+              && (g_objs[5].pos - Vec3(solV.x - 1.5 + 2.0 * step2, 0.5, solV.z)).norm() < 1e-12
+              && (g_objs[6].pos - Vec3(solV.x + 1.5 + 2.0 * step2, 0.5, solV.z)).norm() < 1e-12,
               "presse-papiers : independant des suppressions (le collage repart des captures)");
         g_clipboard.clear(); g_pasteRepeat = 0; g_bandFlash.clear();
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
@@ -2398,6 +2405,9 @@ int main() {
             /* profil = polygone 4x4 pose, chemin = fil ligne droite (pose a la main) */
             g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
             polyPose();
+            std::vector<Vec3> profW;               /* sommets MONDE du profil AVANT conversion */
+            for (const Vec3& pv : g_objs.back().v)
+                profW.push_back(g_objs.back().pos + pv * g_objs.back().scl);
             Object chemin;
             chemin.name = "Ligne";
             chemin.traceType = 1; chemin.traceFerme = 0;
@@ -2413,15 +2423,29 @@ int main() {
             CHECK(g_objs[ip].v.size() == 8, "B3 : 2 anneaux de 4 sommets");
             CHECK(g_objs[ip].tri.size() == (size_t)(3 * 12),
                   "B3 : prisme balaye = 12 tris (8 murs + 4 caps)");
-            CHECK(std::fabs(signedVolume(g_objs[ip]) - 160.0) < 1e-6,
-                  "B3 : volume = aire 16 x longueur 10");
-            /* profil perpendiculaire au chemin : anneaux a z = 10 et 20 exactement (monde) */
+            /* B3.10b-bis : la NORMALE de l'anneau 0 est placee PARALLELE a
+               l'axe du fil (rotation minimale autour de la poignee A) :
+               anneaux perpendiculaires au chemin (z = 10 puis 20, monde) */
             bool perp = true;
             for (const Vec3& p : g_objs[ip].v) {
                 const Vec3 pw = g_objs[ip].pos + p * g_objs[ip].scl;
                 if (std::fabs(pw.z - 10.0) > 1e-9 && std::fabs(pw.z - 20.0) > 1e-9) perp = false;
             }
-            CHECK(perp, "B3 : anneaux PERPENDICULAIRES au chemin (z constant par anneau)");
+            CHECK(perp, "B3.10b-bis : anneaux PERPENDICULAIRES au fil (normale de l'anneau 0 parallele a l'axe)");
+            CHECK(std::fabs(signedVolume(g_objs[ip]) - 160.0) < 1e-6,
+                  "B3.10b-bis : prisme droit, volume = aire 16 x longueur 10 = 160");
+            /* rotation rigide autour du pivot : aretes de l'anneau 0 = aretes
+               du profil trace (longueurs identiques, pas de deformation) */
+            {
+                bool congruent = true;
+                for (size_t k = 0; k < 4 && congruent; ++k) {
+                    const Vec3 a = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                    const Vec3 b = g_objs[ip].pos + g_objs[ip].v[(k + 1) % 4] * g_objs[ip].scl;
+                    if (std::fabs((b - a).norm() - (profW[(k + 1) % 4] - profW[k]).norm()) > 1e-9)
+                        congruent = false;
+                }
+                CHECK(congruent, "B3.10b-bis : anneau 0 congruent au profil trace (rotation rigide autour de la poignee)");
+            }
             CHECK(signedVolume(g_objs[ip]) > 0.0, "B3 : normales exterieures (volume signe positif)");
             /* B3.1b : le point de la face le plus proche du depart du fil se
                connecte EXACTEMENT au depart du chemin (maitrise Follow Me) */
@@ -2433,9 +2457,9 @@ int main() {
                 }
                 CHECK(connexe, "B3 : connexion - le point de la face le plus proche du fil est pose sur le depart");
             }
-            /* B3.5 : ROLL par defaut = COLLER PLAT - la section a la station 0
-               garde les directions tracees : ses aretes suivent x OU y (le
-               losange incline d avant ne satisfaisait ni l un ni l autre) */
+            /* B3.10b : l'anneau 0 etant le profil tel que pose, la section a la
+               station 0 garde les directions tracees : ses aretes suivent x OU y
+               (le losange incline d avant ne satisfaisait ni l un ni l autre) */
             {
                 bool aligne = true;
                 for (size_t k = 0; k < 4 && aligne; ++k) {
@@ -2444,7 +2468,7 @@ int main() {
                     if (std::fabs(a.x - b.x) > 1e-9 && std::fabs(a.y - b.y) > 1e-9)
                         aligne = false;
                 }
-                CHECK(aligne, "B3.5 : coller plat - section alignee aux axes (pas de losange incline)");
+                CHECK(aligne, "B3.10b-bis : anneau 0 perpendiculaire au fil, aretes alignees comme tracees (pas de losange incline)");
             }
             /* chemin ferme = solide torique (sans caps) */
             g_polyPts = { Vec3(70,0,0), Vec3(74,0,0), Vec3(74,0,4), Vec3(70,0,4) };
@@ -2611,6 +2635,550 @@ int main() {
         }
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts.clear(); g_lineMode = false; lineReset();
+    }
+
+    /* ===== B3.10a : connexion accrochee au stage 2 (facon copier-coller) ===== */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        const double distSauve = g_cam.dist;
+        g_cam.dist = 14.0;                    /* tolerance filPickTol = 0.33 */
+        /* capture : rayon vise un sommet du fil = accroche captee ; rayon
+           loin du fil = rien (meme helper que le survol et le clic) */
+        {
+            Object fil; fil.name = "Ligne";
+            fil.pos = Vec3(0, 0, 0); fil.scl = 1.0;
+            fil.v = { Vec3(0,0,10), Vec3(0,0,20) };
+            computeObjectDerived(fil);
+            g_objs.push_back(fil);
+            Vec3 conn(0, 0, 0);
+            CHECK(sweepConnCapt(Vec3(5, 0, 10), Vec3(-1, 0, 0), -1, conn),
+                  "B3.10a : rayon vise un sommet du fil = accroche captee");
+            CHECK((conn - Vec3(0, 0, 10)).norm() < 1e-9,
+                  "B3.10a : le point capte = le sommet vise");
+            CHECK(!sweepConnCapt(Vec3(5, 5, 10), Vec3(-1, 0, 0), -1, conn),
+                  "B3.10a : rayon a 5 du fil = aucune accroche captee");
+        }
+        g_objs.clear();
+        /* pose avec accroche captee a l'AUTRE bout de la ligne : le fil est
+           parcouru depuis ce bout ET l'accroche du profil la plus proche du
+           point capte est pincee des la pose (ici un coin du polygone pose
+           exactement sur le point capte) */
+        g_polyPts = { Vec3(0,0,20), Vec3(4,0,20), Vec3(4,0,24), Vec3(0,0,24) };
+        polyPose();
+        {
+            Object chA; chA.name = "Ligne";
+            chA.traceType = 1; chA.traceFerme = 0;
+            chA.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            g_objs.push_back(chA);
+            const size_t ipA = g_objs.size() - 2, icA = g_objs.size() - 1;
+            const Vec3 connA(0, 0, 20);
+            CHECK(sweepConvertTo(g_objs[ipA], g_objs[icA], &connA),
+                  "B3.10a : pose avec accroche captee acceptee");
+            CHECK(g_objs[ipA].traceAccroche >= 0,
+                  "B3.10a : accroche du profil PINCEE des la pose");
+            const Vec3 debA = (connA - g_objs[ipA].pos) * (1.0 / g_objs[ipA].scl);
+            CHECK((g_objs[ipA].traceChemin[0] - debA).norm() < 1e-9,
+                  "B3.10a : capte au bout = fil parcouru depuis ce bout (sens inverse)");
+            std::vector<Vec3> accA;
+            CHECK(sweepAccroches(g_objs[ipA], accA)
+                  && g_objs[ipA].traceAccroche < (int)accA.size(),
+                  "B3.10a : accroche pincee valide");
+            const Vec3 pa = g_objs[ipA].pos + g_objs[ipA].v[0] * g_objs[ipA].scl;
+            CHECK((pa - connA).norm() < 1e-9,
+                  "B3.10a : le coin pince est pose EXACTEMENT sur le point capte");
+        }
+        g_objs.clear(); g_polyPts.clear();
+        /* pose SANS accroche captee = comportement automatique B3.5 intact */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object chB; chB.name = "Ligne";
+            chB.traceType = 1; chB.traceFerme = 0;
+            chB.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            g_objs.push_back(chB);
+            const size_t ipB = g_objs.size() - 2, icB = g_objs.size() - 1;
+            CHECK(sweepConvertTo(g_objs[ipB], g_objs[icB]),
+                  "B3.10a : pose sans accroche captee acceptee");
+            CHECK(g_objs[ipB].traceAccroche == -1,
+                  "B3.10a : sans capte = aucune accroche pincee (B3.5 intact)");
+            const Vec3 debB = (Vec3(0,0,10) - g_objs[ipB].pos) * (1.0 / g_objs[ipB].scl);
+            CHECK((g_objs[ipB].traceChemin[0] - debB).norm() < 1e-9,
+                  "B3.10a : sans capte = depart du fil intact");
+        }
+        g_objs.clear(); g_polyPts.clear();
+        /* MILIEU de segment capte : accroche pincee, depart du fil intact (v1) */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object chC; chC.name = "Ligne";
+            chC.traceType = 1; chC.traceFerme = 0;
+            chC.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            g_objs.push_back(chC);
+            const size_t ipC = g_objs.size() - 2, icC = g_objs.size() - 1;
+            const Vec3 connC(0, 0, 15);
+            CHECK(sweepConvertTo(g_objs[ipC], g_objs[icC], &connC),
+                  "B3.10a : pose avec MILIEU capte acceptee");
+            CHECK(g_objs[ipC].traceAccroche >= 0,
+                  "B3.10a : milieu capte = accroche du profil pincee aussi");
+            const Vec3 debC = (Vec3(0,0,10) - g_objs[ipC].pos) * (1.0 / g_objs[ipC].scl);
+            CHECK((g_objs[ipC].traceChemin[0] - debC).norm() < 1e-9,
+                  "B3.10a : milieu capte = depart du fil intact (v1)");
+        }
+        g_objs.clear(); g_polyPts.clear();
+        /* ligne FERMEE : le depart de la boucle tourne a la station captee */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object chD; chD.name = "Ligne";
+            chD.traceType = 1; chD.traceFerme = 1;
+            chD.tracePts = { Vec3(0,0,30), Vec3(0,0,36), Vec3(4,0,36), Vec3(4,0,30) };
+            g_objs.push_back(chD);
+            const size_t ipD = g_objs.size() - 2, icD = g_objs.size() - 1;
+            const Vec3 connD(4, 0, 36);
+            CHECK(sweepConvertTo(g_objs[ipD], g_objs[icD], &connD),
+                  "B3.10a : pose sur ligne FERMEE acceptee");
+            const Vec3 debD = (connD - g_objs[ipD].pos) * (1.0 / g_objs[ipD].scl);
+            CHECK((g_objs[ipD].traceChemin[0] - debD).norm() < 1e-9,
+                  "B3.10a : ligne fermee = depart de la boucle tourne a la station captee");
+            CHECK(g_objs[ipD].traceChemin.size() == (size_t)4
+                  && g_objs[ipD].traceCheminFerme == 1,
+                  "B3.10a : ligne fermee = boucle intacte (4 stations)");
+        }
+        g_cam.dist = distSauve;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
+    }
+
+    /* ===== B3.10a-bis : correctifs du retour de test B3.10a ===== */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        const double distSauve = g_cam.dist;
+        g_cam.dist = 14.0;                    /* tolerance filPickTol = 0.33 */
+        /* retour 4 : fil FERME trace en SPLINE - la cloture doit etre
+           balayee (avant : echantillonnage OUVERT, dernier segment absent) */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object chS; chS.name = "Spline";
+            chS.pos = Vec3(0, 0, 0); chS.scl = 1.0;
+            chS.traceType = 2; chS.traceFerme = 1;
+            chS.tracePts = { Vec3(0,0,40), Vec3(0,0,46), Vec3(4,0,46), Vec3(4,0,40) };
+            g_objs.push_back(chS);
+            const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+            CHECK(sweepConvertTo(g_objs[ip], g_objs[ic]),
+                  "B3.10a-bis : spline FERMEE en chemin acceptee");
+            CHECK(g_objs[ip].traceCheminFerme == 1,
+                  "B3.10a-bis : spline fermee = traceCheminFerme pose (cloture conservee)");
+            std::vector<Vec3> chem;
+            CHECK(traceCheminChain(g_objs[ip], chem) && chem.size() >= (size_t)3,
+                  "B3.10a-bis : spline fermee = boucle echantillonnee entiere");
+            const size_t nR = chem.size();
+            bool cloture = false;
+            for (size_t k = 0; k + 2 < g_objs[ip].tri.size(); k += 3) {
+                const unsigned a = g_objs[ip].tri[k];
+                const unsigned b = g_objs[ip].tri[k + 1];
+                const unsigned c = g_objs[ip].tri[k + 2];
+                const unsigned mn = std::min(a, std::min(b, c));
+                const unsigned mx = std::max(a, std::max(b, c));
+                if (mn < 4 && mx >= (unsigned)((nR - 1) * 4)) { cloture = true; break; }
+            }
+            CHECK(cloture,
+                  "B3.10a-bis : spline fermee = mur de rebouclage present (dernier segment balaye)");
+        }
+        g_objs.clear(); g_polyPts.clear();
+        /* retour 4 suite : la capture d'accroche ne porte que sur le fil
+           VISE (avant : le voisin captait la connexion) */
+        {
+            Object filA; filA.name = "Ligne";
+            filA.pos = Vec3(0, 0, 0); filA.scl = 1.0;
+            filA.v = { Vec3(0,0,10), Vec3(0,0,13), Vec3(0,0,20) };
+            computeObjectDerived(filA);
+            g_objs.push_back(filA);
+            Object filB; filB.name = "Ligne (2)";
+            filB.pos = Vec3(0, 0, 0); filB.scl = 1.0;
+            filB.v = { Vec3(-0.2,0,13.5), Vec3(-0.2,0,14.0) };
+            computeObjectDerived(filB);
+            g_objs.push_back(filB);
+            Vec3 conn(0, 0, 0); int filVise = -1;
+            /* rayon vers A : impact (0,0,13.5) = a 0.5 ( > tol) des accroches
+               de A -> rien capte, MEME si un sommet du voisin B (a 0.2 du
+               rayon) est tres proche (avant : B captait la connexion) */
+            const bool okA = sweepConnCapt(Vec3(5,0,13.5), Vec3(-1,0,0), -1, conn, &filVise);
+            CHECK(!okA && filVise == 0,
+                  "B3.10a-bis : rayon vers A = fil VISE A, aucune accroche du voisin captee");
+            /* sanity : rayon inverse = vise B, capte le sommet de B */
+            filVise = -1;
+            const bool okB = sweepConnCapt(Vec3(-5,0,13.5), Vec3(1,0,0), -1, conn, &filVise);
+            CHECK(okB && filVise == 1 && (conn - Vec3(-0.2,0,13.5)).norm() < 1e-9,
+                  "B3.10a-bis : rayon vers B = fil VISE B, sommet de B capte");
+            /* B3.10a-ter : VISEE LARGE (poignees allumees des l'approche) -
+               rayon a 1 du fil : entre la zone de capture (0.33) et la zone
+               de survol (0.99) -> le fil est VISE (poignees allumees) mais
+               aucune accroche captee (pas de magenta, pas de pincement) */
+            filVise = -1;
+            const bool okLoin = sweepConnCapt(Vec3(5,0,14), Vec3(-1,0,0), -1, conn,
+                                              &filVise, sweepTolVise());
+            CHECK(!okLoin && filVise == 0,
+                  "B3.10a-ter : survol a 1 du fil (zone de survol) = fil VISE allume sans capture");
+            filVise = -1;
+            const bool okSom = sweepConnCapt(Vec3(5,0,10), Vec3(-1,0,0), -1, conn,
+                                             &filVise, sweepTolVise());
+            CHECK(okSom && filVise == 0 && (conn - Vec3(0,0,10)).norm() < 1e-9,
+                  "B3.10a-ter : survol sur le sommet = capture (magenta), meme visee large");
+        }
+        g_objs.clear();
+        g_cam.dist = distSauve;
+        /* retour 4 suite (coeur du retour "c'est le fil qui montre des
+           poignees") : la comparaison fil/solide en espace ECRAN - un fil
+           voisin DANS la tolerance du rayon mais nettement decale a l'ecran
+           ne gagne plus sur le solide vise */
+        {
+            GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+            g_winW = 1600; g_winH = 900;
+            g_cam = g_camHome;
+            g_cam.target = Vec3(0, 2, 0); g_cam.dist = 25.0;
+            g_editMode = false; g_editObj = -1; g_editGrab = -1;
+            g_rightDown = false; g_mode = M_None;
+            auto pixelDe = [](const Vec3& c, double& px, double& py) {
+                const double t = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+                const Vec3 d = normalized(c - g_cam.pos());
+                const double df = dot(d, g_cam.forward());
+                const double aspect = (double)g_winW / (double)g_winH;
+                const double ndcX = dot(d, g_cam.right()) / (df * t * aspect);
+                const double ndcY = dot(d, g_cam.up()) / (df * t);
+                px = (ndcX + 1.0) * 0.5 * (double)g_winW;
+                py = (1.0 - ndcY) * 0.5 * (double)g_winH;
+            };
+            {   /* solide : meme boite que le bloc B3.6a-bis */
+                Object cube; cube.name = "Cube";
+                cube.v = { Vec3(-5,0,-5),Vec3(5,0,-5),Vec3(5,0,5),Vec3(-5,0,5),
+                           Vec3(-5,2,-5),Vec3(5,2,-5),Vec3(5,2,5),Vec3(-5,2,5) };
+                const unsigned t[] = {0,1,2, 0,2,3, 4,6,5, 4,7,6, 0,4,5, 0,5,1,
+                                      1,5,6, 1,6,2, 2,6,7, 2,7,3, 3,7,4, 3,4,0};
+                for (int i = 0; i < 36; ++i) cube.tri.push_back(t[i]);
+                computeObjectDerived(cube);
+                g_objs.push_back(cube);
+            }
+            const Vec3 Pf(-4, 2, 3);              /* point de face prouve par B3.6a-bis */
+            const Vec3 C = g_cam.pos();
+            const Vec3 rd = normalized(Pf - C);
+            const Vec3 P05 = C + rd * (0.5 * (Pf - C).norm());
+            const Vec3 perp = normalized(cross(rd, Vec3(0, 1, 0)));
+            const Vec3 Q = P05 + perp * 0.3;      /* fil voisin : dans la
+                tolerance du rayon (~0.3 < tol 0.55) mais ~20 px a l'ecran */
+            {
+                Object fil; fil.name = "Ligne";
+                fil.pos = Vec3(0, 0, 0); fil.scl = 1.0;
+                fil.v = { Q - Vec3(0, 0.25, 0), Q + Vec3(0, 0.25, 0) };
+                computeObjectDerived(fil);
+                g_objs.push_back(fil);
+            }
+            extern double g_stubCursorX, g_stubCursorY;
+            double px, py;
+            pixelDe(Pf, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            CHECK(pickAt(W) == 0,
+                  "B3.10a-bis : clic sur la face visee = le SOLIDE gagne (fil voisin decale en espace ecran)");
+            pixelDe(Q, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            CHECK(pickAt(W) == 1,
+                  "B3.10a-bis : clic sur le fil lui-meme = le FIL gagne toujours");
+            g_cam = g_camHome;
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
+    /* ===== B3.10a-quater : poignees du PROFIL au stage 2 (retour test :
+       "je n'ai jamais vu les poignees du rectangle") ===== */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        const double distSauve = g_cam.dist;
+        g_cam.dist = 14.0;                    /* tolerance filPickTol = 0.33 */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object ch; ch.name = "Ligne";
+            ch.pos = Vec3(0, 0, 0); ch.scl = 1.0;
+            ch.traceType = 1; ch.traceFerme = 0;
+            ch.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            ch.v = ch.tracePts;               /* fil reel : v pose pour le filRayHit */
+            computeObjectDerived(ch);
+            g_objs.push_back(ch);
+        }
+        const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+        /* capture du sommet (0,0,20) du fil via la visee large du stage 2 */
+        Vec3 conn(0, 0, 0); int filVise = -1;
+        CHECK(sweepConnCapt(Vec3(5, 0, 20), Vec3(-1, 0, 0), (int)ip, conn, &filVise, sweepTolVise())
+              && filVise == (int)ic && (conn - Vec3(0, 0, 20)).norm() < 1e-9,
+              "B3.10a-quater : stage 2, capture du sommet du fil (fil vise, point capte)");
+        /* l'accroche du profil affichee en magenta = CELLE que la pose pince
+           (UN SEUL CHEMIN DE CODE : sweepAccrocheProfilProche) */
+        std::vector<Vec3> accP;
+        CHECK(sweepAccroches(g_objs[ip], accP) && !accP.empty(),
+              "B3.10a-quater : accroches du profil reconstruites (sommets + milieux)");
+        const int pince = sweepAccrocheProfilProche(g_objs[ip], conn);
+        CHECK(pince >= 0 && pince < (int)accP.size(),
+              "B3.10a-quater : accroche du profil candidate au pincement (magenta)");
+        CHECK(sweepConvertTo(g_objs[ip], g_objs[ic], &conn),
+              "B3.10a-quater : pose avec capture acceptee");
+        CHECK(g_objs[ip].traceAccroche == pince,
+              "B3.10a-quater : la pose pince EXACTEMENT l'accroche affichee (meme helper)");
+        g_objs.clear(); g_polyPts.clear();
+        /* dessin du stage 2 : poignees du profil allumees meme SANS fil vise,
+           et magenta du profil quand une accroche du fil est captee */
+        g_polyPts = { Vec3(0,0,0), Vec3(4,0,0), Vec3(4,0,4), Vec3(0,0,4) };
+        polyPose();
+        g_sweepStage = 2;
+        g_sweepProfil = (int)g_objs.size() - 1;
+        g_sweepConnFil = -1; g_sweepConnOk = false;
+        drawSweepHandles();
+        CHECK(true, "B3.10a-quater : drawSweepHandles stage 2 sans fil vise = poignees du profil dessinees");
+        g_sweepConnOk = true; g_sweepConn = Vec3(2, 0, 2);
+        drawSweepHandles();
+        CHECK(sweepAccrocheProfilProche(g_objs[(size_t)g_sweepProfil], g_sweepConn) >= 0,
+              "B3.10a-quater : avec capture, l'accroche pincee du profil est determinee (magenta)");
+        g_sweepStage = 0; g_sweepProfil = -1; g_sweepConnOk = false; g_sweepConnFil = -1;
+        g_cam.dist = distSauve;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
+    }
+
+    /* ===== B3.10b-bis : normale de l'anneau 0 PARALLELE a l'axe du fil,
+       placement depuis la poignee selectionnee (pivot A) ===== */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        /* profil NON aligne aux axes (triangle quelconque, plan y = 0),
+           chemin = ligne droite le long de z, connexion PINCEE sur le depart
+           du fil (poignee selectionnee = pivot du placement) */
+        g_polyPts = { Vec3(0,0,0), Vec3(4,0,1), Vec3(2,0,5) };
+        polyPose();
+        std::vector<Vec3> profW;
+        for (const Vec3& pv : g_objs.back().v)
+            profW.push_back(g_objs.back().pos + pv * g_objs.back().scl);
+        {
+            Object ch; ch.name = "Ligne";
+            ch.pos = Vec3(0, 0, 0); ch.scl = 1.0;
+            ch.traceType = 1; ch.traceFerme = 0;
+            ch.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            ch.v = ch.tracePts;
+            computeObjectDerived(ch);
+            g_objs.push_back(ch);
+        }
+        const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+        const Vec3 conn(0, 0, 10);
+        CHECK(sweepConvertTo(g_objs[ip], g_objs[ic], &conn),
+              "B3.10b-bis : balayage triangle quelconque + ligne accepte (connexion pincee)");
+        CHECK(g_objs[ip].v.size() == 6, "B3.10b-bis : 2 anneaux de 3 sommets");
+        CHECK(g_objs[ip].traceAccroche >= 0,
+              "B3.10b-bis : poignee selectionnee pincee (traceAccroche)");
+        /* le pivot A (poignee selectionnee) est pose exactement sur le depart du fil */
+        {
+            const Vec3 chem0w = g_objs[ip].pos + g_objs[ip].traceChemin[0] * g_objs[ip].scl;
+            double dmin = 1e300;
+            for (size_t k = 0; k < 3; ++k) {
+                const Vec3 a = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                const Vec3 b = g_objs[ip].pos + g_objs[ip].v[(k + 1) % 3] * g_objs[ip].scl;
+                dmin = std::min(dmin, (a - chem0w).norm());
+                dmin = std::min(dmin, ((a + b) * 0.5 - chem0w).norm());
+            }
+            CHECK(dmin < 1e-9,
+                  "B3.10b-bis : la poignee selectionnee (pivot A) est posee exactement sur le depart du fil");
+        }
+        /* la NORMALE de l'anneau 0 est PARALLELE a l'axe du fil : z constant par anneau */
+        bool z10 = true, z20 = true;
+        for (size_t k = 0; k < 3 && z10; ++k) {
+            const Vec3 pw = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+            if (std::fabs(pw.z - 10.0) > 1e-9) z10 = false;
+        }
+        for (size_t k = 3; k < 6 && z20; ++k) {
+            const Vec3 pw = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+            if (std::fabs(pw.z - 20.0) > 1e-9) z20 = false;
+        }
+        CHECK(z10 && z20,
+              "B3.10b-bis : anneaux PERPENDICULAIRES au fil (normale de l'anneau 0 parallele a l'axe du fil)");
+        /* rotation rigide autour du pivot : aretes de l'anneau 0 = aretes du profil trace */
+        bool congruent = true;
+        for (size_t k = 0; k < 3 && congruent; ++k) {
+            const Vec3 a = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+            const Vec3 b = g_objs[ip].pos + g_objs[ip].v[(k + 1) % 3] * g_objs[ip].scl;
+            if (std::fabs((b - a).norm() - (profW[(k + 1) % 3] - profW[k]).norm()) > 1e-9)
+                congruent = false;
+        }
+        CHECK(congruent, "B3.10b-bis : anneau 0 congruent au profil trace (rotation rigide, pas de deformation)");
+        CHECK(signedVolume(g_objs[ip]) > 0.0,
+              "B3.10b-bis : normales exterieures conservees (volume signe > 0)");
+        /* roll (B3.6b) = reglage fin : aretes de l'anneau 0 invariantes sous roll */
+        {
+            std::vector<double> aretes;
+            for (size_t k = 0; k < 3; ++k) {
+                const Vec3 a = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                const Vec3 b = g_objs[ip].pos + g_objs[ip].v[(k + 1) % 3] * g_objs[ip].scl;
+                aretes.push_back((b - a).norm());
+            }
+            g_objs[ip].traceRoll = 33.0;
+            traceRegen(g_objs[ip]);
+            bool inv = true;
+            for (size_t k = 0; k < 3 && inv; ++k) {
+                const Vec3 a = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                const Vec3 b = g_objs[ip].pos + g_objs[ip].v[(k + 1) % 3] * g_objs[ip].scl;
+                if (std::fabs((b - a).norm() - aretes[k]) > 1e-9) inv = false;
+            }
+            CHECK(inv, "B3.10b-bis : roll 33 deg = aretes de l'anneau 0 invariantes (rotation dans le plan)");
+            g_objs[ip].traceRoll = 0.0;
+            traceRegen(g_objs[ip]);
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
+    }
+
+    /* ===== B3.10c : arret en cours de route (traceStop) + tirer manuellement ===== */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        /* helpers d'arc */
+        {
+            Object fil; fil.name = "Ligne";
+            fil.pos = Vec3(0, 0, 0); fil.scl = 1.0;
+            fil.traceType = 1; fil.traceFerme = 0;
+            fil.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            fil.v = fil.tracePts;
+            computeObjectDerived(fil);
+            std::vector<Vec3> pts = { fil.pos + fil.v[0] * fil.scl, fil.pos + fil.v[1] * fil.scl };
+            double d = 0.0;
+            CHECK(std::fabs(pointPolyArc(pts, false, Vec3(0,0,15), d) - 5.0) < 1e-9 && d < 1e-9,
+                  "B3.10c : pointPolyArc - milieu du fil = arc 5, distance 0");
+            CHECK(std::fabs(rayPolyArc(Vec3(5,0,15), Vec3(-1,0,0), pts, false, d) - 5.0) < 1e-9 && d < 1e-9,
+                  "B3.10c : rayPolyArc - rayon vers le milieu du fil = arc 5");
+            CHECK(std::fabs(filArcAt(fil, Vec3(0,0,20)) - 10.0) < 1e-9,
+                  "B3.10c : filArcAt - bout du fil = arc 10");
+            CHECK(std::fabs(filArcAt(fil, Vec3(0,0,10)) - 0.0) < 1e-9,
+                  "B3.10c : filArcAt - depart du fil = arc 0");
+        }
+        /* sweepApplyStop : troncature + station interpolee exacte */
+        {
+            Object o; o.traceStop = -1.0;
+            std::vector<Vec3> chem = { Vec3(0,0,0), Vec3(0,0,10), Vec3(10,0,10) };
+            bool boucle = false;
+            o.traceStop = 5.0; sweepApplyStop(o, chem, boucle);
+            CHECK(chem.size() == 2 && (chem[1] - Vec3(0,0,5)).norm() < 1e-9 && !boucle,
+                  "B3.10c : sweepApplyStop - arret a 5 (ouvert) = 2 stations, derniere interpolee (0,0,5)");
+            chem = { Vec3(0,0,0), Vec3(0,0,10), Vec3(10,0,10) }; boucle = false;
+            o.traceStop = 15.0; sweepApplyStop(o, chem, boucle);
+            CHECK(chem.size() == 3 && (chem[2] - Vec3(5,0,10)).norm() < 1e-9,
+                  "B3.10c : sweepApplyStop - arret a 15 = 3 stations, derniere (5,0,10)");
+            chem = { Vec3(0,0,0), Vec3(0,0,10), Vec3(10,0,10) }; boucle = false;
+            o.traceStop = 100.0; sweepApplyStop(o, chem, boucle);
+            CHECK(chem.size() == 3 && !boucle,
+                  "B3.10c : sweepApplyStop - arret >= total = tout le fil inchange (chemin ouvert inchange)");
+            chem = { Vec3(0,0,0), Vec3(0,0,10), Vec3(10,0,10) }; boucle = true;
+            o.traceStop = 25.0; sweepApplyStop(o, chem, boucle);   /* cloture (10,0,10)->(0,0,0), long 14.142 ; arc 25 = 20 + 5 sur la cloture */
+            const Vec3 attendu = Vec3(10,0,10) + normalized(Vec3(0,0,0) - Vec3(10,0,10)) * 5.0;
+            CHECK(!boucle && chem.size() == 4 && (chem[3] - attendu).norm() < 1e-9,
+                  "B3.10c : sweepApplyStop - boucle, arret a 25 = 3 stations + cloture interpolee a 5 du coin, chemin ouvert");
+        }
+        /* pose avec arret manuel via sweepConvertTo(stopLocal) */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object ch; ch.name = "Ligne";
+            ch.pos = Vec3(0,0,0); ch.scl = 1.0;
+            ch.traceType = 1; ch.traceFerme = 0;
+            ch.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            ch.v = ch.tracePts;
+            computeObjectDerived(ch);
+            g_objs.push_back(ch);
+        }
+        const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+        CHECK(sweepConvertTo(g_objs[ip], g_objs[ic], nullptr, 5.0),
+              "B3.10c : pose avec arret manuel (stopLocal = 5) acceptee");
+        CHECK(std::fabs(g_objs[ip].traceStop - 5.0) < 1e-12,
+              "B3.10c : traceStop memorise (parametre de construction regenerable)");
+        CHECK(g_objs[ip].v.size() == 8,
+              "B3.10c : arret a mi-longueur = 2 anneaux (station d'arret interpolee)");
+        {
+            bool z10 = true, z15 = true;
+            for (size_t k = 0; k < 4; ++k) {
+                const Vec3 pw = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                if (std::fabs(pw.z - 10.0) > 1e-9) z10 = false;
+            }
+            for (size_t k = 4; k < 8; ++k) {
+                const Vec3 pw = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                if (std::fabs(pw.z - 15.0) > 1e-9) z15 = false;
+            }
+            CHECK(z10 && z15, "B3.10c : anneau d'arret a z = 15 (mi-longueur du fil)");
+        }
+        CHECK(g_objs[ip].tri.size() == (size_t)(3 * 12),
+              "B3.10c : cap pose a l'arret (profil plein, chemin effectif ouvert) : 12 tris");
+        CHECK(std::fabs(signedVolume(g_objs[ip]) - 80.0) < 1e-6,
+              "B3.10c : volume = aire 16 x longueur balayee 5 = 80");
+        g_objs[ip].traceStop = -1.0;
+        traceRegen(g_objs[ip]);
+        CHECK(std::fabs(signedVolume(g_objs[ip]) - 160.0) < 1e-6,
+              "B3.10c : traceStop = -1 = tout le fil (volume 160 retrouve)");
+        /* persistance : stop survit au save/load (peek en cascade apres roll) */
+        {
+            g_objs[ip].traceStop = 5.0;
+            traceRegen(g_objs[ip]);
+            std::string err;
+            const std::string p = tmpPath("b310c_stop.s3projet");
+            CHECK(saveProject(p, err), "B3.10c : enregistrement (stop 5)");
+            const size_t nA = g_objs.size();
+            g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+            CHECK(loadProject(p, err), "B3.10c : relecture");
+            const bool ok = g_objs.size() == nA && g_objs[ip].traceType == 9
+                      && std::fabs(g_objs[ip].traceStop - 5.0) < 1e-9;
+            CHECK(ok, "B3.10c : stop relu (ligne optionnelle apres roll)");
+            if (ok) {
+                traceRegen(g_objs[ip]);
+                CHECK(std::fabs(signedVolume(g_objs[ip]) - 80.0) < 1e-6,
+                      "B3.10c : geometrie relue = arret a 5 applique par la regen (volume 80)");
+            }
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
+        /* pose MANUELLE via sweepClick au stage 2 (curseur au milieu du fil) */
+        {
+            GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+            g_winW = 1600; g_winH = 900;
+            g_cam = g_camHome;
+            g_cam.target = Vec3(0, 0, 15); g_cam.dist = 25.0;
+            g_editMode = false; g_editObj = -1; g_editGrab = -1;
+            g_rightDown = false; g_mode = M_None;
+            g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+            polyPose();
+            {
+                Object ch; ch.name = "Ligne";
+                ch.pos = Vec3(0,0,0); ch.scl = 1.0;
+                ch.traceType = 1; ch.traceFerme = 0;
+                ch.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+                ch.v = ch.tracePts;
+                computeObjectDerived(ch);
+                g_objs.push_back(ch);
+            }
+            const size_t ip2 = g_objs.size() - 2;
+            g_sweepStage = 2;
+            g_sweepProfil = (int)ip2;
+            g_sweepManuel = true;
+            auto pixelDe = [](const Vec3& c, double& px, double& py) {
+                const double t = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+                const Vec3 d = normalized(c - g_cam.pos());
+                const double df = dot(d, g_cam.forward());
+                const double aspect = (double)g_winW / (double)g_winH;
+                const double ndcX = dot(d, g_cam.right()) / (df * t * aspect);
+                const double ndcY = dot(d, g_cam.up()) / (df * t);
+                px = (ndcX + 1.0) * 0.5 * (double)g_winW;
+                py = (1.0 - ndcY) * 0.5 * (double)g_winH;
+            };
+            extern double g_stubCursorX, g_stubCursorY;
+            double px, py;
+            pixelDe(Vec3(0, 0, 15), px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            sweepClick(W);
+            CHECK(g_sweepStage == 0 && g_sweepManuel == false,
+                  "B3.10c : sweepClick stage 2 manuel = pose, mode manuel desarme");
+            CHECK(g_objs[ip2].traceType == 9 && std::fabs(g_objs[ip2].traceStop - 5.0) < 2e-3,
+                  "B3.10c : arret pose au point clique (milieu du fil = arc 5, tolerance pixel)");
+            CHECK(std::fabs(signedVolume(g_objs[ip2]) - 80.0) < 0.05,
+                  "B3.10c : tube manuel = volume 80 (moitie du fil balayee, tolerance pixel)");
+            g_cam = g_camHome;
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
+        g_sweepStage = 0; g_sweepProfil = -1; g_sweepManuel = false; g_stopDrag = -1; g_stopPreview = -1.0;
     }
 
     { /* B3.6a-bis : fils SELECTIONNABLES devant un solide (splines par
@@ -3202,6 +3770,483 @@ int main() {
         g_cam = g_camHome;
     }
 
+    { /* B3.7 : collage generique - menu contextuel, accroche intelligente,
+           alignement arete/arete (3b), snap coin, undo, refus */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        const double colT[3] = {0.6, 0.6, 0.6};
+        g_winW = 1600; g_winH = 900;
+        g_cam.target = Vec3(0, 0.5, 0); g_cam.dist = 20.0;
+        g_cam.theta = 0.0; g_cam.phi = 0.6;
+        double px, py;
+        const double tg = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+        auto pixelDe = [&](const Vec3& c, double& ox, double& oy) {
+            const Vec3 d = normalized(c - g_cam.pos());
+            const double df = dot(d, g_cam.forward());
+            const double aspect = (double)g_winW / (double)g_winH;
+            ox = (dot(d, g_cam.right()) / (df * tg * aspect) + 1.0) * 0.5 * (double)g_winW;
+            oy = (1.0 - dot(d, g_cam.up()) / (df * tg)) * 0.5 * (double)g_winH;
+        };
+        extern double g_stubCursorX, g_stubCursorY;
+        auto resetScene = [&]() {
+            g_objs.clear();
+            /* 2x1x2 posee au sol : face superieure a y = 1 (les cibles visees
+               ci-dessous sont des points reels de cette face) */
+            g_objs.push_back(makeBoxObject("Cible", Vec3(0, 0.5, 0), Vec3(1, 0.5, 1), colT));
+            g_objs.push_back(makeBoxObject("Brique", Vec3(10, 0.25, 0), Vec3(0.5, 0.5, 0.5), colT));
+            g_selected = -1; g_selMulti.clear(); undoVide();
+            g_collStage = 0; g_collSrc = -1; g_mode = M_None;
+        };
+        auto distAccrocheCible = [&](const Vec3& c) {
+            std::vector<CollAcc> acc; collAccroches(g_objs[1], acc);
+            double dm = 1e300;
+            for (const CollAcc& a : acc) dm = std::min(dm, (a.p - c).norm());
+            return dm;
+        };
+        /* comme collClick : aretes INCIDENTES a l'accroche collee (la plus
+           proche de la cible) seulement - une boite a TOUJOURS des aretes
+           alignees X, le max global sur toutes les aretes est trivial */
+        auto dirAreteAligne = [&](const Vec3& cible, const Vec3& dirB) {
+            std::vector<CollAcc> acc; collAccroches(g_objs[1], acc);
+            size_t bi = 0; double bd = 1e300;
+            for (size_t i = 0; i < acc.size(); ++i) {
+                const double d = (acc[(size_t)i].p - cible).norm();
+                if (d < bd) { bd = d; bi = i; }
+            }
+            const Object& o = g_objs[1];
+            double best = -1.0;
+            if (acc[bi].vb >= 0) {
+                Vec3 d2 = (o.v[(size_t)acc[bi].vb] - o.v[(size_t)acc[bi].va]) * o.scl;
+                const double L2 = d2.norm();
+                if (L2 > 1e-12) best = std::fabs(dot(d2 * (1.0 / L2), dirB));
+            } else {
+                for (const auto& e : o.edges) {
+                    if (e.first != acc[bi].va && e.second != acc[bi].va) continue;
+                    Vec3 d2 = (o.v[(size_t)e.second] - o.v[(size_t)e.first]) * o.scl;
+                    const double L2 = d2.norm();
+                    if (L2 < 1e-12) continue;
+                    best = std::max(best, std::fabs(dot(d2 * (1.0 / L2), dirB)));
+                }
+            }
+            return best;
+        };
+
+        /* 1. armement via le dispatcher (UN SEUL CHEMIN DE CODE), toggle */
+        resetScene(); selectOnly(1);
+        runToolCommand(IDM_COLLER_SUR);
+        CHECK(g_collStage == 1 && g_collSrc == 1,
+              "B3.7 : Coller sur... arme le collage sur l'objet selectionne");
+        runToolCommand(IDM_COLLER_SUR);
+        CHECK(g_collStage == 0, "B3.7 : 2e appel = desarme (toggle)");
+        runToolCommand(IDM_COLLER_SUR);
+        CHECK(g_collStage == 1, "B3.7 : re-arme");
+
+        /* 2. FACE visee : l'accroche la plus proche arrive sur le point vise
+           (0.5,1,-0.5) : a plus de tol (0.45) de toute arete et de la
+           diagonale du fan -> aucun snap, cible = impact exact du rayon */
+        pixelDe(Vec3(0.5, 1, -0.5), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        g_lastClickTime = -100.0;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_collStage == 0 && distAccrocheCible(Vec3(0.5, 1, -0.5)) < 1e-9,
+              "B3.7 : face visee = l'accroche la plus proche posee exactement sur la cible");
+        CHECK(g_undoPile.size() == 1 && g_undoPile.back().label == "collage",
+              "B3.7 : le collage pousse UN pas labelle");
+        undoAnnule();
+        CHECK((g_objs[1].pos - Vec3(10, 0.25, 0)).norm() < 1e-12, "B3.7 : Ctrl+Z = brique a sa place d'origine");
+        undoRetablit();
+        CHECK(distAccrocheCible(Vec3(0.5, 1, -0.5)) < 1e-9, "B3.7 : Ctrl+Y = collage retabli");
+
+        /* 3. ARETE visee : alignement (3b) - la brique part tournee de 30 deg */
+        resetScene(); selectOnly(1);
+        {
+            std::vector<Vec3> base = g_objs[1].v;
+            applyRotationAt(g_objs[1], base, objectRotationPivot(g_objs[1]), 1, 30.0);
+            /* 30 deg : a 45 deg une DIAGONALE du fan devient parallele a X
+               (dot = 1.0) et l'alignement n'a rien a rattraper ; a 30 deg le
+               max incident = 0.966 (diagonale a 15 deg) -> seuil 0.98 */
+            CHECK(dirAreteAligne(Vec3(0, 1, 1), Vec3(1, 0, 0)) < 0.98, "B3.7 : setup - les aretes incidentes de la brique tournee de 30 deg");
+        }
+        collStart();
+        /* vise pres de l'arete superieure z=1 : impact (0,1,0.9), snap a 0.1
+           -> cible exacte (0,1,1) sur l'arete, direction (1,0,0) */
+        pixelDe(Vec3(0, 1, 0.9), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_collStage == 0 && dirAreteAligne(Vec3(0, 1, 1), Vec3(1, 0, 0)) > 0.999,
+              "B3.7 : arete visee = l'arete de la brique s'aligne sur l'arete cible (30 deg rattrapes)");
+        CHECK(distAccrocheCible(Vec3(0, 1, 1)) < 1e-9,
+              "B3.7 : l'accroche reste exactement sur le point de l'arete apres alignement");
+
+        /* 4. COIN vise : snap exact sur le sommet */
+        resetScene(); selectOnly(1);
+        collStart();
+        /* vise pres du coin (1,1,1) : impact (0.9,1,0.9), snap sommet a 0.14 */
+        pixelDe(Vec3(0.9, 1, 0.9), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(distAccrocheCible(Vec3(1, 1, 1)) < 1e-9,
+              "B3.7 : coin vise = snap exact sur le sommet");
+
+        /* 4b. B3.7b : navigation libre pendant le collage (retour test :
+           pas de pan/zoom pour choisir la face cible) */
+        resetScene(); selectOnly(1);
+        collStart();
+        pixelDe(Vec3(50, 5, 50), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_mode == M_Pan && g_collStage == 1,
+              "B3.7b : Maj+clic pendant le collage = pan, collage toujours arme");
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        CHECK(g_mode == M_None, "B3.7b : relachement = fin du pan");
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_mode == M_Orbit && g_collStage == 1,
+              "B3.7b : clic dans le vide = orbite, collage toujours arme");
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        {
+            const double dAvant = g_cam.dist;
+            onScroll(W, 0, 3.0);
+            CHECK(g_cam.dist < dAvant && g_collStage == 1,
+                  "B3.7b : la molette zoome pendant le collage");
+            g_cam.dist = 20.0;
+        }
+        collCancel("fin du sous-bloc");
+
+        /* 4c. B3.7c : regle navigation GENERALISEE - Maj + clic G = pan dans
+           tous les modes armes (retour : "a utiliser systematiquement sauf
+           si totalement impossible") */
+        resetScene(); g_cam.dist = 20.0;
+        {
+            auto majPanDansMode = [&]() {
+                onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_MOD_SHIFT);
+                const bool ok = g_mode == M_Pan;
+                onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+                return ok && g_mode == M_None;
+            };
+            runToolCommand(IDM_TOOL_LINE);
+            CHECK(majPanDansMode() && g_lineMode,
+                  "B3.7c : Maj+clic pendant la LIGNE armee = pan, ligne toujours armee");
+            lineCancel("fin");
+            runToolCommand(IDM_TOOL_RECT);
+            CHECK(majPanDansMode() && g_rectMode,
+                  "B3.7c : Maj+clic pendant le RECTANGLE arme = pan, rect toujours arme");
+            rectCancel("fin");
+            runToolCommand(IDM_TOOL_CERCLE);
+            CHECK(majPanDansMode() && g_cercleMode,
+                  "B3.7c : Maj+clic pendant le CERCLE arme = pan, cercle toujours arme");
+            cercleCancel("fin");
+        }
+        /* non-regression selection : Maj+clic SUR un objet = le deplacer (drag),
+           pas un pan ; Maj+clic dans le vide = pan (regle T1.x conservee) */
+        resetScene(); selectOnly(0);
+        pixelDe(Vec3(0, 0.5, 0), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        g_lastClickTime = -100.0;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_mode == M_Drag,
+              "B3.7c : selection - Maj+clic sur un objet = drag de l'objet (pas un pan)");
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        pixelDe(Vec3(50, 5, 50), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        g_lastClickTime = -100.0;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_mode == M_Pan,
+              "B3.7c : selection - Maj+clic dans le vide = pan (regle conservee)");
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+
+        /* 5. refus et sorties */
+        resetScene();
+        collStart();
+        CHECK(g_collStage == 0, "B3.7 : sans selection = refus");
+        selectOnly(1);
+        collStart();
+        pixelDe(Vec3(50, 5, 50), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_collStage == 1, "B3.7 : clic dans le vide = collage toujours arme (message)");
+        onKey(W, GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
+        CHECK(g_collStage == 0, "B3.7 : Echap = annule");
+
+        resetScene();
+        g_cam = g_camHome;
+    }
+
+    { /* B3.8 : zoom sur le curseur (facon SketchUp) - le zoom AVANT converge
+          vers la zone pointee par le curseur ; le point vise reste SOUS le
+          curseur (recentrer = zoom arriere, curseur, zoom avant) */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        const double colT[3] = {0.6, 0.6, 0.6};
+        g_winW = 1600; g_winH = 900;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_objs.push_back(makeBoxObject("Sol", Vec3(0, 0.5, 0), Vec3(1, 0.5, 1), colT));
+        g_cam.target = Vec3(0, 0.5, 0); g_cam.dist = 20.0;
+        g_cam.theta = 0.0; g_cam.phi = 0.6;
+        double px, py, qx, qy;
+        const double tg = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+        auto pixelDe = [&](const Vec3& c, double& ox, double& oy) {
+            const Vec3 d = normalized(c - g_cam.pos());
+            const double df = dot(d, g_cam.forward());
+            const double aspect = (double)g_winW / (double)g_winH;
+            ox = (dot(d, g_cam.right()) / (df * tg * aspect) + 1.0) * 0.5 * (double)g_winW;
+            oy = (1.0 - dot(d, g_cam.up()) / (df * tg)) * 0.5 * (double)g_winH;
+        };
+        extern double g_stubCursorX, g_stubCursorY;
+        const Vec3 Pv(0.3, 1.0, -0.2);          /* point sur la face du dessus */
+        pixelDe(Pv, px, py); g_stubCursorX = px; g_stubCursorY = py;
+        const double d0 = g_cam.dist; const Vec3 t0 = g_cam.target;
+        onScroll(W, 0, 1.0);
+        CHECK(std::fabs(g_cam.dist - d0 * 0.8) < 1e-9,
+              "B3.8 : zoom avant = 20 % par cran (regle conservee)");
+        CHECK((g_cam.target - t0).norm() > 1e-9,
+              "B3.8 : zoom avant = la cible camera avance vers le point vise");
+        pixelDe(Pv, qx, qy);
+        CHECK(std::fabs(qx - px) < 0.5 && std::fabs(qy - py) < 0.5,
+              "B3.8 : zoom avant - le point vise reste sous le curseur");
+        {   /* zoom arriere : s'eloigne, le point reste sous le curseur */
+            const double d1 = g_cam.dist; const Vec3 t1 = g_cam.target;
+            onScroll(W, 0, -1.0);
+            CHECK(std::fabs(g_cam.dist - d1 * 1.25) < 1e-9, "B3.8 : zoom arriere = x1.25 par cran");
+            pixelDe(Pv, qx, qy);
+            CHECK(std::fabs(qx - px) < 0.5 && std::fabs(qy - py) < 0.5,
+                  "B3.8 : zoom arriere - le point vise reste sous le curseur");
+            CHECK((g_cam.target - t1).norm() > 1e-9,
+                  "B3.8 : zoom arriere = la cible camera s'eloigne du point vise");
+        }
+        {   /* curseur dans le VIDE : le plan de travail (par la cible, face a
+               la camera) sert de cible - meme stabilite */
+            g_cam.dist = 20.0; g_cam.target = Vec3(0, 0.5, 0);
+            const Vec3 Pv2 = g_cam.target + g_cam.right() * 1.5 + g_cam.up() * 0.8;
+            pixelDe(Pv2, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            onScroll(W, 0, 1.0);
+            CHECK(g_cam.dist < 20.0, "B3.8 : vide = le zoom fonctionne quand meme");
+            pixelDe(Pv2, qx, qy);
+            CHECK(std::fabs(qx - px) < 0.5 && std::fabs(qy - py) < 0.5,
+                  "B3.8 : vide - le point du plan de travail reste sous le curseur");
+        }
+        {   /* bornes : molette sans curseur (nullptr) = pur dolly comme avant */
+            g_cam.dist = 9.0;
+            onScroll(nullptr, 0, 1000);
+            CHECK(g_cam.dist == 0.02, "B3.8 : borne de zoom avant 0.02 (sans curseur, pur dolly)");
+            onScroll(nullptr, 0, -1000);
+            CHECK(g_cam.dist == 4000.0, "B3.8 : borne de zoom arriere 4000 (sans curseur, pur dolly)");
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_cam = g_camHome;
+    }
+
+    { /* B3.9 : refonte du collage - faces logiques (B3.9a), magnetisme au
+          deplacement avec orientation + poignees visibles (B3.9b), Ctrl+V
+          pres du curseur (B3.9c) ; retour test : "collage fait sur le
+          triangle, pas sur la face", "pas de commande style ctrl c /
+          ctrl v", precision : orientation et poignees maitrisees */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        const double colT[3] = {0.6, 0.6, 0.6};
+        g_winW = 1600; g_winH = 900;
+        g_cam.target = Vec3(0, 0.5, 0); g_cam.dist = 20.0;
+        g_cam.theta = 0.0; g_cam.phi = 0.6;
+        double px, py;
+        const double tg = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+        auto pixelDe = [&](const Vec3& c, double& ox, double& oy) {
+            const Vec3 d = normalized(c - g_cam.pos());
+            const double df = dot(d, g_cam.forward());
+            const double aspect = (double)g_winW / (double)g_winH;
+            ox = (dot(d, g_cam.right()) / (df * tg * aspect) + 1.0) * 0.5 * (double)g_winW;
+            oy = (1.0 - dot(d, g_cam.up()) / (df * tg)) * 0.5 * (double)g_winH;
+        };
+        extern double g_stubCursorX, g_stubCursorY;
+        auto resetScene = [&]() {
+            g_objs.clear();
+            g_objs.push_back(makeBoxObject("Cible", Vec3(0, 0.5, 0), Vec3(1, 0.5, 1), colT));
+            g_objs.push_back(makeBoxObject("Brique", Vec3(10, 0.25, 0), Vec3(0.5, 0.5, 0.5), colT));
+            g_selected = -1; g_selMulti.clear(); undoVide();
+            g_collStage = 0; g_collSrc = -1; g_mode = M_None;
+            g_axisHeld[0] = g_axisHeld[1] = g_axisHeld[2] = false;
+        };
+
+        /* 1. B3.9a : faces logiques - le collage ne se fait plus "sur le
+              triangle" : la face de boite = 4 aretes de bord REELLES */
+        resetScene();
+        {
+            std::vector<FaceLogique> fl;
+            facesLogiques(g_objs[0], fl);
+            CHECK(fl.size() == 6, "B3.9a : boite = 6 faces logiques");
+            size_t nb = 0;
+            for (const FaceLogique& f : fl) nb += f.bords.size();
+            CHECK(nb == 24, "B3.9a : 4 aretes de bord par face, 24 au total (diagonales exclues)");
+            bool bouclesOk = true;
+            for (const FaceLogique& f : fl)
+                if (f.boucle.size() != 4) bouclesOk = false;
+            CHECK(bouclesOk, "B3.9a : chaque face = boucle ordonnee de 4 sommets");
+            bool dessus = false;
+            for (const FaceLogique& f : fl)
+                if (std::fabs(f.n.y) > 0.999 && std::fabs(f.d - 1.0) < 1e-9) dessus = true;
+            CHECK(dessus, "B3.9a : la face du dessus (y = 1) est reconnue");
+        }
+
+        /* 2. accroches = sommets + milieux de BORDS logiques (pas de
+              diagonale) : 8 + 12 = 20 pour une boite */
+        {
+            std::vector<CollAcc> acc;
+            collAccroches(g_objs[0], acc);
+            CHECK(acc.size() == 20,
+                  "B3.9a : accroches boite = 8 sommets + 12 milieux d aretes de bord logiques");
+        }
+
+        /* 3. collage arete avec PRE-ROTATION 45 deg : les diagonales du fan
+              ne masquent plus l'alignement (NOTE v1 B3.7 resolvee) */
+        resetScene(); selectOnly(1);
+        {
+            Object& br = g_objs[1];
+            for (Vec3& p : br.v) p = vecRotate(p, Vec3(0, 1, 0), 45.0 * 3.14159265358979 / 180.0);
+            computeObjectDerived(br);
+        }
+        collStart();
+        /* vise pres de l'arete superieure z = 1 : impact (0,1,0.9), snap
+           arete a 0.1 -> cible exacte (0,1,1), arete cible de direction (0,0,1) */
+        pixelDe(Vec3(0, 1, 0.9), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        g_lastClickTime = -100.0;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_collStage == 0, "B3.9a : collage arete pose avec pre-rotation 45 deg");
+        CHECK([&]() {
+            std::vector<CollAcc> acc; collAccroches(g_objs[1], acc);
+            double dm = 1e300;
+            for (const CollAcc& a : acc) dm = std::min(dm, (a.p - Vec3(0, 1, 1)).norm());
+            return dm;
+        }() < 1e-9, "B3.9a : l accroche la plus proche est collee exactement au point d arete (0,1,1)");
+        CHECK(([&]() {
+            const Object& br = g_objs[1];
+            std::vector<std::pair<int, int>> bords;
+            aretesDeBord(br, bords);
+            for (const auto& e : bords) {
+                Vec3 d2 = (br.v[(size_t)e.second] - br.v[(size_t)e.first]) * br.scl;
+                const double L2 = d2.norm();
+                if (L2 < 1e-12) continue;
+                if (std::fabs(dot(d2 * (1.0 / L2), Vec3(0, 0, 1))) > 0.999) return true;
+            }
+            return false;
+        })(), "B3.9a : une arete de bord de la brique est alignee sur l arete cible (45 deg rattrapes)");
+
+        /* 4. B3.9b magnetisme COIN : le drag amene un coin dans la zone de
+              capture -> pose exacte sur le coin du voisin (priorite sommet) */
+        resetScene();
+        {
+            int ivc = -1;
+            for (size_t i = 0; i < g_objs[1].v.size(); ++i)
+                if ((g_objs[1].v[i] - Vec3(-0.5, 0.5, 0.5)).norm() < 1e-9) ivc = (int)i;
+            CHECK(ivc >= 0, "B3.9b : setup - le coin vise de la brique existe");
+            const Vec3 candPos(1.33, 0.33, 0.33);     /* coin a 0.29 du coin (1,1,1) */
+            const Vec3 dperp = g_cam.right() * 12.0;  /* delta DANS le plan camera */
+            const Vec3 startPos = candPos - dperp;
+            g_objs[1].pos = startPos;
+            const Vec3 grab = startPos + Vec3(0, 0.5, 0);
+            pixelDe(grab, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            selectOnly(1);
+            beginDrag(W, 1);
+            CHECK(g_mode == M_Drag && g_dragBaseOk, "B3.9b : drag arme, base du magnetisme capturee");
+            pixelDe(grab + dperp, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            updateDrag(W);
+            CHECK(g_magnet.actif && g_magnet.prio == 0,
+                  "B3.9b : coin dans la zone de capture = magnetisme actif (priorite sommet)");
+            CHECK((g_objs[1].pos + g_objs[1].v[(size_t)ivc] * g_objs[1].scl - Vec3(1, 1, 1)).norm() < 1e-9,
+                  "B3.9b : le coin deplace est colle exactement sur le coin du voisin (1,1,1)");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        }
+
+        /* 5. B3.9b magnetisme ARETE/ARETE avec ORIENTATION (precision
+              utilisateur : "l'orientation n'etait pas maitrisee") */
+        resetScene();
+        {
+            Object& br = g_objs[1];
+            /* brique aplatie a demi-hauteur 0.4 et posee a +0.1 en x du point
+               d'alignement : sinon, des que le milieu d'arete entre dans la
+               zone, un coin de la brique reste a ~0.12 d'un coin de la Cible
+               et la paire SOMMET (prio 0) capterait avant arete/arete */
+            for (Vec3& p : br.v) {
+                p = vecRotate(p, Vec3(0, 1, 0), 30.0 * 3.14159265358979 / 180.0);
+                p.y *= 0.8;
+            }
+            computeObjectDerived(br);
+            /* l'arete de bord arriere (y local +0.4, z local -0.5) doit finir
+               sur l'arete cible (-1,1,1)-(-1,1,-1), milieu (-1,1,0) ; posee a
+               0.1 du milieu cible ; plus proche paire sommet = 0.203 > tol */
+            Vec3 mil = vecRotate(Vec3(0, 0.4, -0.5), Vec3(0, 1, 0), 30.0 * 3.14159265358979 / 180.0);
+            br.pos = Vec3(-1, 1, 0) - mil + Vec3(0.1, 0, 0);
+            g_cam.dist = 5.0;      /* tol 0.15 : paire sommet la plus proche = 0.203 */
+            const Vec3 grab = br.pos + Vec3(0, 0.4, 0);
+            pixelDe(grab, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            selectOnly(1);
+            beginDrag(W, 1);
+            CHECK(g_mode == M_Drag && g_dragBaseOk,
+                  "B3.9b : setup - drag arme pour le magnetisme arete/arete");
+            updateDrag(W);                            /* pose pres = captee au frame suivant */
+            CHECK(g_magnet.actif && g_magnet.prio == 1,
+                  "B3.9b : milieu d arete dans la zone = paire arete/arete captee");
+            CHECK((g_magnet.cible - Vec3(-1, 1, 0)).norm() < 1e-9,
+                  "B3.9b : la cible captee est le milieu de l arete (-1,1,0)");
+            bool milieuColle = false, oriente = false;
+            {
+                std::vector<std::pair<int, int>> bords;
+                aretesDeBord(br, bords);
+                for (const auto& e : bords) {
+                    const Vec3 m = br.pos + (br.v[(size_t)e.first] + br.v[(size_t)e.second]) * (0.5 * br.scl);
+                    if ((m - Vec3(-1, 1, 0)).norm() < 1e-9) {
+                        milieuColle = true;
+                        Vec3 d2 = (br.v[(size_t)e.second] - br.v[(size_t)e.first]) * br.scl;
+                        const double L2 = d2.norm();
+                        if (L2 > 1e-12 && std::fabs(dot(d2 * (1.0 / L2), Vec3(0, 0, 1))) > 0.999)
+                            oriente = true;
+                    }
+                }
+            }
+            CHECK(milieuColle, "B3.9b : le milieu d arete est colle exactement sur la cible");
+            CHECK(oriente, "B3.9b : l arete de la brique est ALIGNEE sur l arete cible (orientation maitrisee)");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        }
+
+        /* 6. non-regression : drag HORS zone de capture = position exacte */
+        resetScene();
+        g_cam.dist = 20.0;
+        {
+            const Vec3 startPos = g_objs[1].pos;
+            const Vec3 grab = startPos + Vec3(0, 0.5, 0);
+            pixelDe(grab, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            selectOnly(1);
+            beginDrag(W, 1);
+            const Vec3 dperp = g_cam.right() * 1.0 + g_cam.up() * 0.25;
+            pixelDe(grab + dperp, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            updateDrag(W);
+            CHECK(!g_magnet.actif, "B3.9b : hors zone de capture = aucun magnetisme");
+            Vec3 org2, dir2;
+            CHECK(rayFromMouse(W, org2, dir2), "B3.9b : rayon disponible dans le stub");
+            const Vec3 nrm = g_cam.forward();
+            const double tP = dot(g_grabPoint - org2, nrm) / dot(dir2, nrm);
+            const Vec3 delta = (org2 + dir2 * tP) - g_grabPoint;
+            CHECK((g_objs[1].pos - startPos - delta).norm() < 1e-9,
+                  "B3.9b : non-regression drag - pos = startPos + delta exactement");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        }
+
+        /* 7. B3.9c Ctrl+V pres du curseur : la copie est posee au sol sous
+              le curseur (centre X/Z, fond de boite a y = 0), selectionnee */
+        resetScene();
+        {
+            selectOnly(1);
+            copySelected();
+            CHECK(g_clipboard.size() == 1, "B3.9c : Ctrl+C met la selection au presse-papiers");
+            pixelDe(Vec3(5, 0, 3), px, py); g_stubCursorX = px; g_stubCursorY = py;
+            const size_t n0 = g_objs.size();
+            pasteClipboard(W);
+            CHECK(g_objs.size() == n0 + 1, "B3.9c : Ctrl+V colle une copie");
+            const Object& cp = g_objs.back();
+            const Vec3 lo2 = cp.pos + cp.bmin * cp.scl;
+            const Vec3 hi2 = cp.pos + cp.bmax * cp.scl;
+            CHECK(std::fabs((lo2.x + hi2.x) * 0.5 - 5.0) < 1e-9
+                  && std::fabs((lo2.z + hi2.z) * 0.5 - 3.0) < 1e-9,
+                  "B3.9c : la copie est centree sous le curseur (X/Z)");
+            CHECK(std::fabs(lo2.y) < 1e-9, "B3.9c : la copie est posee au sol (fond de boite a y = 0)");
+            CHECK(g_selected == (int)(g_objs.size() - 1),
+                  "B3.9c : la copie est selectionnee (prete au deplacement fin magnetique)");
+            /* serie : un 2e Ctrl+V au meme endroit se decale encore d'un pas */
+            pasteClipboard(W);
+            CHECK(g_objs.size() == n0 + 2, "B3.9c : 2e Ctrl+V = une copie de plus");
+        }
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
+        g_cam = g_camHome;
+    }
+
     { /* B3.3 : edition du balayage - poignees profil + chemin, O = cible */
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
@@ -3224,7 +4269,7 @@ int main() {
               "B3.3 : ajout d un point au CHEMIN (index = npts + i)");
         CHECK(sw.v.size() == 12 && sw.tri.size() == (size_t)(3 * 20)
               && std::fabs(signedVolume(sw) - 160.0) < 1e-6,
-              "B3.3 : 3 anneaux (12 sommets, 20 tris), volume conserve 160");
+              "B3.3 : 3 anneaux (12 sommets, 20 tris), volume conserve 160 (prisme droit, B3.10b-bis)");
         CHECK(traceAddPoint(sw, sw.pos + Vec3(100, 0, 100), true) < 0,
               "B3.3 : refus - clic-sol LOIN du chemin (avec garde)");
         CHECK(traceDelPoint(sw, ich), "B3.3 : suppression de la poignee du chemin");
@@ -3302,7 +4347,7 @@ int main() {
         sw.traceChemin[1] = sw.traceChemin[0] + Vec3(0, 0, 20);
         traceRegen(sw);
         CHECK(sw.v.size() == 8 && std::fabs(signedVolume(sw) - 320.0) < 1e-6,
-              "B3.3 : drag du chemin (z 20 -> 30) = regen, volume 16 x 20 = 320");
+              "B3.3 : drag du chemin (z 20 -> 30) = regen, volume 16 x 20 = 320 (prisme droit, B3.10b-bis)");
         g_sweepEditChemin = false;
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts.clear(); g_lineMode = false; lineReset();
