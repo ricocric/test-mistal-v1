@@ -49,7 +49,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.9c";   /* refonte collage : faces logiques, magnetisme au deplacement (position + orientation), Ctrl+V pres du curseur, poignees de la cible allumees pendant le magnetisme */
+static const char* BUILD_VERSION = "B3.9b";   /* refonte collage : faces logiques, magnetisme au deplacement (position + orientation), Ctrl+V pres du curseur, poignees de la cible allumees pendant le magnetisme */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -313,7 +313,7 @@ static void buildScene() {
 /* Etat interaction                                                    */
 /* ------------------------------------------------------------------ */
 
-enum Mode { M_None, M_Orbit, M_Drag };   /* B3.9c : M_Pan supprime (pan supprime, recentrage = zoom molette) */
+enum Mode { M_None, M_Orbit, M_Drag, M_Pan };
 
 /* message ephemere affiche dans le bandeau de la FENETRE (retour de test :
    les avis de saisie doivent se voir dans l'application, pas en console) */
@@ -347,6 +347,7 @@ static void userMsg(const char* fmt, ...) {
     flashBand(buf);
 }
 static Mode g_mode = M_None;
+static bool g_rightDown = false;   /* B3.6a-bis : clic droit tenu (pan armable meme si Maj arrive apres) */
 
 /* ===== B3.6z : Ctrl+Z annulation / retablissement =====
    Modele : pile d'ETATS AVANT mutation - chaque pas = copie COMPLETE de la
@@ -451,6 +452,12 @@ static Vec3 axisVec(int a) { return a == 0 ? Vec3(1, 0, 0) : a == 1 ? Vec3(0, 1,
 static void goHome() {
     g_cam = g_camHome;
     clearSelection();
+}
+
+static void cameraPan(Camera& c, double dxPx, double dyPx, double winH) {
+    if (winH < 1.0) return;
+    const double scale = 2.0 * c.dist * std::tan(kFovDeg * 3.14159265358979 / 360.0) / winH;
+    c.target = c.target - c.right() * (dxPx * scale) + c.up() * (dyPx * scale);
 }
 
 static void frameScene() {
@@ -5363,15 +5370,22 @@ static void editExit() {
 }
 /* B3.3c (retour test) : en edition, un clic qui ne saisit aucune poignee et
    n'ajoute aucun point = ORBITE - tourner autour de l'objet pendant
-   l'edition (zoom molette deja actif) ; B3.9c : le pan est SUPPRIME, Maj ou
-   pas, un clic sans effet = orbite (recentrage par la molette, B3.8) */
-static void editOrbit(GLFWwindow* w) {
-    g_mode = M_Orbit;
+   l'edition (pan molette et zoom deja actifs) ;
+   B3.6a-ter (retour test : maj + clic G = pan demande) : Maj tenue au clic
+   = PAN (meme regle que la selection : deplacer la vue), sans Maj = orbite */
+static void editOrbit(GLFWwindow* w, bool maj) {
+    if (maj) {
+        g_mode = M_Pan;
+        flashBand("pan : deplacez la vue ; relachez pour poser");
+    } else {
+        g_mode = M_Orbit;
+    }
     glfwGetCursorPos(w, &g_prevX, &g_prevY);
 }
 /* clic gauche en edition : saisir une poignee (drag) ou ajouter un point ;
    clic sans effet (vide, ciel, refuse) = orbite (B3.3c) */
-static void editClick(GLFWwindow* w) {
+static void editClick(GLFWwindow* w, int mods) {
+    const bool majClic = (mods & GLFW_MOD_SHIFT) != 0;   /* B3.6a-ter */
     if (g_editObj < 0 || g_editObj >= (int)g_objs.size()) { editExit(); return; }
     Object& o = g_objs[(size_t)g_editObj];
     Vec3 org, dir;
@@ -5391,7 +5405,7 @@ static void editClick(GLFWwindow* w) {
             }
             return;
         }
-        editOrbit(w);                  /* B3.3c/B3.6a-ter : clic sans effet */
+        editOrbit(w, majClic);                  /* B3.3c/B3.6a-ter : clic sans effet */
         return;
     }
     /* B3.6a : cible ACCROCHE - clic sur une poignee orange (sommet, milieu de
@@ -5412,7 +5426,7 @@ static void editClick(GLFWwindow* w) {
             userMsg("edition balayage : l accroche %d/%d est collee au fil",
                         ai + 1, (int)acc.size());
         } else {
-            editOrbit(w);                       /* B3.3c : clic sans effet = orbite */
+            editOrbit(w, majClic);                       /* B3.3c : clic sans effet = orbite */
         }
         return;
     }
@@ -5477,15 +5491,15 @@ static void editClick(GLFWwindow* w) {
         Vec3 cPt, nn;
         if (!sweepProfilPlan(o, cPt, nn)) return;
         const double denom = dot(dir, nn);
-        if (std::fabs(denom) < 1e-9) { editOrbit(w); return; }
+        if (std::fabs(denom) < 1e-9) { editOrbit(w, majClic); return; }
         const double t = dot(cPt - org, nn) / denom;
-        if (t <= 0.0) { editOrbit(w); return; }
+        if (t <= 0.0) { editOrbit(w, majClic); return; }
         const int idx = traceAddPoint(o, org + dir * t, false);
         if (idx >= 0) {
             g_editSel = idx;
             userMsg("edition : point ajoute au profil (%zu au total)", o.tracePts.size());
         } else {
-            editOrbit(w);
+            editOrbit(w, majClic);
         }
         return;
     }
@@ -5503,7 +5517,7 @@ static void editClick(GLFWwindow* w) {
             surSolide = true;
         } else {
             lineGroundPoint(w, ok, p);
-            if (!ok) { editOrbit(w); return; }      /* pointe le ciel : orbite */
+            if (!ok) { editOrbit(w, majClic); return; }      /* pointe le ciel : orbite */
         }
     } else {
         /* B3.6a-bis : le point s'ajoute dans le plan HORIZONTAL passant par
@@ -5517,7 +5531,7 @@ static void editClick(GLFWwindow* w) {
             if (ic < o.traceChemin.size()) yPlan = o.pos.y + o.traceChemin[ic].y * o.scl;
         }
         linePointY(w, yPlan, ok, p);
-        if (!ok) { editOrbit(w); return; }          /* pointe le ciel : orbite */
+        if (!ok) { editOrbit(w, majClic); return; }          /* pointe le ciel : orbite */
     }
     const int idx = traceAddPoint(o, p, (o.traceType == 8 && !surSolide) || o.traceType == 9);
     if (idx >= 0) {
@@ -5527,7 +5541,7 @@ static void editClick(GLFWwindow* w) {
         else
             userMsg("edition : point ajoute (%zu au total)", o.tracePts.size());
     } else {
-        editOrbit(w);
+        editOrbit(w, majClic);
     }
 }
 /* drag d'une poignee au sol (recalcul CONTINU de la courbe) */
@@ -5841,16 +5855,33 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         const float fy = (float)g_winH - (float)my;   /* GLFW : origine en haut */
         if ((float)mx >= xj && (float)mx <= xj + wj && fy >= yj && fy <= yj + hj) return;
     }
-    if (button == GLFW_MOUSE_BUTTON_MIDDLE) return;   /* bouton du milieu inutilise */
+    if (button == GLFW_MOUSE_BUTTON_MIDDLE) return;   /* B3.3e : pan = Maj + clic droit (UN seul moyen de se deplacer) */
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-        /* B3.9c (retour test : "le pan maj + clic est supprime et remplace
-           par la molette zoom out zoom in") : plus AUCUN pan - le recentrage
-           passe par le zoom sur le curseur (B3.8 : zoom arriere, curseur
-           dans le secteur cible, zoom avant). Clic droit = regle generale :
-           retour au neutre (annule / valide / menu) ; la sortie d'edition
-           passe au relachement (B3.6a-bis, regle conservee). */
+        g_rightDown = (action == GLFW_PRESS);   /* B3.6a-bis : etat du clic droit */
+        /* B3.3e (retour test) : Maj + clic droit (glisser) = deplacer la vue
+           (pan), DANS TOUS les modes (edition, creation, orbite...) - le meme
+           geste partout, on ne change pas de moyen de deplacement en cours
+           d'execution. Sans Maj : regle generale des transformations, clic
+           droit = retour au neutre (le deplacement en vol ne peut pas etre
+           annule ainsi : le clic droit exige de relacher le bouton gauche). */
+        if (action == GLFW_PRESS && (mods & GLFW_MOD_SHIFT)) {
+            if (!g_ppActive && !g_rotActive
+                && (g_mode == M_None || g_mode == M_Orbit || g_mode == M_Pan)) {
+                g_mode = M_Pan;
+                glfwGetCursorPos(w, &g_prevX, &g_prevY);
+                /* B3.6a-bis : retour VISIBLE (diagnostic : si ce bandeau ne
+                   s'affiche pas, le geste n'arrive pas au programme) */
+                flashBand("pan : deplacez la vue ; relachez le clic droit pour poser");
+            }
+            return;
+        }
         if (action != GLFW_PRESS) {
-            if (g_editMode) editExit();
+            if (g_mode == M_Pan) g_mode = M_None;   /* relachement : fin du pan */
+            /* B3.6a-bis : la sortie d'edition passe AU RELACHEMENT - un clic
+               droit presse sans Maj peut encore devenir un pan (Maj arrivee
+               pendant le geste) ; sans pan, le relachement quitte l'edition
+               (regle conservee, l'utilisateur ne voit aucune difference) */
+            else if (g_editMode) editExit();
             return;
         }
         if (g_rectMode) { rectCancel("dessin annule"); return; }   /* B2.2 : clic droit = annule (2 clics suffisent) */
@@ -5858,7 +5889,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_arcMode) { arcCancel("dessin annule"); return; }      /* B2.4 : clic droit = annule */
         if (g_polyMode) { polyFinish(); return; }   /* B2.6b : clic droit = valide (ferme la surface) */
         if (g_splMode) { splFinish(); return; }   /* B2.7 : clic droit = valide (courbe ouverte) */
-        if (g_editMode) return;   /* la sortie d'edition passe au relachement (B3.6a-bis, regle conservee) */
+        if (g_editMode) return;   /* B3.6a-bis : la sortie d'edition passe au relachement (le presse peut devenir un pan si Maj arrive) */
         if (g_sweepStage) { sweepCancel(); return; }   /* B3 : clic droit = annule le balayage */
         if (g_collStage) { collCancel("collage annule"); return; }   /* B3.7 : clic droit = annule */
         if (g_lineMode) { lineFinish(); return; }   /* B2.1 : le clic droit FINIT (segments deja cliques poses) */
@@ -5884,17 +5915,29 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
-        /* REGLE NAVIGATION B3.9c (retour test : "le pan maj + clic est
-           supprime et remplace par la molette zoom out zoom in") : plus de
-           pan NULLE PART - le recentrage = zoom arriere, curseur dans le
-           secteur cible, zoom avant (B3.8, actif dans tous les modes) ;
-           Maj+clic = l'action NORMALE de l'outil (pose un point...) ;
-           navigation libre pendant un mode arme = orbite (clic dans le
-           vide) + molette ; Maj+clic sur un objet = le deplacer (regle
-           selection T1.x conservee). */
+        /* REGLE NAVIGATION (retour test B3.7b, generalisee) : Maj + clic G =
+           PAN, systematiquement dans tous les modes ARMES (ligne, rectangle,
+           cercle, arc, polygone, spline, balayage, collage, push/pull arme,
+           rotation arme). Exception = cas impossibles : un GESTE ACTIF (pp/
+           rot en cours, drag de poignee, roll) ou l'edition (qui a sa regle
+           propre : la poignee d'abord, pan sur clic sans effet B3.6a-ter).
+           La selection simple garde sa regle (Maj+clic sur un objet = le
+           deplacer, Maj+clic dans le vide = pan, plus bas). */
+        const bool modeArme = g_lineMode || g_rectMode || g_cercleMode || g_arcMode
+                           || g_polyMode || g_splMode || (g_sweepStage != 0)
+                           || (g_collStage != 0) || g_ppMode || g_rotMode;
+        if ((mods & GLFW_MOD_SHIFT) && modeArme && g_mode == M_None
+            && !g_ppActive && !g_rotActive && !g_editMode
+            && g_editGrab < 0 && !g_rollDrag) {
+            g_lastClickTime = glfwGetTime();
+            g_mode = M_Pan;
+            flashBand("pan : deplacez la vue ; relachez pour poser");
+            glfwGetCursorPos(w, &g_prevX, &g_prevY);
+            return;
+        }
         if (g_collStage) {   /* B3.7b : navigation libre pendant le collage */
             {   /* clic sur une cible = pose ; clic dans le vide = orbite (B3.3c) ;
-                   la molette (zoom sur le curseur) reste globale (B3.9c) */
+                   la molette (zoom) reste globale ; Maj+clic = pan (au-dessus) */
                 Vec3 org, dir; int hit; double bestT; int hitFil; double bestTf;
                 if (collVise(w, org, dir, hit, bestT, hitFil, bestTf)) { collClick(w); return; }
             }
@@ -5909,7 +5952,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
         if (g_polyMode) { polyTakePoint(w); return; }       /* B2.6 : chaque clic pose un sommet ; clic sur le depart = ferme */
         if (g_splMode) { splTakePoint(w); return; }       /* B2.7 : chaque clic pose un point ; clic sur le depart = boucle */
         if (g_sweepStage) { sweepClick(w); return; }   /* B3 : clic 1 = la face, clic 2 = le fil */
-        if (g_editMode) { editClick(w); return; }   /* B2.7e : poignee = drag ; clic utile = ajouter ; sans effet = orbite (B3.3c, B3.9c) */
+        if (g_editMode) { editClick(w, mods); return; }   /* B2.7e : poignee = drag ; clic utile = ajouter ; sans effet = orbite/pan (B3.3c, B3.6a-ter) */   /* B2.7e : poignee = drag ; clic utile = ajouter ; sans effet = orbite (B3.3c) */
         if (g_ppActive) { ppCommit(); return; }   /* second clic gauche : pose la face */
         if (g_rotActive) { rotCommit(); return; }  /* clic gauche : pose la rotation */
         if (g_ppMode) {
@@ -5996,8 +6039,11 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
                 selectOnly(hit);
                 frameSelected();
             }
+        } else if (mods & GLFW_MOD_SHIFT) {
+            g_mode = M_Pan;              /* Shift+glisser = deplacer la vue */
+            flashBand("pan : deplacez la vue ; relachez pour poser");   /* B3.6a-ter : retour visible */
         } else {
-            g_mode = M_Orbit;            /* B3.9c : Maj ou pas, le vide = orbite (pan supprime) */
+            g_mode = M_Orbit;
         }
         glfwGetCursorPos(w, &g_prevX, &g_prevY);
     } else {
@@ -6061,6 +6107,18 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
             g_dupNumBuf.clear();
             userMsg("duplication annulee");
         }
+        return;
+    }
+    /* B3.6a-bis (retour test : "Maj + clic droit ne donne toujours pas de
+       pan") : Maj pressee PENDANT le clic droit tenu = pan aussi - l'ordre
+       du geste ne doit pas compter ; couvre l'edition (le clic droit presse
+       sans Maj n'y sort plus de l'edition avant le relachement) */
+    if ((key == GLFW_KEY_LEFT_SHIFT || key == GLFW_KEY_RIGHT_SHIFT) && action == GLFW_PRESS
+        && g_rightDown && !g_ppActive && !g_rotActive
+        && (g_mode == M_None || g_mode == M_Orbit || g_mode == M_Pan)) {
+        g_mode = M_Pan;
+        glfwGetCursorPos(w, &g_prevX, &g_prevY);
+        flashBand("pan : deplacez la vue ; relachez le clic droit pour poser");
         return;
     }
     if (g_rotActive) {
@@ -7065,6 +7123,11 @@ int main() {
             g_cam.phi += (y - g_prevY) * 0.01;
             if (g_cam.phi < 0.02) g_cam.phi = 0.02;
             if (g_cam.phi > 3.12) g_cam.phi = 3.12;
+            g_prevX = x; g_prevY = y;
+        } else if (g_mode == M_Pan) {
+            double x, y;
+            glfwGetCursorPos(win, &x, &y);
+            cameraPan(g_cam, x - g_prevX, y - g_prevY, (double)g_winH);
             g_prevX = x; g_prevY = y;
         } else if (g_mode == M_Drag) {
             updateDrag(win);

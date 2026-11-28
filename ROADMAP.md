@@ -8,8 +8,7 @@ backlog est revu a chaque franchissement d'etape importante.
 
 - Export cible / multi, suppression multi, compteur, Ctrl+S (T1.6.x)
 - Multi-selection Ctrl+clic + actions multi (T1.7) + durcissement crash
-- Point de vue : zoom molette sur le curseur (B3.8), recentrage C (T1.8) ;
-  PAN supprime (B3.9c : recentrage = zoom arriere / curseur / zoom avant)
+- Point de vue : pan molette/Shift, recentrage C (T1.8)
 - Rotation multi cas 1 : axes propres (T1.9) + correctif gel bandeau (T1.9.1)
 - Rotation multi cas 2 : barycentre du groupe, bascule B a chaud (T1.10)
 - Deplacement de groupe : drag multi (T1.11)
@@ -749,7 +748,9 @@ Questions ouvertes a trancher avec l'utilisateur :
     B3.9b suite (retour test valide : "les poignees de la cible s'allument
     aussi, cela permet la precision maxi") : des que le magnetisme
     s'exerce, les accroches de l'objet CIBLE s'allument aussi (orange) ;
-    le zoom molette (sur le curseur) reste actif pendant le drag ;
+    le zoom molette reste actif pendant le drag ; le pan Maj+clic G
+    pendant un drag ACTIF est impossible par nature (bouton deja enfonce)
+    - geste de repli a definir si l'usage le demande (note) ;
   - **B3.9c Ctrl+V pres du curseur** (copie-collage, "placement a
     proximite selon localisation du curseur") : le groupe colle est
     repositionne au point du sol projete sous le curseur
@@ -764,17 +765,6 @@ Questions ouvertes a trancher avec l'utilisateur :
     plus proche gagne ; perf = accroches x cibles recalculees par frame
     (note : a optimiser si grosses scenes) ; verif non-regression : les
     tests de drag T1.x deposent loin de tout voisin (position exacte).
-- **B3.9c NAVIGATION - PAN SUPPRIME (retour test : "le pan maj + clic est
-  supprime et remplace par la molette zoom out zoom in") - FAIT (603
-  verifications, 0 echec, ASan propre)** : plus AUCUN pan (Maj+clic G dans
-  le vide ou modes armes, Maj+clic droit, Maj pendant clic droit tenu :
-  tous retires ; M_Pan et cameraPan supprimes du code) ; le recentrage =
-  zoom arriere, curseur dans le secteur cible, zoom avant (B3.8, actif
-  dans tous les modes) ; Maj+clic dans un mode arme = l'action NORMALE de
-  l'outil (pose un point...) ; en edition, clic sans effet = orbite (Maj
-  ou pas) ; Maj+clic sur un objet = le deplacer (regle T1.x conservee) ;
-  orbite (clic gauche dans le vide) et molette restent les seuls moyens de
-  se deplacer.
 - **B3.9 v2 (backlog, apres validation utilisateur)** : face-contre-face
   avec ALIGNEMENT DES NORMALES (v1 = translation seule pour face/face),
   magnetisme multi (v1 = mono seulement), perf facesLogiques sur gros

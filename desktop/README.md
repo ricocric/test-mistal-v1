@@ -1185,16 +1185,7 @@ globale corrigee par le volume signe (normales exterieures) ;
   sur le point d'arrivee ; le point capte reste magenta ; comportement
   porte/chambranle valide (l'arete se colle sans rotation
   face-contre-face, pivot sur l'arete) ; zoom sur le curseur valide
-  "parfait, systematique". Dessin seul : 609, 0 echec ;
-- **B3.9c (retour de test : "le pan maj + clic est supprime et remplace
-  par la molette zoom out zoom in")** : PLUS AUCUN PAN - le recentrage
-  passe par le zoom sur le curseur (B3.8 : zoom arriere, curseur dans le
-  secteur cible, zoom avant), dans tous les modes ; Maj+clic dans un mode
-  arme = l'action NORMALE de l'outil (pose un point...) ; en edition, clic
-  sans effet = orbite (Maj ou pas) ; Maj+clic sur un objet = le deplacer
-  (regle T1.x conservee) ; orbite (clic gauche dans le vide) et molette
-  restent les seuls moyens de se deplacer ; M_Pan et cameraPan supprimes.
-  -7 verifications pan obsoletes = **603, 0 echec** (ASan propre).
+  "parfait, systematique". Dessin seul : 609, 0 echec.
 
 ## Organiseur des prochains lots
 
