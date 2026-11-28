@@ -49,7 +49,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.10a-ter";  /* retours test : poignees du fil vise allumees des l'APPROCHE (zone de survol 3 x zone de capture), ce qui est allume est cliquable */
+static const char* BUILD_VERSION = "B3.10a-quater";  /* retour test : poignees du PROFIL aussi allumees au stage 2 du balayage (magenta = accroche qui sera pincee), meme choix que la pose */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -2885,6 +2885,7 @@ static bool sweepFaceValide(const Object& o) {
 /* B3.10a : definies plus bas (apres collAccroches) - lecon B1.7b :
    declarer AVANT la premiere utilisation */
 static bool sweepAccroches(const Object& o, std::vector<Vec3>& acc);
+static int sweepAccrocheProfilProche(const Object& profil, const Vec3& connW);
 static bool sweepConnSurFil(const Vec3& org, const Vec3& dir, int idxFil, Vec3& outConn);
 static bool sweepConnCapt(const Vec3& org, const Vec3& dir, int skip,
                           Vec3& outConn, int* outFil = nullptr,
@@ -2958,16 +2959,10 @@ static bool sweepConvertTo(Object& profil, Object& chemin,
                 std::reverse(ch.begin(), ch.end());
             }
         }
-        std::vector<Vec3> accP;
-        if (sweepAccroches(profil, accP) && !accP.empty()) {
-            size_t aBest = 0;
-            double dA = 1e300;
-            for (size_t j = 0; j < accP.size(); ++j) {
-                const double d = (accP[j] - connL).norm();
-                if (d < dA) { dA = d; aBest = j; }
-            }
-            profil.traceAccroche = (int)aBest;
-        }
+        /* B3.10a-quater : pincement via le MEME helper que l'affichage des
+           poignees (UN SEUL CHEMIN DE CODE) */
+        const int aPince = sweepAccrocheProfilProche(profil, *conn);
+        if (aPince >= 0) profil.traceAccroche = aPince;
     }
     traceRegen(profil);
     return true;
@@ -4854,16 +4849,39 @@ static bool sweepProfFerme(const Object& o) {
    sert au collage intelligent (regen) et aux poignees d'edition (UN SEUL
    CHEMIN DE CODE) */
 static bool sweepAccroches(const Object& o, std::vector<Vec3>& acc) {
+    /* B3.10a-quater (retour test : "je n'ai jamais vu les poignees du
+       rectangle") : au stage 2 le profil n'est PAS ENCORE converti en
+       balayage (traceType brut, traceProfil non pose) - la chaine du profil
+       se lit alors sur traceType ; apres conversion (type 8/9) traceProfil
+       est deja pose, comportement inchange */
+    Object tmp = o;
+    if (tmp.traceType != 8 && tmp.traceType != 9) tmp.traceProfil = tmp.traceType;
     std::vector<Vec3> prof;
-    if (!traceProfilChain(o, prof)) return false;
+    if (!traceProfilChain(tmp, prof)) return false;
     const size_t n = prof.size();
     for (size_t k = 0; k < n; ++k) acc.push_back(prof[k]);
-    const size_t nsegA = sweepProfFerme(o) ? n : n - 1;
+    const size_t nsegA = sweepProfFerme(tmp) ? n : n - 1;
     for (size_t k = 0; k < nsegA; ++k)
         acc.push_back((prof[k] + prof[(k + 1) % n]) * 0.5);
-    if (o.traceProfil == 5 && !o.tracePts.empty())
-        acc.push_back(o.tracePts[0]);           /* centre du cercle (tore) */
+    if (tmp.traceProfil == 5 && !tmp.tracePts.empty())
+        acc.push_back(tmp.tracePts[0]);           /* centre du cercle (tore) */
     return true;
+}
+/* B3.10a-quater (retour test : "je n'ai jamais vu les poignees du
+   rectangle") : accroche du PROFIL la plus proche du point de connexion
+   capte (monde) - UN SEUL CHEMIN DE CODE : pincement a la pose
+   (sweepConvertTo) ET poignee magenta au survol (drawSweepHandles) */
+static int sweepAccrocheProfilProche(const Object& profil, const Vec3& connW) {
+    std::vector<Vec3> acc;
+    if (!sweepAccroches(profil, acc) || acc.empty()) return -1;
+    const Vec3 connL = (connW - profil.pos) * (1.0 / profil.scl);
+    int best = 0;
+    double dA = 1e300;
+    for (size_t j = 0; j < acc.size(); ++j) {
+        const double d = (acc[j] - connL).norm();
+        if (d < dA) { dA = d; best = (int)j; }
+    }
+    return best;
 }
 
 /* B3 : REGEN du balayage - anneaux du profil transportes le long du chemin
@@ -5955,12 +5973,38 @@ static void drawDragHandles() {
    curseur passe en MAGENTA, meme grammaire que le magnetisme du collage
    (B3.9b) : le clic posera la connexion sur l'accroche captee. Pur : ne
    fait que lire l'etat. */
+static void drawHandleQuad(const Vec3& p, double s) {
+    glBegin(GL_QUADS);
+    glVertex3d(p.x - s, p.y, p.z - s);
+    glVertex3d(p.x + s, p.y, p.z - s);
+    glVertex3d(p.x + s, p.y, p.z + s);
+    glVertex3d(p.x - s, p.y, p.z + s);
+    glEnd();
+}
 static void drawSweepHandles() {
     if (g_sweepStage != 2 || g_sweepProfil < 0
         || g_sweepProfil >= (int)g_objs.size()) return;
     glDisable(GL_LIGHTING);
     glDisable(GL_DEPTH_TEST);
     const double s = 0.07;
+    const Object& profil = g_objs[(size_t)g_sweepProfil];
+    /* B3.10a-quater (retour test : "je n'ai jamais vu les poignees du
+       rectangle") : les accroches du PROFIL s'allument AUSSI (orange) des le
+       stage 2, meme grammaire copier-coller B3.9b (les DEUX cotes de la
+       connexion sont visibles) ; si une accroche du fil est captee,
+       l'accroche du profil qui sera PINCEE a la pose passe en MAGENTA
+       (plus grande) - MEME choix que le pincement (sweepAccrocheProfilProche,
+       UN SEUL CHEMIN DE CODE) */
+    std::vector<Vec3> accP;
+    const bool accPOk = sweepAccroches(profil, accP) && !accP.empty();
+    const int pince = (g_sweepConnOk && accPOk) ? sweepAccrocheProfilProche(profil, g_sweepConn) : -1;
+    if (accPOk) {
+        glColor3d(1.0, 0.55, 0.1);
+        for (size_t j = 0; j < accP.size(); ++j) {
+            if ((int)j == pince) continue;
+            drawHandleQuad(profil.pos + accP[j] * profil.scl, s);
+        }
+    }
     /* B3.10a-bis : seules les accroches du fil VISE s'allument (avant, tous
        les fils s'allumaient : le fil voisin semblait selectionne) */
     if (g_sweepConnFil >= 0 && g_sweepConnFil < (int)g_objs.size()
@@ -5968,24 +6012,16 @@ static void drawSweepHandles() {
         std::vector<CollAcc> acc;
         collAccroches(g_objs[(size_t)g_sweepConnFil], acc);
         glColor3d(1.0, 0.55, 0.1);
-        for (const CollAcc& a : acc) {
-            glBegin(GL_QUADS);
-            glVertex3d(a.p.x - s, a.p.y, a.p.z - s);
-            glVertex3d(a.p.x + s, a.p.y, a.p.z - s);
-            glVertex3d(a.p.x + s, a.p.y, a.p.z + s);
-            glVertex3d(a.p.x - s, a.p.y, a.p.z + s);
-            glEnd();
-        }
+        for (const CollAcc& a : acc)
+            drawHandleQuad(a.p, s);
     }
     if (g_sweepConnOk) {
         glColor3d(0.95, 0.2, 0.85);
-        const double s2 = s * 1.8;
-        glBegin(GL_QUADS);
-        glVertex3d(g_sweepConn.x - s2, g_sweepConn.y, g_sweepConn.z - s2);
-        glVertex3d(g_sweepConn.x + s2, g_sweepConn.y, g_sweepConn.z - s2);
-        glVertex3d(g_sweepConn.x + s2, g_sweepConn.y, g_sweepConn.z + s2);
-        glVertex3d(g_sweepConn.x - s2, g_sweepConn.y, g_sweepConn.z + s2);
-        glEnd();
+        drawHandleQuad(g_sweepConn, s * 1.8);
+    }
+    if (pince >= 0) {
+        glColor3d(0.95, 0.2, 0.85);
+        drawHandleQuad(profil.pos + accP[(size_t)pince] * profil.scl, s * 1.8);
     }
     glEnable(GL_DEPTH_TEST);
 }

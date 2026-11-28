@@ -821,6 +821,19 @@ Questions ouvertes a trancher avec l'utilisateur :
     poignees (orange) des l'approche, la capture (magenta, pincement au
     clic) reste a filPickTol, et CE QUI EST ALLUME EST CLIQUABLE (survol
     et clic partagent la meme visee large) ;
+  - **B3.10a-quater POIGNEES DU PROFIL AU STAGE 2** (retour test :
+    "je n'ai jamais vu les poignees du rectangle") - cause racine : au
+    stage 2 le profil n'est PAS ENCORE converti en balayage (traceType
+    brut, traceProfil non pose) : sweepAccroches echouait (traceProfilChain
+    lit traceProfil) -> aucune poignee de profil possible. **FAIT
+    (B3.10a-quater, 643 verifications, 0 echec, ASan propre)** :
+    sweepAccroches lit la chaine sur traceType pour un profil brut
+    (types 8/9 inchanges) ; au stage 2 les accroches du PROFIL s'allument
+    en orange elles aussi (grammaire copier-coller B3.9b : les DEUX cotes
+    de la connexion sont visibles), et si une accroche du fil est captee,
+    l'accroche du profil qui sera PINCEE a la pose passe en MAGENTA (plus
+    grande) - MEME choix que le pincement : helper unique
+    sweepAccrocheProfilProche (pose + dessin, UN SEUL CHEMIN DE CODE) ;
   - **B3.10b ORIENTATION 3 AXES maitrisee** ("on ne maitrise toujours pas
     l'orientation dans les 3 axes de la forme a attacher, resultat
     folklorique") : DIAGNOSTIC = la frame du balayage est ancoree sur la

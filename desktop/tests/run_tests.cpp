@@ -2870,6 +2870,60 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
     }
 
+    /* ===== B3.10a-quater : poignees du PROFIL au stage 2 (retour test :
+       "je n'ai jamais vu les poignees du rectangle") ===== */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        const double distSauve = g_cam.dist;
+        g_cam.dist = 14.0;                    /* tolerance filPickTol = 0.33 */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object ch; ch.name = "Ligne";
+            ch.pos = Vec3(0, 0, 0); ch.scl = 1.0;
+            ch.traceType = 1; ch.traceFerme = 0;
+            ch.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            ch.v = ch.tracePts;               /* fil reel : v pose pour le filRayHit */
+            computeObjectDerived(ch);
+            g_objs.push_back(ch);
+        }
+        const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+        /* capture du sommet (0,0,20) du fil via la visee large du stage 2 */
+        Vec3 conn(0, 0, 0); int filVise = -1;
+        CHECK(sweepConnCapt(Vec3(5, 0, 20), Vec3(-1, 0, 0), (int)ip, conn, &filVise, sweepTolVise())
+              && filVise == (int)ic && (conn - Vec3(0, 0, 20)).norm() < 1e-9,
+              "B3.10a-quater : stage 2, capture du sommet du fil (fil vise, point capte)");
+        /* l'accroche du profil affichee en magenta = CELLE que la pose pince
+           (UN SEUL CHEMIN DE CODE : sweepAccrocheProfilProche) */
+        std::vector<Vec3> accP;
+        CHECK(sweepAccroches(g_objs[ip], accP) && !accP.empty(),
+              "B3.10a-quater : accroches du profil reconstruites (sommets + milieux)");
+        const int pince = sweepAccrocheProfilProche(g_objs[ip], conn);
+        CHECK(pince >= 0 && pince < (int)accP.size(),
+              "B3.10a-quater : accroche du profil candidate au pincement (magenta)");
+        CHECK(sweepConvertTo(g_objs[ip], g_objs[ic], &conn),
+              "B3.10a-quater : pose avec capture acceptee");
+        CHECK(g_objs[ip].traceAccroche == pince,
+              "B3.10a-quater : la pose pince EXACTEMENT l'accroche affichee (meme helper)");
+        g_objs.clear(); g_polyPts.clear();
+        /* dessin du stage 2 : poignees du profil allumees meme SANS fil vise,
+           et magenta du profil quand une accroche du fil est captee */
+        g_polyPts = { Vec3(0,0,0), Vec3(4,0,0), Vec3(4,0,4), Vec3(0,0,4) };
+        polyPose();
+        g_sweepStage = 2;
+        g_sweepProfil = (int)g_objs.size() - 1;
+        g_sweepConnFil = -1; g_sweepConnOk = false;
+        drawSweepHandles();
+        CHECK(true, "B3.10a-quater : drawSweepHandles stage 2 sans fil vise = poignees du profil dessinees");
+        g_sweepConnOk = true; g_sweepConn = Vec3(2, 0, 2);
+        drawSweepHandles();
+        CHECK(sweepAccrocheProfilProche(g_objs[(size_t)g_sweepProfil], g_sweepConn) >= 0,
+              "B3.10a-quater : avec capture, l'accroche pincee du profil est determinee (magenta)");
+        g_sweepStage = 0; g_sweepProfil = -1; g_sweepConnOk = false; g_sweepConnFil = -1;
+        g_cam.dist = distSauve;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
+    }
+
     { /* B3.6a-bis : fils SELECTIONNABLES devant un solide (splines par
          controle incaptables, retour test) + pan Maj+clic droit robuste
          (ordre du geste libre) + ALTITUDE des poignees conservee */
