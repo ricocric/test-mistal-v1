@@ -858,35 +858,12 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
     }
 
-    /* 23 - T1.8 : point de vue (pan molette/Shift, recentrage sur le point vise) */
+    /* 23 - T1.8 : point vise (pickPointFromRay) ; B3.9c : le PAN est supprime
+       (cameraPan retiree) - le recentrage = zoom molette sur le curseur (B3.8) */
     {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         const double colM[3] = {0.6, 0.6, 0.6};
         g_objs.push_back(makeBoxObject("C1", Vec3(0, 0.5, 0), Vec3(0.5, 0.5, 0.5), colM));
-
-        Camera c;
-        c.theta = 0.0; c.phi = 0.5; c.dist = 9.0; c.target = Vec3(0, 0.5, 0);
-        const Camera c0 = c;
-        const double scaleRef = 2.0 * c.dist * std::tan(kFovDeg * 3.14159265358979 / 360.0) / 800.0;
-
-        cameraPan(c, 0.0, 100.0, 800.0);
-        const Vec3 dUp = c.target - c0.target;
-        CHECK(c.target.y > c0.target.y, "pan : glisser vers le bas deplace la cible vers le haut");
-        CHECK(std::fabs(dUp.x - c0.up().x * 100.0 * scaleRef) < 1e-9
-              && std::fabs(dUp.y - c0.up().y * 100.0 * scaleRef) < 1e-9
-              && std::fabs(dUp.z - c0.up().z * 100.0 * scaleRef) < 1e-9,
-              "pan : deplacement dans le plan camera, echelle = hauteur vue / hauteur fenetre");
-
-        cameraPan(c, 100.0, 0.0, 800.0);
-        const Camera c2 = c;
-        const Vec3 dR = c.target - c0.target - dUp;
-        CHECK(std::fabs(dR.x + c2.right().x * 100.0 * scaleRef) < 1e-9
-              && std::fabs(dR.y + c2.right().y * 100.0 * scaleRef) < 1e-9
-              && std::fabs(dR.z + c2.right().z * 100.0 * scaleRef) < 1e-9,
-              "pan : glisser a droite deplace la cible vers la gauche (l'objet suit le curseur)");
-        cameraPan(c, 100.0, 100.0, 0.0);
-        CHECK(c.target.x == c2.target.x && c.target.y == c2.target.y && c.target.z == c2.target.z,
-              "pan : fenetre de hauteur nulle ignore");
 
         Vec3 p;
         CHECK(pickPointFromRay(Vec3(0.25, 5, 0), Vec3(0, -1, 0), p)
@@ -2621,15 +2598,15 @@ int main() {
     }
 
     { /* B3.6a-bis : fils SELECTIONNABLES devant un solide (splines par
-         controle incaptables, retour test) + pan Maj+clic droit robuste
-         (ordre du geste libre) + ALTITUDE des poignees conservee */
+         controle incaptables, retour test) + B3.9c : plus de pan + ALTITUDE
+         des poignees conservee */
         GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_winW = 1600; g_winH = 900;
         g_cam = g_camHome;
         g_cam.target = Vec3(0, 2, 0); g_cam.dist = 25.0;
         g_editMode = false; g_editObj = -1; g_editGrab = -1;
-        g_rightDown = false; g_mode = M_None;
+        g_mode = M_None;
         g_sweepEditChemin = false; g_sweepEditAcc = false;
         auto pixelDe = [](const Vec3& c, double& px, double& py) {
             const double t = std::tan(kFovDeg * 3.14159265358979 / 360.0);
@@ -2673,39 +2650,30 @@ int main() {
             CHECK(pickAt(W) == 0,
                   "B3.6a-bis : le solide PLUS PROCHE gagne toujours (regression evitee)");
         }
-        /* pan Maj + clic droit EN EDITION - les deux ordres du geste */
+        /* B3.9c : le pan est SUPPRIME - Maj+clic droit en edition = plus de
+           pan du tout ; la sortie d'edition reste au relachement (B3.6a-bis) */
         {
             extern double g_stubCursorX, g_stubCursorY;
             g_editMode = true; g_editObj = -1; g_mode = M_None;
             g_stubCursorX = 800; g_stubCursorY = 450;
             onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, GLFW_MOD_SHIFT);
-            CHECK(g_mode == M_Pan && g_editMode,
-                  "B3.6a-bis : pan EN EDITION - Maj + clic droit presse = M_Pan (edition conservee)");
-            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, GLFW_MOD_SHIFT);
             CHECK(g_mode == M_None && g_editMode,
-                  "B3.6a-bis : relachement = fin du pan, edition toujours active");
-            /* ordre inverse : clic droit presse D'ABORD, Maj ensuite */
-            g_mode = M_None;
-            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
-            CHECK(g_editMode, "B3.6a-bis : clic droit presse sans Maj = edition NON quittee au presse");
-            onKey(W, GLFW_KEY_LEFT_SHIFT, 0, GLFW_PRESS, 0);
-            CHECK(g_mode == M_Pan,
-                  "B3.6a-bis : Maj pressee PENDANT le clic droit = pan arme (ordre du geste libre)");
+                  "B3.9c : Maj + clic droit presse en edition = PAS de pan (edition conservee)");
             onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, GLFW_MOD_SHIFT);
-            CHECK(g_mode == M_None && g_editMode,
-                  "B3.6a-bis : pan (ordre inverse) fini au relachement, edition conservee");
-            /* regle conservee : clic droit SANS pan (Maj jamais arrivee) = sortie d'edition */
-            g_mode = M_None;
-            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
-            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, 0);
-            CHECK(!g_editMode, "B3.6a-bis : clic droit sans Maj ni pan = sortie d'edition (regle conservee)");
-            /* B3.6a-ter : en edition, Maj tenue au clic sans effet = PAN
-               (meme regle que la selection), sans Maj = orbite */
+            CHECK(!g_editMode,
+                  "B3.9c : relachement = sortie d'edition (regle B3.6a-bis conservee)");
+            /* Maj arrivee PENDANT le clic droit tenu : plus de pan non plus */
             g_editMode = true; g_mode = M_None;
-            editOrbit(W, true);
-            CHECK(g_mode == M_Pan, "B3.6a-ter : edition, clic sans effet AVEC Maj = PAN");
-            editOrbit(W, false);
-            CHECK(g_mode == M_Orbit, "B3.6a-ter : edition, clic sans effet sans Maj = orbite (regle B3.3c)");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
+            CHECK(g_editMode, "B3.9c : clic droit presse sans Maj = edition NON quittee au presse");
+            onKey(W, GLFW_KEY_LEFT_SHIFT, 0, GLFW_PRESS, 0);
+            CHECK(g_mode == M_None, "B3.9c : Maj pressee PENDANT le clic droit = PAS de pan");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, GLFW_MOD_SHIFT);
+            CHECK(!g_editMode, "B3.9c : relachement = sortie d'edition (ordre du geste libre)");
+            /* B3.9c : en edition, clic sans effet = ORBITE, Maj ou pas */
+            g_editMode = true; g_mode = M_None;
+            editOrbit(W);
+            CHECK(g_mode == M_Orbit, "B3.9c : edition, clic sans effet = orbite (pan supprime, regle B3.3c)");
             g_editMode = false; g_mode = M_None;
         }
         /* ALTITUDE : drag d'une poignee du chemin d'un tube EN HAUTEUR =
@@ -2751,7 +2719,7 @@ int main() {
             pixelDe(Vec3(3, 3, 40), px, py);                    /* milieu de la courbe */
             g_stubCursorX = px; g_stubCursorY = py;
             g_editSel = -1;
-            editClick(W, 0);
+            editClick(W);
             CHECK(g_objs[(size_t)isp].tracePts.size() == 3
                   && std::fabs(g_objs[(size_t)isp].tracePts.back().y - 3.0) < 1e-9,
                   "B3.6a-bis : point ajoute sur une courbe en hauteur = meme altitude");
@@ -2766,7 +2734,7 @@ int main() {
             CHECK(g_cam.dist == 0.02, "B3.6a-bis : borne de zoom avant 0.02 (5 fois plus pres)");
         }
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
-        g_rightDown = false; g_mode = M_None;
+        g_mode = M_None;
         g_cam = g_camHome;
     }
 
@@ -2872,7 +2840,7 @@ int main() {
             g_cam.theta = 0.0;
             pixelDe(g_sweepRollHandle, px, py);
             g_stubCursorX = px; g_stubCursorY = py;
-            editClick(W, 0);                       /* saisit la poignee violette */
+            editClick(W);                       /* saisit la poignee violette */
             CHECK(g_rollDrag, "B3.6b : clic sur la poignee violette = drag de roll arme");
             pixelDe(cible, px, py);
             g_stubCursorX = px; g_stubCursorY = py;
@@ -3042,7 +3010,7 @@ int main() {
             };
             pixelDe(g_sweepRollHandle, px, py);
             g_stubCursorX = px; g_stubCursorY = py;
-            editClick(W, 0);
+            editClick(W);
             CHECK(g_rollDrag && g_undoOuvert && !g_undoSale,
                   "B3.6z : drag de roll arme = geste capture (pas de pas encore)");
             pixelDe(cible, px, py);
@@ -3329,10 +3297,10 @@ int main() {
         collStart();
         pixelDe(Vec3(50, 5, 50), px, py); g_stubCursorX = px; g_stubCursorY = py;
         onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_MOD_SHIFT);
-        CHECK(g_mode == M_Pan && g_collStage == 1,
-              "B3.7b : Maj+clic pendant le collage = pan, collage toujours arme");
+        CHECK(g_mode == M_Orbit && g_collStage == 1,
+              "B3.9c : Maj+clic dans le vide pendant le collage = orbite (pan supprime), collage toujours arme");
         onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
-        CHECK(g_mode == M_None, "B3.7b : relachement = fin du pan");
+        CHECK(g_mode == M_None, "B3.9c : relachement = retour neutre");
         onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
         CHECK(g_mode == M_Orbit && g_collStage == 1,
               "B3.7b : clic dans le vide = orbite, collage toujours arme");
@@ -3346,32 +3314,32 @@ int main() {
         }
         collCancel("fin du sous-bloc");
 
-        /* 4c. B3.7c : regle navigation GENERALISEE - Maj + clic G = pan dans
-           tous les modes armes (retour : "a utiliser systematiquement sauf
-           si totalement impossible") */
+        /* 4c. B3.9c : le pan est supprime - Maj+clic dans un mode arme =
+           l'ACTION NORMALE de l'outil (pose un point...), jamais un pan */
         resetScene(); g_cam.dist = 20.0;
         {
-            auto majPanDansMode = [&]() {
+            auto majActionDansMode = [&]() {
+                pixelDe(Vec3(3, 0, 2), px, py); g_stubCursorX = px; g_stubCursorY = py;
+                g_lastClickTime = -100.0;
                 onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_MOD_SHIFT);
-                const bool ok = g_mode == M_Pan;
                 onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
-                return ok && g_mode == M_None;
+                return g_mode == M_None;   /* jamais de pan (supprime) ni de mode residuel */
             };
             runToolCommand(IDM_TOOL_LINE);
-            CHECK(majPanDansMode() && g_lineMode,
-                  "B3.7c : Maj+clic pendant la LIGNE armee = pan, ligne toujours armee");
+            CHECK(majActionDansMode() && g_lineMode && g_linePts.size() == 1,
+                  "B3.9c : Maj+clic pendant la LIGNE armee = POSE un point (pan supprime), ligne toujours armee");
             lineCancel("fin");
             runToolCommand(IDM_TOOL_RECT);
-            CHECK(majPanDansMode() && g_rectMode,
-                  "B3.7c : Maj+clic pendant le RECTANGLE arme = pan, rect toujours arme");
+            CHECK(majActionDansMode() && g_rectMode,
+                  "B3.9c : Maj+clic pendant le RECTANGLE arme = action normale (1er coin), rect toujours arme");
             rectCancel("fin");
             runToolCommand(IDM_TOOL_CERCLE);
-            CHECK(majPanDansMode() && g_cercleMode,
-                  "B3.7c : Maj+clic pendant le CERCLE arme = pan, cercle toujours arme");
+            CHECK(majActionDansMode() && g_cercleMode,
+                  "B3.9c : Maj+clic pendant le CERCLE arme = action normale (centre), cercle toujours arme");
             cercleCancel("fin");
         }
-        /* non-regression selection : Maj+clic SUR un objet = le deplacer (drag),
-           pas un pan ; Maj+clic dans le vide = pan (regle T1.x conservee) */
+        /* non-regression selection : Maj+clic SUR un objet = le deplacer (drag,
+           regle T1.x conservee) ; B3.9c : Maj+clic dans le vide = orbite */
         resetScene(); selectOnly(0);
         pixelDe(Vec3(0, 0.5, 0), px, py); g_stubCursorX = px; g_stubCursorY = py;
         g_lastClickTime = -100.0;
@@ -3382,8 +3350,8 @@ int main() {
         pixelDe(Vec3(50, 5, 50), px, py); g_stubCursorX = px; g_stubCursorY = py;
         g_lastClickTime = -100.0;
         onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_MOD_SHIFT);
-        CHECK(g_mode == M_Pan,
-              "B3.7c : selection - Maj+clic dans le vide = pan (regle conservee)");
+        CHECK(g_mode == M_Orbit,
+              "B3.9c : selection - Maj+clic dans le vide = orbite (pan supprime)");
         onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
 
         /* 5. refus et sorties */
