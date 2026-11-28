@@ -2731,6 +2731,131 @@ int main() {
         g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
     }
 
+    /* ===== B3.10a-bis : correctifs du retour de test B3.10a ===== */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        const double distSauve = g_cam.dist;
+        g_cam.dist = 14.0;                    /* tolerance filPickTol = 0.33 */
+        /* retour 4 : fil FERME trace en SPLINE - la cloture doit etre
+           balayee (avant : echantillonnage OUVERT, dernier segment absent) */
+        g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
+        polyPose();
+        {
+            Object chS; chS.name = "Spline";
+            chS.pos = Vec3(0, 0, 0); chS.scl = 1.0;
+            chS.traceType = 2; chS.traceFerme = 1;
+            chS.tracePts = { Vec3(0,0,40), Vec3(0,0,46), Vec3(4,0,46), Vec3(4,0,40) };
+            g_objs.push_back(chS);
+            const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+            CHECK(sweepConvertTo(g_objs[ip], g_objs[ic]),
+                  "B3.10a-bis : spline FERMEE en chemin acceptee");
+            CHECK(g_objs[ip].traceCheminFerme == 1,
+                  "B3.10a-bis : spline fermee = traceCheminFerme pose (cloture conservee)");
+            std::vector<Vec3> chem;
+            CHECK(traceCheminChain(g_objs[ip], chem) && chem.size() >= (size_t)3,
+                  "B3.10a-bis : spline fermee = boucle echantillonnee entiere");
+            const size_t nR = chem.size();
+            bool cloture = false;
+            for (size_t k = 0; k + 2 < g_objs[ip].tri.size(); k += 3) {
+                const unsigned a = g_objs[ip].tri[k];
+                const unsigned b = g_objs[ip].tri[k + 1];
+                const unsigned c = g_objs[ip].tri[k + 2];
+                const unsigned mn = std::min(a, std::min(b, c));
+                const unsigned mx = std::max(a, std::max(b, c));
+                if (mn < 4 && mx >= (unsigned)((nR - 1) * 4)) { cloture = true; break; }
+            }
+            CHECK(cloture,
+                  "B3.10a-bis : spline fermee = mur de rebouclage present (dernier segment balaye)");
+        }
+        g_objs.clear(); g_polyPts.clear();
+        /* retour 4 suite : la capture d'accroche ne porte que sur le fil
+           VISE (avant : le voisin captait la connexion) */
+        {
+            Object filA; filA.name = "Ligne";
+            filA.pos = Vec3(0, 0, 0); filA.scl = 1.0;
+            filA.v = { Vec3(0,0,10), Vec3(0,0,13), Vec3(0,0,20) };
+            computeObjectDerived(filA);
+            g_objs.push_back(filA);
+            Object filB; filB.name = "Ligne (2)";
+            filB.pos = Vec3(0, 0, 0); filB.scl = 1.0;
+            filB.v = { Vec3(-0.2,0,13.5), Vec3(-0.2,0,14.0) };
+            computeObjectDerived(filB);
+            g_objs.push_back(filB);
+            Vec3 conn(0, 0, 0); int filVise = -1;
+            /* rayon vers A : impact (0,0,13.5) = a 0.5 ( > tol) des accroches
+               de A -> rien capte, MEME si un sommet du voisin B (a 0.2 du
+               rayon) est tres proche (avant : B captait la connexion) */
+            const bool okA = sweepConnCapt(Vec3(5,0,13.5), Vec3(-1,0,0), -1, conn, &filVise);
+            CHECK(!okA && filVise == 0,
+                  "B3.10a-bis : rayon vers A = fil VISE A, aucune accroche du voisin captee");
+            /* sanity : rayon inverse = vise B, capte le sommet de B */
+            filVise = -1;
+            const bool okB = sweepConnCapt(Vec3(-5,0,13.5), Vec3(1,0,0), -1, conn, &filVise);
+            CHECK(okB && filVise == 1 && (conn - Vec3(-0.2,0,13.5)).norm() < 1e-9,
+                  "B3.10a-bis : rayon vers B = fil VISE B, sommet de B capte");
+        }
+        g_objs.clear();
+        g_cam.dist = distSauve;
+        /* retour 4 suite (coeur du retour "c'est le fil qui montre des
+           poignees") : la comparaison fil/solide en espace ECRAN - un fil
+           voisin DANS la tolerance du rayon mais nettement decale a l'ecran
+           ne gagne plus sur le solide vise */
+        {
+            GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+            g_winW = 1600; g_winH = 900;
+            g_cam = g_camHome;
+            g_cam.target = Vec3(0, 2, 0); g_cam.dist = 25.0;
+            g_editMode = false; g_editObj = -1; g_editGrab = -1;
+            g_rightDown = false; g_mode = M_None;
+            auto pixelDe = [](const Vec3& c, double& px, double& py) {
+                const double t = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+                const Vec3 d = normalized(c - g_cam.pos());
+                const double df = dot(d, g_cam.forward());
+                const double aspect = (double)g_winW / (double)g_winH;
+                const double ndcX = dot(d, g_cam.right()) / (df * t * aspect);
+                const double ndcY = dot(d, g_cam.up()) / (df * t);
+                px = (ndcX + 1.0) * 0.5 * (double)g_winW;
+                py = (1.0 - ndcY) * 0.5 * (double)g_winH;
+            };
+            {   /* solide : meme boite que le bloc B3.6a-bis */
+                Object cube; cube.name = "Cube";
+                cube.v = { Vec3(-5,0,-5),Vec3(5,0,-5),Vec3(5,0,5),Vec3(-5,0,5),
+                           Vec3(-5,2,-5),Vec3(5,2,-5),Vec3(5,2,5),Vec3(-5,2,5) };
+                const unsigned t[] = {0,1,2, 0,2,3, 4,6,5, 4,7,6, 0,4,5, 0,5,1,
+                                      1,5,6, 1,6,2, 2,6,7, 2,7,3, 3,7,4, 3,4,0};
+                for (int i = 0; i < 36; ++i) cube.tri.push_back(t[i]);
+                computeObjectDerived(cube);
+                g_objs.push_back(cube);
+            }
+            const Vec3 Pf(-4, 2, 3);              /* point de face prouve par B3.6a-bis */
+            const Vec3 C = g_cam.pos();
+            const Vec3 rd = normalized(Pf - C);
+            const Vec3 P05 = C + rd * (0.5 * (Pf - C).norm());
+            const Vec3 perp = normalized(cross(rd, Vec3(0, 1, 0)));
+            const Vec3 Q = P05 + perp * 0.3;      /* fil voisin : dans la
+                tolerance du rayon (~0.3 < tol 0.55) mais ~20 px a l'ecran */
+            {
+                Object fil; fil.name = "Ligne";
+                fil.pos = Vec3(0, 0, 0); fil.scl = 1.0;
+                fil.v = { Q - Vec3(0, 0.25, 0), Q + Vec3(0, 0.25, 0) };
+                computeObjectDerived(fil);
+                g_objs.push_back(fil);
+            }
+            extern double g_stubCursorX, g_stubCursorY;
+            double px, py;
+            pixelDe(Pf, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            CHECK(pickAt(W) == 0,
+                  "B3.10a-bis : clic sur la face visee = le SOLIDE gagne (fil voisin decale en espace ecran)");
+            pixelDe(Q, px, py);
+            g_stubCursorX = px; g_stubCursorY = py;
+            CHECK(pickAt(W) == 1,
+                  "B3.10a-bis : clic sur le fil lui-meme = le FIL gagne toujours");
+            g_cam = g_camHome;
+        }
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+    }
+
     { /* B3.6a-bis : fils SELECTIONNABLES devant un solide (splines par
          controle incaptables, retour test) + pan Maj+clic droit robuste
          (ordre du geste libre) + ALTITUDE des poignees conservee */

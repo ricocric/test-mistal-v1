@@ -49,7 +49,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.10a";  /* balayage : connexion accrochee au stage 2 (facon copier-coller), accroches du fil allumees */
+static const char* BUILD_VERSION = "B3.10a-bis";  /* retours test : spline fermee balayee = cloture conservee ; capture d'accroche restreinte au fil VISE ; selection fil/solide comparee en espace ecran */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -592,15 +592,14 @@ static bool pickPointFromRay(const Vec3& org, const Vec3& dir, Vec3& p) {
    rayon, distance point-segment standard). Retourne le t du point le plus
    proche, ou -1. La tolerance est en unites monde, proportionnelle a la
    distance de la camera (2% + marge), comme la precision visuelle du picking. */
-static double filRayHit(const Vec3& org, const Vec3& dir, const Object& o, double tol) {
+static double filRayHit(const Vec3& org, const Vec3& dir, const Object& o, double tol,
+                        double* outDist = nullptr) {
     if (!o.tri.empty() || o.v.size() < 2 || tol <= 0.0) return -1.0;
     const Vec3 d = normalized(dir);
     const int N = 128;
     const double maxT = g_cam.dist * 2.0 + 1.0;
-    double bestD = tol, bestT = -1.0;
-    for (int i = 1; i <= N; ++i) {
-        const double t = maxT * (double)i / (double)N;
-        const Vec3 p = org + d * t;
+    auto distMin = [&](const Vec3& p) {
+        double best = 1e300;
         for (const auto& e : o.edges) {
             if (e.first < 0 || e.first >= (int)o.v.size()
                 || e.second < 0 || e.second >= (int)o.v.size()) continue;
@@ -615,9 +614,32 @@ static double filRayHit(const Vec3& org, const Vec3& dir, const Object& o, doubl
                 if (sFrac > 1.0) sFrac = 1.0;
             }
             const double dd = (p - (a + ab * sFrac)).norm();
+            if (dd < best) best = dd;
+        }
+        return best;
+    };
+    double bestD = tol, bestT = -1.0;
+    for (int i = 1; i <= N; ++i) {
+        const double t = maxT * (double)i / (double)N;
+        const double dd = distMin(org + d * t);
+        if (dd < bestD) { bestD = dd; bestT = t; }
+    }
+    /* B3.10a-bis : RAFFINEMENT local autour du meilleur pas - l'echantillonnage
+       grossier (128 pas) surestimait la distance au fil de ~un pas, ce qui
+       faisait gagner un solide vise juste a cote (comparaison en espace
+       ecran, cf. pickAt) */
+    if (bestT >= 0.0) {
+        const double pas = maxT / (double)N;
+        double t0 = bestT - pas; if (t0 < 0.0) t0 = 0.0;
+        const double t1 = bestT + pas;
+        const int M = 32;
+        for (int i = 0; i <= M; ++i) {
+            const double t = t0 + (t1 - t0) * (double)i / (double)M;
+            const double dd = distMin(org + d * t);
             if (dd < bestD) { bestD = dd; bestT = t; }
         }
     }
+    if (bestT >= 0.0 && outDist) *outDist = bestD;
     return bestT;
 }
 /* tolerance de capture des fils, partagee par pickAt et beginDrag */
@@ -627,19 +649,30 @@ static int pickAt(GLFWwindow* w) {
     Vec3 org, dir;
     if (!rayFromMouse(w, org, dir)) return -1;
     int best = -1, bestF = -1;
-    double bestT = 1e300, bestTf = 1e300;
+    double bestT = 1e300, bestTf = 1e300, dPerpF = 0.0;
     for (size_t i = 0; i < g_objs.size(); ++i) {
         double t;
         if (rayObject(org, dir, g_objs[i], t) && t < bestT) { bestT = t; best = (int)i; }
-        const double tf = filRayHit(org, dir, g_objs[i], filPickTol());
-        if (tf >= 0.0 && tf < bestTf) { bestTf = tf; bestF = (int)i; }
+        double dP;
+        const double tf = filRayHit(org, dir, g_objs[i], filPickTol(), &dP);
+        if (tf >= 0.0 && tf < bestTf) { bestTf = tf; bestF = (int)i; dPerpF = dP; }
     }
     /* B3.6a-bis (retour test : "les splines par controle ne sont pas
-       selectionnables") : le fil VISIBLE gagne sur un solide DERRIERE lui.
-       Avant, tout solide touche par le rayon masquait TOUS les fils (une
-       spline de controle pres d'un tube etait donc incaptable). La marge
-       compense l'echantillonnage du rayon (128 pas, erreur < tol). */
-    if (bestF >= 0 && (best < 0 || bestTf <= bestT + filPickTol())) return bestF;
+       selectionnables") : un fil sous le curseur reste captable, meme devant
+       un solide. B3.10a-bis (retour test : "je choisi un rectangle, c'est le
+       fil voisin qui est selectionne") : la comparaison fil/solide se fait
+       en espace ECRAN - le fil ne gagne sur un solide touche que si son
+       offset a l'ecran est quasi nul (vraiment SOUS le curseur, devant) ;
+       sinon le solide vise gagne. Le raffinement de filRayHit rend l'offset
+       fiable (erreur << 1 px). */
+    if (bestF < 0) return best;
+    if (best < 0) return bestF;
+    {
+        const double ang = std::atan2(dPerpF, bestTf > 1e-9 ? bestTf : 1e-9);
+        const double pxPerRad = (double)g_winH
+            / (2.0 * std::tan(kFovDeg * 3.14159265358979 / 360.0));
+        if (ang * pxPerRad <= 4.0) return bestF;
+    }
     return best;
 }
 
@@ -2833,10 +2866,12 @@ static int g_sweepProfil = -1;          /* index de l'objet face (clic 1) */
    copier-coller) - point de connexion MONDE propose au clic */
 static Vec3 g_sweepConn(0, 0, 0);
 static bool g_sweepConnOk = false;
+static int g_sweepConnFil = -1;         /* B3.10a-bis : fil VISE sous le curseur */
 static void sweepCancel() {
     g_sweepStage = 0;
     g_sweepProfil = -1;
     g_sweepConnOk = false;
+    g_sweepConnFil = -1;
     userMsg("mode selection");
 }
 /* B3.3d (retour test) : une FACE de balayage = feuille tracee avec surface.
@@ -2850,7 +2885,9 @@ static bool sweepFaceValide(const Object& o) {
 /* B3.10a : definies plus bas (apres collAccroches) - lecon B1.7b :
    declarer AVANT la premiere utilisation */
 static bool sweepAccroches(const Object& o, std::vector<Vec3>& acc);
-static bool sweepConnCapt(const Vec3& org, const Vec3& dir, int skip, Vec3& outConn);
+static bool sweepConnSurFil(const Vec3& org, const Vec3& dir, int idxFil, Vec3& outConn);
+static bool sweepConnCapt(const Vec3& org, const Vec3& dir, int skip,
+                          Vec3& outConn, int* outFil = nullptr);
 static bool sweepConvertTo(Object& profil, Object& chemin,
                            const Vec3* conn = nullptr) {
     if (&profil == &chemin) {
@@ -2882,7 +2919,11 @@ static bool sweepConvertTo(Object& profil, Object& chemin,
         chem.push_back((chemin.pos + p * chemin.scl - profil.pos) * (1.0 / profil.scl));
     profil.traceProfil = profil.traceType;
     profil.traceCheminType = chemin.traceType;
-    profil.traceCheminFerme = (chemin.traceType == 1) ? chemin.traceFerme : 0;
+    profil.traceCheminFerme = chemin.traceFerme;   /* B3.10a-bis (retour test :
+        "fil ferme avec une spline : le dernier segment disparait") - une
+        SPLINE fermee aussi (avant, seul le type 1 gardait traceFerme : le
+        balayage echantillonnait la boucle en OUVERT et sautait la cloture) ;
+        les arcs sont ouverts (traceFerme = 0), non affecte */
     profil.traceChemin = std::move(chem);
     profil.traceVec = profil.n.empty() ? Vec3(0, 1, 0) : profil.n[0];   /* roll : normale de la face */
     profil.traceType = 9;
@@ -2955,27 +2996,22 @@ static void sweepClick(GLFWwindow* w) {
         g_sweepProfil = hit;
         g_sweepStage = 2;
         g_sweepConnOk = false;
+        g_sweepConnFil = -1;
         userMsg("balayage : %s capte - cliquez le FIL chemin (ligne, spline, arc) ; Echap = annuler",
                     g_objs[(size_t)hit].name.c_str());
         return;
     }
-    /* stage 2 : le fil chemin */
-    double bestT = 1e300;
+    /* stage 2 : le fil chemin - visee + capture d'accroche dans le MEME
+       helper que le survol (UN SEUL CHEMIN DE CODE, B3.10a) ; B3.10a-bis :
+       l'accroche n'est captee que sur le fil VISE (jamais sur un voisin) */
+    Vec3 conn(0, 0, 0);
     int hit = -1;
-    for (size_t i = 0; i < g_objs.size(); ++i) {
-        if (i == (size_t)g_sweepProfil) continue;
-        const double t = filRayHit(org, dir, g_objs[i], filPickTol());
-        if (t >= 0.0 && t < bestT) { bestT = t; hit = (int)i; }
-    }
+    const bool connOk = sweepConnCapt(org, dir, g_sweepProfil, conn, &hit);
     if (hit < 0) {
         flashBand("Balayage : aucun fil vise - cliquez un fil (ligne, spline, arc)");
         userMsg("balayage : aucun fil vise - cliquez un fil (ligne, spline, arc) ; Echap = annuler");
         return;
     }
-    /* B3.10a : accroche du fil captee pres du clic (facon copier-coller) -
-       meme grammaire que le magnetisme du collage (B3.9) */
-    Vec3 conn(0, 0, 0);
-    const bool connOk = sweepConnCapt(org, dir, g_sweepProfil, conn);
     const int ip = g_sweepProfil;
     Object& profil = g_objs[(size_t)ip];
     if (!sweepConvertTo(profil, g_objs[(size_t)hit], connOk ? &conn : nullptr)) return;
@@ -4525,35 +4561,49 @@ static void collAccroches(const Object& o, std::vector<CollAcc>& out) {
         out.push_back({ o.pos + (o.v[(size_t)e.first] + o.v[(size_t)e.second]) * (0.5 * o.scl),
                         e.first, e.second });
 }
+/* B3.10a-bis (retour test : "c'est le fil voisin qui est selectionne") : la
+   capture ne porte que sur le fil DESIGNe - jamais sur un autre objet. */
+static bool sweepConnSurFil(const Vec3& org, const Vec3& dir, int idxFil, Vec3& outConn) {
+    if (idxFil < 0 || idxFil >= (int)g_objs.size()) return false;
+    const double t = filRayHit(org, dir, g_objs[(size_t)idxFil], filPickTol());
+    if (t < 0.0) return false;
+    const Vec3 impact = org + normalized(dir) * t;
+    std::vector<CollAcc> acc;
+    collAccroches(g_objs[(size_t)idxFil], acc);
+    double bestD = filPickTol();
+    bool ok = false;
+    for (const CollAcc& a : acc) {
+        const double d = (a.p - impact).norm();
+        if (d < bestD) { bestD = d; outConn = a.p; ok = true; }
+    }
+    return ok;
+}
 /* B3.10a : accroche du fil la plus proche du point vise (facon copier-coller)
    - sert au survol du stage 2 (poignees) ET au clic (UN SEUL CHEMIN DE
-   CODE). Vrai si une accroche (sommet ou milieu de segment d'un fil) est
-   dans la tolerance filPickTol du point d'impact du rayon ; outConn = point
-   MONDE de l'accroche captee. */
-static bool sweepConnCapt(const Vec3& org, const Vec3& dir, int skip, Vec3& outConn) {
+   CODE). Le fil vise = le meilleur filRayHit (hors skip) ; l'accroche
+   (sommet ou milieu) est captee SEULEMENT SUR CE fil (B3.10a-bis, jamais
+   sur un voisin). outFil (optionnel) = index du fil vise, MEME sans
+   accroche captee. */
+static bool sweepConnCapt(const Vec3& org, const Vec3& dir, int skip,
+                          Vec3& outConn, int* outFil) {
     const double tol = filPickTol();
-    const Vec3 dn = normalized(dir);
-    double bestD = tol;
-    bool ok = false;
+    int hit = -1;
+    double bestT = 1e300;
     for (size_t i = 0; i < g_objs.size(); ++i) {
         if ((int)i == skip) continue;
         const double t = filRayHit(org, dir, g_objs[i], tol);
-        if (t < 0.0) continue;
-        const Vec3 impact = org + dn * t;
-        std::vector<CollAcc> acc;
-        collAccroches(g_objs[i], acc);
-        for (const CollAcc& a : acc) {
-            const double d = (a.p - impact).norm();
-            if (d < bestD) { bestD = d; outConn = a.p; ok = true; }
-        }
+        if (t >= 0.0 && t < bestT) { bestT = t; hit = (int)i; }
     }
-    return ok;
+    if (outFil) *outFil = hit;
+    if (hit < 0) return false;
+    return sweepConnSurFil(org, dir, hit, outConn);
 }
 /* B3.10a : survol du stage 2 - rafraichit l'accroche captee sous le curseur */
 static void sweepTrackCursor(GLFWwindow* w) {
     Vec3 org, dir, conn(0, 0, 0);
+    g_sweepConnFil = -1;
     g_sweepConnOk = rayFromMouse(w, org, dir)
-                 && sweepConnCapt(org, dir, g_sweepProfil, conn);
+                 && sweepConnCapt(org, dir, g_sweepProfil, conn, &g_sweepConnFil);
     if (g_sweepConnOk) g_sweepConn = conn;
 }
 /* rotation de l'objet autour de l'accroche (monde) : pos ET donnees locales
@@ -5890,12 +5940,13 @@ static void drawSweepHandles() {
     glDisable(GL_LIGHTING);
     glDisable(GL_DEPTH_TEST);
     const double s = 0.07;
-    glColor3d(1.0, 0.55, 0.1);
-    for (size_t i = 0; i < g_objs.size(); ++i) {
-        if ((int)i == g_sweepProfil) continue;
-        if (!g_objs[i].tri.empty() || g_objs[i].v.size() < 2) continue;  /* fils seulement */
+    /* B3.10a-bis : seules les accroches du fil VISE s'allument (avant, tous
+       les fils s'allumaient : le fil voisin semblait selectionne) */
+    if (g_sweepConnFil >= 0 && g_sweepConnFil < (int)g_objs.size()
+        && g_sweepConnFil != g_sweepProfil) {
         std::vector<CollAcc> acc;
-        collAccroches(g_objs[i], acc);
+        collAccroches(g_objs[(size_t)g_sweepConnFil], acc);
+        glColor3d(1.0, 0.55, 0.1);
         for (const CollAcc& a : acc) {
             glBegin(GL_QUADS);
             glVertex3d(a.p.x - s, a.p.y, a.p.z - s);

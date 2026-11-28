@@ -793,6 +793,22 @@ Questions ouvertes a trancher avec l'utilisateur :
     ferme ; milieux et stations interieures = pincement seul en v1) et
     traceAccroche = accroche du PROFIL la plus proche du point capte ;
     sans capte = collage automatique B3.5 intact ;
+  - **B3.10a-bis CORRECTIFS du retour de test B3.10a** ("4 nok : fil ferme
+    avec une spline, le dernier segment disparait ; 4 suite : c'est le fil
+    voisin qui est selectionne, c'est le FIL qui montre des poignees, pas
+    le rectangle") - **FAIT (B3.10a-bis, 634 verifications, 0 echec, ASan
+    propre)** : (1) SPLINE FERMEE balayee = traceCheminFerme pose quel que
+    soit le type du fil (avant : seul le type 1 gardait traceFerme, la
+    boucle etait echantillonnee OUVERTE et sautait la cloture) ;
+    (2) capture d'accroche RESTREINTE au fil VISE : sweepConnSurFil
+    (capture sur le fil designe seulement) + sweepConnCapt vise le
+    meilleur filRayHit hors profil puis ne capte QUE sur ce fil (outFil
+    = fil vise meme sans accroche captee) ; drawSweepHandles n'allume
+    plus que les accroches du fil vise ; (3) la SELECTION fil/solide est
+    comparee en ESPACE ECRAN (regle B3.6a-bis affinee) : le fil ne gagne
+    sur un solide touche que si son offset a l'ecran est quasi nul
+    (seuil 4 px) ; filRayHit gagne un RAFFINEMENT local autour du meilleur
+    pas (erreur << 1 px) et sort la distance perpendiculaire (outDist) ;
   - **B3.10b ORIENTATION 3 AXES maitrisee** ("on ne maitrise toujours pas
     l'orientation dans les 3 axes de la forme a attacher, resultat
     folklorique") : DIAGNOSTIC = la frame du balayage est ancoree sur la
@@ -819,9 +835,10 @@ Questions ouvertes a trancher avec l'utilisateur :
 - **B3.9 v2 (backlog, apres validation utilisateur)** : face-contre-face
   avec ALIGNEMENT DES NORMALES (v1 = translation seule pour face/face),
   magnetisme multi (v1 = mono seulement), perf facesLogiques sur gros
-  imports (recalcul par frame) ; collage tres sensible aux effets de
-  perspective (retour test - piste : tolerance en espace ecran plutôt
-  que monde) ; collage par COINS a soigner (faces rarement de meme
+  imports (recalcul par frame) ; sensibilité aux effets de perspective :
+  la SELECTION fil/solide est traitee par B3.10a-bis (comparaison en
+  espace ecran) - le COLLAGE lui-meme reste a voir ; collage par COINS a
+  soigner (faces rarement de meme
   taille) ; comportement porte/chambranle VALIDE (l'arete se colle sans
   rotation face-contre-face, pivot sur l'arete - a completer avec la
   maitrise des points de pivot, cf B8) ;

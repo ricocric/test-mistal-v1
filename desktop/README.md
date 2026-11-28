@@ -1201,6 +1201,14 @@ globale corrigee par le volume signe (normales exterieures) ;
   si le fil est ferme) et l'accroche du profil la plus proche est pincee
   (traceAccroche) ; sans accroche captee = collage automatique B3.5
   intact ; **626, 0 echec** (ASan propre).
+- **B3.10a-bis (correctifs du retour de test)** : fil FERME trace en
+  SPLINE balaye ENTIER (cloture conservee, plus de dernier segment
+  perdu) ; capture d'accroche RESTREINTE au fil VISE (le voisin ne capte
+  plus la connexion, seules ses accroches a LUI s'allument au stage 2) ;
+  selection fil/solide comparee en ESPACE ECRAN (seuil 4 px : cliquer le
+  rectangle selectionne le rectangle meme avec des fils voisins dans la
+  tolerance du rayon) + raffinement de filRayHit (distance perpendiculaire
+  fiable) ; **634, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 
