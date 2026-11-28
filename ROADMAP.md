@@ -707,6 +707,62 @@ Questions ouvertes a trancher avec l'utilisateur :
       diagonales (classification propre des aretes = vrai solide B6) ;
   - les arbitrages restants (interaction exacte du choix d'accroche au
     trace, comportement torique) seront poses au fil des tests utilisateur.
+- **B3.9 refonte du collage - FAIT (609 verifications, 0 echec, ASan
+  propre) ; retour test B3.7c : "aucune maitrise du collage... collage
+  fait sur le triangle, pas sur la face... pas de commande style ctrl c /
+  ctrl v" + precision : POIGNEES AFFICHEES et ORIENTATION MAITRISEE
+  pendant le deplacement fin. Mecanique generale dictee par
+  l'utilisateur : on selectionne
+  un objet et on le DEPLACE vers la cible, OU on le COPIE (Ctrl+C/Ctrl+V)
+  et on vient le placer face contre face, arete contre arete ou coin contre
+  coin, et on colle. Le collage devient possible a la FIN de tout
+  deplacement ou de toute copie ; il devient ACTIF si une partie (face,
+  arete, coin) entre dans la ZONE DE CAPTURE de l'objet voisin (magnetisme).
+  Deplacement = collage direct ; copie-collage = placement a proximite
+  selon la localisation du curseur, le collage fin se fera ensuite en mode
+  deplacement. Composantes :**
+  - **B3.9a FACES LOGIQUES** (resout "colle sur le triangle, pas sur la
+    face") : `facesLogiques(o, out)` regroupe les tris par PLAN quantifie
+    (normale + d, orientation canonique) ; aretes de BORD = utilisees par
+    UNE seule tri du groupe (la diagonale d'un fan de face plane est
+    utilisee deux fois -> exclue) ; une face de boite = 4 bords reels.
+    Integre dans `collClick` (snap d'arete sur les bords logiques de B,
+    alignement 3b sur les aretes de bord incidentes de A) et dans
+    `collAccroches` (sommets + milieux de BORDS logiques) ; le probleme
+    des diagonales a 45 deg disparait ;
+  - **B3.9b MAGNETISME au deplacement + POIGNEES VISIBLES** :
+    `magnetDelta(idxA, posA)` cherche la MEILLEURE paire (accroche de A
+    [sommet, milieu d'arete de bord logique] x cible d'un voisin [sommet,
+    milieu d'arete de bord, PROJECTION SUR FACE LOGIQUE si l'accroche est
+    a <= tol du plan et la projection est interieure a la face convexe])
+    dans la tolerance `filPickTol()` ; appliquee EN DIRECT dans
+    `updateDrag` (mono seulement v1 ; recalcul a chaque frame depuis
+    startPos+delta, PAS d'accumulation) ; ORIENTATION maitrisee v1 : paire
+    arete/arete = A tourne autour de la cible pour aligner son arete
+    (logique 3b reutilisee via collTourne, donnees locales restaurees a
+    chaque frame depuis la capture du beginDrag) ; coin/coin et face/face =
+    translation seule v1 (alignement des normales face/face = v2, note) ;
+    pendant le drag mono, les accroches de l'objet deplace sont DESSINEES
+    (orange) et la cible captee (magenta, plus grande) - l'utilisateur
+    voit quel accroche va se coller et choisit face/arete/coin ;
+  - **B3.9c Ctrl+V pres du curseur** (copie-collage, "placement a
+    proximite selon localisation du curseur") : le groupe colle est
+    repositionne au point du sol projete sous le curseur
+    (lineGroundPoint) - CENTRE X/Z du groupe au sol, FOND de boite pose
+    sur le sol (y = 0) -, selectionne, pret au deplacement fin
+    magnetique ;
+    Ctrl+C/Ctrl+V existent deja (T1.12), seul le PLACEMENT change ;
+    sans curseur (tests) = ancien decalage +X ;
+  - Arbitrages v1 : magnétisme MONO seulement (multi = garde, note) ;
+    zone de capture = filPickTol (2 % de la distance camera + 0.05) ;
+    priorite cible : sommet < milieu d'arete < projection de face, la
+    plus proche gagne ; perf = accroches x cibles recalculees par frame
+    (note : a optimiser si grosses scenes) ; verif non-regression : les
+    tests de drag T1.x deposent loin de tout voisin (position exacte).
+- **B3.9 v2 (backlog, apres validation utilisateur)** : face-contre-face
+  avec ALIGNEMENT DES NORMALES (v1 = translation seule pour face/face),
+  magnetisme multi (v1 = mono seulement), perf facesLogiques sur gros
+  imports (recalcul par frame) ;
 - B8 pivot intelligent : ETUDE DE CONCEPTION avant code (nombreux cas de
   figure : sommet, face, point clique, coordonnees, centre du monde...)
 

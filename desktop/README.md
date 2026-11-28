@@ -1159,7 +1159,27 @@ globale corrigee par le volume signe (normales exterieures) ;
   camera avance en ligne droite vers lui (cible glissee au rapport
   dist_new/dist_old) ; pas de 20 % par cran et bornes 0.02/4000 inchanges ;
   molette sans curseur (nullptr, tests) = pur dolly comme avant ;
-  +10 verifications = **582, 0 echec** (ASan propre).
+  +10 verifications = **582, 0 echec** (ASan propre) ;
+- **B3.9 (refonte du collage)** : retour test B3.7c ("aucune maitrise du
+  collage... collage fait sur le triangle, pas sur la face... pas de
+  commande style ctrl c / ctrl v").
+  - **B3.9a faces logiques** : faces regroupees par plan quantifie, aretes
+    de BORD = utilisees par une seule tri (la diagonale d'un fan disparait
+    des accroches) ; collage "Coller sur..." et snap sur les faces reelles,
+    plus "sur le triangle" ;
+  - **B3.9b magnetisme au deplacement** : toute accroche (sommet, milieu
+    d'arete de bord, projection sur face logique) entree dans la zone de
+    capture colle la paire en direct pendant le drag (mono v1, priorite
+    sommet > milieu d'arete > face, la plus proche gagne) ; ORIENTATION
+    maitrisee : paire arete/arete = l'objet tourne autour de la cible pour
+    aligner son arete (3b partage, donnees restaurees depuis la capture du
+    beginDrag, pas d'accumulation) ; accroches ORANGE + cible captee
+    MAGENTA dessinees pendant le drag (choix face/arete/coin maitrise) ;
+  - **B3.9c Ctrl+V pres du curseur** : le groupe colle est pose au sol
+    sous le curseur (centre X/Z au sol, fond de boite a y = 0),
+    selectionne, pret au deplacement fin magnetique ; sans curseur =
+    decalage +X historique (tests) ;
+  +27 verifications = **609, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 

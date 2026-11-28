@@ -25,6 +25,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <set>
@@ -48,7 +49,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.8";   /* collage generique 2 objets : menu contextuel Coller sur..., accroche intelligente, alignement arete/arete */
+static const char* BUILD_VERSION = "B3.9";   /* refonte collage : faces logiques, magnetisme au deplacement (position + orientation, poignees visibles), Ctrl+V pres du curseur */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -438,6 +439,12 @@ static Vec3 g_startPos;
    deplacement mono, chemin historique strictement inchange) */
 struct DragMember { int idx; Vec3 startPos; };
 static std::vector<DragMember> g_dragMulti;
+/* B3.9b : donnees locales de l'objet deplace capturees au beginDrag - le
+   magnetisme restaure puis (eventuellement) retourne chaque frame depuis
+   startPos+delta : PAS d'accumulation d'une frame a l'autre */
+static std::vector<Vec3> g_dragBaseV, g_dragBaseTP, g_dragBaseCh;
+static Vec3 g_dragBaseTV{0, 0, 0};
+static bool g_dragBaseOk = false;
 
 static const char* axisName(int a) { return a == 0 ? "X" : a == 1 ? "Y" : "Z"; }
 static Vec3 axisVec(int a) { return a == 0 ? Vec3(1, 0, 0) : a == 1 ? Vec3(0, 1, 0) : Vec3(0, 0, 1); }
@@ -640,6 +647,22 @@ static int pickAt(GLFWwindow* w) {
 /* Deplacement                                                         */
 /* ------------------------------------------------------------------ */
 
+/* B3.9 : magnetisme au deplacement - structures partagees et prototypes
+   (definitions dans le bloc collage B3.7, plus bas : un seul chemin de code) */
+struct CollAcc { Vec3 p; int va, vb; };   /* vb < 0 = sommet ; sinon milieu de l'arete va-vb */
+struct MagnetInfo {
+    bool actif = false;
+    Vec3 cible;                                   /* point capte (monde) */
+    CollAcc acc{Vec3(0, 0, 0), -1, -1};           /* accroche de A collee */
+    int objB = -1;                                /* voisin capte */
+    std::pair<int, int> areteB{-1, -1};           /* arete cible (paire arete/arete) */
+    int prio = 3;                                 /* 0 sommet, 1 milieu, 2 face */
+};
+static MagnetInfo g_magnet;
+static Vec3 magnetDelta(int idxA, const Vec3& posA);
+static bool aligneAreteIncidente(Object& o, const CollAcc& acc,
+                                 const Vec3& pivotW, const Vec3& dirB);
+
 static void beginDrag(GLFWwindow* w, int idx) {
     Vec3 org, dir;
     if (!rayFromMouse(w, org, dir)) return;
@@ -666,6 +689,12 @@ static void beginDrag(GLFWwindow* w, int idx) {
         userMsg("deplacement multi : %zu objets", g_dragMulti.size());
     }
     g_lockAxis = -1;
+    g_dragBaseV = g_objs[(size_t)idx].v;             /* B3.9b : base du magnetisme */
+    g_dragBaseTP = g_objs[(size_t)idx].tracePts;
+    g_dragBaseTV = g_objs[(size_t)idx].traceVec;
+    g_dragBaseCh = g_objs[(size_t)idx].traceChemin;
+    g_dragBaseOk = true;
+    g_magnet.actif = false;
     g_mode = M_Drag;
     undoOuvre("deplacement");               /* B3.6z : geste continu capture */
 }
@@ -715,9 +744,32 @@ static void updateDrag(GLFWwindow* w) {
             if (m.idx < 0 || m.idx >= (int)g_objs.size()) continue;
             g_objs[(size_t)m.idx].pos = m.startPos + delta;
         }
-        return;
+        return;                     /* B3.9b : magnetisme mono seulement (v1) */
     }
-    g_objs[(size_t)g_selected].pos = g_startPos + delta;
+    Object& o = g_objs[(size_t)g_selected];
+    o.pos = g_startPos + delta;
+    if (g_dragBaseOk) {
+        /* B3.9b : magnetisme - donnees locales de la capture restaurees
+           puis (eventuellement) retournees chaque frame depuis
+           startPos+delta : pas d'accumulation ; la cible captee est
+           dessinee (drawDragHandles) pour choisir face / arete / coin */
+        o.v = g_dragBaseV;
+        o.tracePts = g_dragBaseTP;
+        o.traceVec = g_dragBaseTV;
+        o.traceChemin = g_dragBaseCh;
+        const Vec3 mag = magnetDelta(g_selected, o.pos);
+        o.pos = o.pos + mag;
+        if (g_magnet.actif && g_magnet.acc.vb >= 0 && g_magnet.areteB.first >= 0
+            && g_magnet.objB >= 0 && g_magnet.objB < (int)g_objs.size()) {
+            /* orientation v1 : paire arete/arete = A s'aligne sur l'arete
+               cible (logique 3b partagee avec collClick) */
+            const Object& b = g_objs[(size_t)g_magnet.objB];
+            const Vec3 db = (b.v[(size_t)g_magnet.areteB.second]
+                           - b.v[(size_t)g_magnet.areteB.first]) * b.scl;
+            aligneAreteIncidente(o, g_magnet.acc, g_magnet.cible, db);
+        }
+        computeObjectDerived(o);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1328,7 +1380,8 @@ static void copySelected() {
     userMsg("copie : %zu objet(s) dans le presse-papiers", g_clipboard.size());
 }
 
-static void pasteClipboard() {
+static void lineGroundPoint(GLFWwindow* w, bool& ok, Vec3& p);   /* B2.1 (plus bas) */
+static void pasteClipboard(GLFWwindow* w = nullptr) {
     if (g_clipboard.empty()) {
         flashBand("presse-papiers vide : Ctrl+C sur une selection d'abord");
         return;
@@ -1354,7 +1407,20 @@ static void pasteClipboard() {
         }
     }
     const double step = (hi[0] - lo[0]) + 0.25;
-    const Vec3 off(step * (g_pasteRepeat + 1), 0.0, 0.0);
+    Vec3 off(step * (g_pasteRepeat + 1), 0.0, 0.0);
+    /* B3.9c (retour B3.9 : "placement a proximite selon la localisation du
+       curseur") : le groupe colle est pose au sol sous le curseur (centre
+       X/Z sur le point vise, fond de la boite englobante au sol) ; la serie
+       (Ctrl+V successifs) se decale encore d'un pas vers +X ; sans curseur
+       (tests) = decalage +X historique */
+    if (w) {
+        bool okSol; Vec3 sol;
+        lineGroundPoint(w, okSol, sol);
+        if (okSol) {
+            const Vec3 centre((lo[0] + hi[0]) * 0.5, (lo[1] + hi[1]) * 0.5, (lo[2] + hi[2]) * 0.5);
+            off = Vec3(sol.x - centre.x + step * g_pasteRepeat, sol.y - lo[1], sol.z - centre.z);
+        }
+    }
     std::vector<int> newIdxs;
     undoSnapshot("collage");
     for (size_t i = 0; i < g_clipboard.size(); ++i) {
@@ -4270,13 +4336,135 @@ static void collStart() {
     g_collStage = 1;
     userMsg("collage : cliquez la cible sur un AUTRE objet (sommet, arete, face) ; Echap = annuler");
 }
-/* accroches d'un objet (MONDE) : sommets + milieux d'aretes derives */
-struct CollAcc { Vec3 p; int va, vb; };   /* vb < 0 = sommet ; sinon milieu de l'arete va-vb */
+/* B3.9a : FACES LOGIQUES - tris regroupes par plan (normale canonique
+   quantifiee 1e-4, puis d rapproche) ; aretes de BORD = utilisees par UNE
+   seule tri du groupe (la diagonale d'un fan de face plane sert deux fois
+   -> exclue : une face de boite = 4 bords reels). Coordonnees MONDE, indices
+   de sommets LOCAUX. v1 : buckets par hash de normale (perf gros imports,
+   note conception). */
+struct FaceLogique {
+    Vec3 n;                                  /* normale unite (monde) */
+    double d = 0.0;                          /* plan : dot(n, p) = d */
+    Vec3 centre;                             /* moyenne des sommets du bord (monde) */
+    std::vector<std::pair<int, int>> bords;  /* aretes de bord (indices LOCAUX) */
+    std::vector<int> boucle;                 /* bords en ordre (convexe v1) */
+};
+static void facesLogiques(const Object& o, std::vector<FaceLogique>& out) {
+    out.clear();
+    const size_t nt = o.tri.size() / 3;
+    if (nt == 0 || o.v.empty()) return;
+    std::vector<Vec3> w(o.v.size());
+    for (size_t i = 0; i < o.v.size(); ++i) w[i] = o.pos + o.v[i] * o.scl;
+    std::map<long long, std::vector<size_t>> buckets;
+    std::vector<Vec3> nTri(nt, Vec3(0, 0, 0));
+    std::vector<double> dTri(nt, 0.0);
+    for (size_t t = 0; t < nt; ++t) {
+        const Vec3& a = w[o.tri[t * 3 + 0]];
+        const Vec3& b = w[o.tri[t * 3 + 1]];
+        const Vec3& c = w[o.tri[t * 3 + 2]];
+        Vec3 nn = cross(b - a, c - a);
+        const double L = nn.norm();
+        if (L < 1e-18) continue;                        /* tri degenere : ignore */
+        nn = nn * (1.0 / L);
+        if (nn.x < -1e-9 || (std::fabs(nn.x) <= 1e-9
+            && (nn.y < -1e-9 || (std::fabs(nn.y) <= 1e-9 && nn.z < 0.0))))
+            nn = nn * -1.0;                             /* orientation canonique */
+        nTri[t] = nn;
+        dTri[t] = dot(nn, a);
+        const long long kx = std::llround(nn.x * 10000.0);
+        const long long ky = std::llround(nn.y * 10000.0);
+        const long long kz = std::llround(nn.z * 10000.0);
+        buckets[((kx + 20000) * 40000 + (ky + 20000)) * 40000 + (kz + 20000)].push_back(t);
+    }
+    for (auto& kv : buckets) {
+        std::vector<size_t> reste = kv.second;
+        while (!reste.empty()) {
+            const double d0 = dTri[reste[0]];
+            FaceLogique f;
+            f.n = nTri[reste[0]]; f.d = d0;
+            std::map<std::pair<int, int>, int> cnt;
+            std::vector<size_t> groupe, suiv;
+            for (size_t t : reste) {
+                if (std::fabs(dTri[t] - d0) <= 1e-6) groupe.push_back(t);
+                else suiv.push_back(t);
+            }
+            reste = suiv;
+            for (size_t t : groupe) {
+                const unsigned idx[3] = { o.tri[t * 3 + 0], o.tri[t * 3 + 1], o.tri[t * 3 + 2] };
+                for (int k = 0; k < 3; ++k) {
+                    int a1 = (int)idx[k], b1 = (int)idx[(k + 1) % 3];
+                    if (a1 > b1) std::swap(a1, b1);
+                    ++cnt[std::make_pair(a1, b1)];
+                }
+            }
+            for (const auto& ce : cnt)
+                if (ce.second == 1) f.bords.push_back(ce.first);
+            /* boucle du bord EN ORDRE (convexe v1) : marche de bord en bord */
+            if (!f.bords.empty()) {
+                std::map<int, std::vector<int>> nxt;
+                for (const auto& e : f.bords) {
+                    nxt[e.first].push_back(e.second);
+                    nxt[e.second].push_back(e.first);
+                }
+                int cur = f.bords[0].first, prev = -1;
+                f.boucle.push_back(cur);
+                for (size_t k = 0; k < f.bords.size(); ++k) {
+                    int nx = -1;
+                    for (int v2 : nxt[cur]) if (v2 != prev) { nx = v2; break; }
+                    if (nx < 0 || nx == f.boucle[0]) break;
+                    f.boucle.push_back(nx);
+                    prev = cur; cur = nx;
+                }
+                if ((int)f.boucle.size() != (int)f.bords.size())
+                    f.boucle.clear();                   /* non manifold : v1 */
+            }
+            Vec3 cc(0, 0, 0);
+            for (int vi : f.boucle) cc = cc + w[(size_t)vi];
+            if (!f.boucle.empty()) f.centre = cc * (1.0 / (double)f.boucle.size());
+            out.push_back(f);
+        }
+    }
+}
+/* aretes de BORD logiques (B3.9a) : union dedoublonnee des bords de toutes
+   les faces ; fil sans face = aretes derivees (fallback) */
+static void aretesDeBord(const Object& o, std::vector<std::pair<int, int>>& out) {
+    out.clear();
+    std::vector<FaceLogique> fl;
+    facesLogiques(o, fl);
+    std::set<std::pair<int, int>> vu;
+    for (const FaceLogique& f : fl)
+        for (const auto& e : f.bords) {
+            std::pair<int, int> k = e;
+            if (k.first > k.second) std::swap(k.first, k.second);
+            if (vu.count(k)) continue;
+            vu.insert(k);
+            out.push_back(e);
+        }
+    if (out.empty())
+        for (const auto& e : o.edges) out.push_back(e);
+}
+/* projection interieure a une face logique convexe (v1) : du cote du centre
+   pour chaque bord de la boucle */
+static bool pointDansFace(const Object& b, const FaceLogique& f, const Vec3& q) {
+    if (f.boucle.size() < 3) return false;
+    for (size_t i = 0; i < f.boucle.size(); ++i) {
+        const int ia = f.boucle[i];
+        const int ib = f.boucle[(i + 1) % f.boucle.size()];
+        const Vec3 a = b.pos + b.v[(size_t)ia] * b.scl;
+        const Vec3 b2 = b.pos + b.v[(size_t)ib] * b.scl;
+        if (dot(cross(b2 - a, q - a), cross(b2 - a, f.centre - a)) < 0.0) return false;
+    }
+    return true;
+}
+/* accroches d'un objet (MONDE) : sommets + milieux d'aretes derives
+   (CollAcc declare en tete, avant beginDrag, pour le magnetisme B3.9) */
 static void collAccroches(const Object& o, std::vector<CollAcc>& out) {
     out.clear();
     for (size_t i = 0; i < o.v.size(); ++i)
         out.push_back({ o.pos + o.v[i] * o.scl, (int)i, -1 });
-    for (const auto& e : o.edges)
+    std::vector<std::pair<int, int>> bords;
+    aretesDeBord(o, bords);          /* B3.9a : bords de FACES logiques (fil = fallback) */
+    for (const auto& e : bords)
         out.push_back({ o.pos + (o.v[(size_t)e.first] + o.v[(size_t)e.second]) * (0.5 * o.scl),
                         e.first, e.second });
 }
@@ -4297,6 +4485,103 @@ static void collTourne(Object& o, const Vec3& pivotW, const Vec3& axe, double an
     if (o.traceType == 0)         /* mesh pur (import) : les sommets directement */
         for (Vec3& p : o.v) p = vecRotate(p, axe, ang);
     computeObjectDerived(o);
+}
+/* 3b PARTAGE (collage B3.7 + orientation du magnetisme B3.9b) : l'arete
+   incidente a l'accroche (aretes de BORD logiques B3.9a) la mieux orientee
+   s'aligne sur dirB (angle <= 90 deg, signe choisi) ; rotation rigide
+   autour de pivotW ; faux si rien a tourner */
+static bool aligneAreteIncidente(Object& o, const CollAcc& acc,
+                                 const Vec3& pivotW, const Vec3& dirB) {
+    const double Lb = dirB.norm();
+    if (Lb < 1e-12) return false;
+    const Vec3 db = dirB * (1.0 / Lb);
+    Vec3 da; double Ld = -1.0;
+    if (acc.vb >= 0) {
+        Vec3 d2 = (o.v[(size_t)acc.vb] - o.v[(size_t)acc.va]) * o.scl;
+        const double L2 = d2.norm();
+        if (L2 > 1e-12) { da = d2 * (1.0 / L2); Ld = 1.0; }
+    } else {
+        std::vector<std::pair<int, int>> bords;
+        aretesDeBord(o, bords);
+        for (const auto& e : bords) {
+            if (e.first != acc.va && e.second != acc.va) continue;
+            Vec3 d2 = (o.v[(size_t)e.second] - o.v[(size_t)e.first]) * o.scl;
+            const double L2 = d2.norm();
+            if (L2 < 1e-12) continue;
+            d2 = d2 * (1.0 / L2);
+            if (std::fabs(dot(d2, db)) > Ld) { Ld = std::fabs(dot(d2, db)); da = d2; }
+        }
+    }
+    if (Ld <= 0.0) return false;
+    const Vec3 sg = da * (dot(da, db) >= 0.0 ? 1.0 : -1.0);   /* angle <= 90 deg */
+    double cd = dot(sg, db); cd = cd > 1.0 ? 1.0 : (cd < -1.0 ? -1.0 : cd);
+    const double ang = std::acos(cd);
+    if (ang <= 1e-9) return false;
+    const Vec3 axe = cross(sg, db);
+    const double Ln = axe.norm();
+    if (Ln <= 1e-12) return false;
+    collTourne(o, pivotW, axe * (1.0 / Ln), ang);
+    return true;
+}
+/* B3.9b : magnetisme au deplacement (mono) - la meilleure paire (accroche
+   de l'objet deplace a sa position candidate x cible d'un voisin) dans la
+   zone de capture filPickTol ; priorite facon inference SketchUp : sommet >
+   milieu d'arete de bord > projection sur face logique (interieure) ; dans
+   une meme classe, la plus proche gagne. Renvoie la TRANSLATION (nulle si
+   rien) ; renseigne g_magnet pour l'orientation et le dessin des poignees. */
+static Vec3 magnetDelta(int idxA, const Vec3& posA) {
+    g_magnet = MagnetInfo{};
+    if (idxA < 0 || idxA >= (int)g_objs.size()) return Vec3(0, 0, 0);
+    Object tmpA = g_objs[(size_t)idxA];
+    tmpA.pos = posA;
+    std::vector<CollAcc> acc;
+    collAccroches(tmpA, acc);
+    if (acc.empty()) return Vec3(0, 0, 0);
+    const double tol = filPickTol();
+    bool trouve = false; double bd = 0.0; int bprio = 3; int bobj = -1;
+    Vec3 bcible(0, 0, 0); CollAcc bacc; std::pair<int, int> barete(-1, -1);
+    std::vector<FaceLogique> flB;
+    std::vector<std::pair<int, int>> bordsB;
+    for (size_t j = 0; j < g_objs.size(); ++j) {
+        if ((int)j == idxA) continue;
+        const Object& b = g_objs[j];
+        bordsB.clear();
+        aretesDeBord(b, bordsB);
+        flB.clear();
+        facesLogiques(b, flB);
+        auto considere = [&](const Vec3& c, int prio, const std::pair<int, int>& arete,
+                             const CollAcc& a) {
+            const double d = (c - a.p).norm();
+            if (d > tol) return;
+            if (!trouve || prio < bprio || (prio == bprio && d < bd)) {
+                trouve = true; bd = d; bprio = prio; bcible = c; bacc = a;
+                barete = arete; bobj = (int)j;
+            }
+        };
+        for (const CollAcc& a : acc) {
+            for (size_t i = 0; i < b.v.size(); ++i)
+                considere(b.pos + b.v[i] * b.scl, 0, std::make_pair(-1, -1), a);
+            for (const auto& e : bordsB) {
+                const Vec3 m = b.pos + (b.v[(size_t)e.first] + b.v[(size_t)e.second]) * (0.5 * b.scl);
+                considere(m, 1, e, a);
+            }
+            for (const FaceLogique& f : flB) {
+                const double dp = dot(a.p - f.centre, f.n);   /* distance signee au plan */
+                if (std::fabs(dp) > tol) continue;
+                const Vec3 q = a.p - f.n * dp;
+                if (!pointDansFace(b, f, q)) continue;
+                considere(q, 2, std::make_pair(-1, -1), a);
+            }
+        }
+    }
+    if (!trouve) return Vec3(0, 0, 0);
+    g_magnet.actif = true;
+    g_magnet.cible = bcible;
+    g_magnet.acc = bacc;
+    g_magnet.objB = bobj;
+    g_magnet.areteB = barete;
+    g_magnet.prio = bprio;
+    return bcible - bacc.p;
 }
 /* clic de cible : face (rayon/tri) en priorite (les solides gagnent, regle
    de selection B3.6a-bis), sinon fil/arete (point le plus proche du rayon,
@@ -4340,7 +4625,9 @@ static void collClick(GLFWwindow* w) {
             if (d < dv) { dv = d; iv = (unsigned)i; }
         }
         double de = 1e300; Vec3 pe = cible;
-        for (const auto& e : b.edges) {
+        std::vector<std::pair<int, int>> bordsB;
+        aretesDeBord(b, bordsB);         /* B3.9a : aretes de bord logiques */
+        for (const auto& e : bordsB) {
             const Vec3 a = b.pos + b.v[(size_t)e.first] * b.scl;
             const Vec3 ab = b.pos + b.v[(size_t)e.second] * b.scl - a;
             const double L2 = dot(ab, ab);
@@ -4386,36 +4673,8 @@ static void collClick(GLFWwindow* w) {
     bool aligne = false;
     if (areteB.first >= 0) {
         const Object& b = g_objs[(size_t)cObj];
-        Vec3 db = (b.v[(size_t)areteB.second] - b.v[(size_t)areteB.first]) * b.scl;
-        const double Lb = db.norm();
-        if (Lb > 1e-12) {
-            db = db * (1.0 / Lb);
-            Vec3 da; double Ld = -1.0;
-            if (acc[bi].vb >= 0) {
-                Vec3 d2 = (o.v[(size_t)acc[bi].vb] - o.v[(size_t)acc[bi].va]) * o.scl;
-                const double L2 = d2.norm();
-                if (L2 > 1e-12) { da = d2 * (1.0 / L2); Ld = 1.0; }
-            } else {
-                for (const auto& e : o.edges) {
-                    if (e.first != acc[bi].va && e.second != acc[bi].va) continue;
-                    Vec3 d2 = (o.v[(size_t)e.second] - o.v[(size_t)e.first]) * o.scl;
-                    const double L2 = d2.norm();
-                    if (L2 < 1e-12) continue;
-                    d2 = d2 * (1.0 / L2);
-                    if (std::fabs(dot(d2, db)) > Ld) { Ld = std::fabs(dot(d2, db)); da = d2; }
-                }
-            }
-            if (Ld > 0.0) {
-                const Vec3 s = da * (dot(da, db) >= 0.0 ? 1.0 : -1.0);   /* angle <= 90 deg */
-                double cd = dot(s, db); cd = cd > 1.0 ? 1.0 : (cd < -1.0 ? -1.0 : cd);
-                const double ang = std::acos(cd);
-                if (ang > 1e-9) {
-                    const Vec3 axe = cross(s, db);
-                    const double Ln = axe.norm();
-                    if (Ln > 1e-12) { collTourne(o, cible, axe * (1.0 / Ln), ang); aligne = true; }
-                }
-            }
-        }
+        const Vec3 db = (b.v[(size_t)areteB.second] - b.v[(size_t)areteB.first]) * b.scl;
+        aligne = aligneAreteIncidente(o, acc[bi], cible, db);   /* 3b partage B3.9 */
     }
     computeObjectDerived(o);
     selectOnly(g_collSrc);
@@ -5479,6 +5738,41 @@ static void drawEditHandles() {
     glEnable(GL_DEPTH_TEST);
 }
 
+/* B3.9b (precision utilisateur) : pendant le deplacement fin, les accroches
+   de l'objet deplace sont VISIBLES (orange) et la cible captee par le
+   magnetisme (magenta, plus grande) - l'utilisateur voit quelle accroche va
+   se coller et maitrise le choix face / arete / coin */
+static void drawDragHandles() {
+    if (g_mode != M_Drag || g_selected < 0 || g_selected >= (int)g_objs.size()) return;
+    if (!g_dragMulti.empty()) return;            /* magnetisme mono (v1) */
+    const Object& o = g_objs[(size_t)g_selected];
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    const double s = 0.07;
+    std::vector<CollAcc> acc;
+    collAccroches(o, acc);
+    glColor3d(1.0, 0.55, 0.1);
+    for (const CollAcc& a : acc) {
+        glBegin(GL_QUADS);
+        glVertex3d(a.p.x - s, a.p.y, a.p.z - s);
+        glVertex3d(a.p.x + s, a.p.y, a.p.z - s);
+        glVertex3d(a.p.x + s, a.p.y, a.p.z + s);
+        glVertex3d(a.p.x - s, a.p.y, a.p.z + s);
+        glEnd();
+    }
+    if (g_magnet.actif) {
+        glColor3d(0.95, 0.2, 0.85);
+        const double s2 = s * 1.8;
+        glBegin(GL_QUADS);
+        glVertex3d(g_magnet.cible.x - s2, g_magnet.cible.y, g_magnet.cible.z - s2);
+        glVertex3d(g_magnet.cible.x + s2, g_magnet.cible.y, g_magnet.cible.z - s2);
+        glVertex3d(g_magnet.cible.x + s2, g_magnet.cible.y, g_magnet.cible.z + s2);
+        glVertex3d(g_magnet.cible.x - s2, g_magnet.cible.y, g_magnet.cible.z + s2);
+        glEnd();
+    }
+    glEnable(GL_DEPTH_TEST);
+}
+
 /* ------------------------------------------------------------------ */
 /* Callbacks                                                           */
 /* ------------------------------------------------------------------ */
@@ -5746,6 +6040,7 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
             undoValide();                           /* B3.6z : le geste relache (s'il a mute) devient un pas */
         g_editGrab = -1;                            /* B2.7e : fin du drag de poignee */
         g_rollDrag = false;                         /* B3.6b : fin du drag de roll */
+        g_dragBaseOk = false; g_magnet.actif = false;   /* B3.9b : magnetisme au repos */
         g_mode = M_None;
     }
 }
@@ -6068,7 +6363,7 @@ static void onKey(GLFWwindow* w, int key, int scancode, int action, int mods) {
         /* Ctrl+C / Ctrl+V : copier / coller la selection (T1.12) ;
            C sans Ctrl reste le recentrage sur le point vise */
         if ((mods & GLFW_MOD_CONTROL) && keyIsLetter(key, scancode, 'C')) { copySelected(); return; }
-        if ((mods & GLFW_MOD_CONTROL) && keyIsLetter(key, scancode, 'V')) { pasteClipboard(); return; }
+        if ((mods & GLFW_MOD_CONTROL) && keyIsLetter(key, scancode, 'V')) { pasteClipboard(w); return; }
         /* B3.6z : Ctrl+Z = annuler (Maj tenue = retablir), Ctrl+Y = retablir ;
            place APRES Ctrl+C/V et AVANT les blocs de modes, donc actif aussi
            pendant l'edition (les bascules d'edition viennent plus bas) */
@@ -6850,6 +7145,7 @@ int main() {
         drawPolyPreview();
         drawSplinePreview();
         drawEditHandles();       /* B2.7e : poignees du trace en edition */
+        drawDragHandles();       /* B3.9b : accroches visibles pendant le deplacement fin */
         drawStatusBand();
         glfwSwapBuffers(win);
         glfwPollEvents();

@@ -1156,8 +1156,10 @@ int main() {
         g_axisHeld[0] = g_axisHeld[1] = g_axisHeld[2] = false;
         g_objs.push_back(makeBoxObject("DA", Vec3(0, 0.5, 1.5), Vec3(0.5, 0.5, 0.5), colM));
         g_objs.push_back(makeBoxObject("DB", Vec3(0, 0.5, 3.0), Vec3(0.5, 0.25, 0.5), colM));
-        g_objs.push_back(makeBoxObject("DM", Vec3(0, 0.5, 0.0), Vec3(0.5, 0.5, 0.5), colM));
-        g_cam.target = Vec3(0, 0.5, 0);      /* le rayon central vise DM (hors multi) */
+        /* DM loin de DA/DB : B3.9b aimante le des qu'un accroche entre dans
+           la zone de capture, ce chemin historique verifie le cas SANS voisin */
+        g_objs.push_back(makeBoxObject("DM", Vec3(6, 0.5, 0.0), Vec3(0.5, 0.5, 0.5), colM));
+        g_cam.target = Vec3(6, 0.5, 0);      /* le rayon central vise DM (hors multi) */
         selectOnly(0);
         toggleSelect(1);
         g_lastClickTime = -100.0;
@@ -1209,13 +1211,18 @@ int main() {
         CHECK(g_clipboard.size() == 1 && g_clipboard[0].name == "CA" && g_pasteRepeat == 0,
               "copie : Ctrl+C capture l objet (copie entiere, serie remise a zero)");
         const double step = (g_objs[0].bmax.x - g_objs[0].bmin.x) * g_objs[0].scl + 0.25;
+        /* B3.9c : la copie est posee AU SOL SOUS LE CURSEUR (centre X/Z sur
+           le point vise, fond de boite a y = 0) ; la serie se decale d un pas */
+        Vec3 solV; bool okSol;
+        lineGroundPoint(W, okSol, solV);
+        CHECK(okSol, "colle : setup - le curseur vise le sol (placement B3.9c)");
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
         CHECK((int)g_objs.size() == 2 && g_objs[1].name == "CA (1)"
-              && (g_objs[1].pos - Vec3(step, 0.5, 0)).norm() < 1e-12
+              && (g_objs[1].pos - Vec3(solV.x, 0.5, solV.z)).norm() < 1e-12
               && g_selected == 1 && g_selMulti.empty(),
-              "colle : Ctrl+V pose 1 copie decalee d un pas, nommee CA (1), selectionnee");
+              "colle : Ctrl+V pose 1 copie AU SOL sous le curseur, nommee CA (1), selectionnee");
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
-        CHECK((int)g_objs.size() == 3 && (g_objs[2].pos - Vec3(2.0 * step, 0.5, 0)).norm() < 1e-12,
+        CHECK((int)g_objs.size() == 3 && (g_objs[2].pos - Vec3(solV.x + step, 0.5, solV.z)).norm() < 1e-12,
               "colle : Ctrl+V repete = serie visible (chaque collage decale encore d un pas)");
 
         /* copie multi : le GROUPE est pose, espacement interne identique */
@@ -1231,22 +1238,22 @@ int main() {
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
         const double step2 = (3.5 - (-0.5)) + 0.25;    /* largeur X du groupe copie + espace */
         CHECK((int)g_objs.size() == 4
-              && (g_objs[2].pos - Vec3(step2, 0.5, 0)).norm() < 1e-12
-              && (g_objs[3].pos - Vec3(3.0 + step2, 0.5, 0)).norm() < 1e-12
+              && (g_objs[2].pos - Vec3(solV.x - 1.5, 0.5, solV.z)).norm() < 1e-12
+              && (g_objs[3].pos - Vec3(solV.x + 1.5, 0.5, solV.z)).norm() < 1e-12
               && g_selected == 2 && g_selMulti.size() == 1 && g_selMulti[0] == 3,
-              "colle multi : le GROUPE est pose (espacement interne identique) et devient la selection");
+              "colle multi : le GROUPE est pose au sol sous le curseur (espacement interne identique)");
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
         CHECK((int)g_objs.size() == 6
-              && (g_objs[4].pos - Vec3(2.0 * step2, 0.5, 0)).norm() < 1e-12
-              && (g_objs[5].pos - Vec3(3.0 + 2.0 * step2, 0.5, 0)).norm() < 1e-12,
+              && (g_objs[4].pos - Vec3(solV.x - 1.5 + step2, 0.5, solV.z)).norm() < 1e-12
+              && (g_objs[5].pos - Vec3(solV.x + 1.5 + step2, 0.5, solV.z)).norm() < 1e-12,
               "colle multi : Ctrl+V suivant = nouvelle serie decalee d un pas supplementaire");
 
         /* le presse-papiers survit aux suppressions ; vide = rien pose */
         deleteObject(0);
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
         CHECK((int)g_objs.size() == 7
-              && (g_objs[5].pos - Vec3(3.0 * step2, 0.5, 0)).norm() < 1e-12
-              && (g_objs[6].pos - Vec3(3.0 + 3.0 * step2, 0.5, 0)).norm() < 1e-12,
+              && (g_objs[5].pos - Vec3(solV.x - 1.5 + 2.0 * step2, 0.5, solV.z)).norm() < 1e-12
+              && (g_objs[6].pos - Vec3(solV.x + 1.5 + 2.0 * step2, 0.5, solV.z)).norm() < 1e-12,
               "presse-papiers : independant des suppressions (le collage repart des captures)");
         g_clipboard.clear(); g_pasteRepeat = 0; g_bandFlash.clear();
         onKey(W, GLFW_KEY_V, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
@@ -3455,6 +3462,227 @@ int main() {
             CHECK(g_cam.dist == 4000.0, "B3.8 : borne de zoom arriere 4000 (sans curseur, pur dolly)");
         }
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        g_cam = g_camHome;
+    }
+
+    { /* B3.9 : refonte du collage - faces logiques (B3.9a), magnetisme au
+          deplacement avec orientation + poignees visibles (B3.9b), Ctrl+V
+          pres du curseur (B3.9c) ; retour test : "collage fait sur le
+          triangle, pas sur la face", "pas de commande style ctrl c /
+          ctrl v", precision : orientation et poignees maitrisees */
+        GLFWwindow* W = (GLFWwindow*)(std::uintptr_t)1ULL;
+        const double colT[3] = {0.6, 0.6, 0.6};
+        g_winW = 1600; g_winH = 900;
+        g_cam.target = Vec3(0, 0.5, 0); g_cam.dist = 20.0;
+        g_cam.theta = 0.0; g_cam.phi = 0.6;
+        double px, py;
+        const double tg = std::tan(kFovDeg * 3.14159265358979 / 360.0);
+        auto pixelDe = [&](const Vec3& c, double& ox, double& oy) {
+            const Vec3 d = normalized(c - g_cam.pos());
+            const double df = dot(d, g_cam.forward());
+            const double aspect = (double)g_winW / (double)g_winH;
+            ox = (dot(d, g_cam.right()) / (df * tg * aspect) + 1.0) * 0.5 * (double)g_winW;
+            oy = (1.0 - dot(d, g_cam.up()) / (df * tg)) * 0.5 * (double)g_winH;
+        };
+        extern double g_stubCursorX, g_stubCursorY;
+        auto resetScene = [&]() {
+            g_objs.clear();
+            g_objs.push_back(makeBoxObject("Cible", Vec3(0, 0.5, 0), Vec3(1, 0.5, 1), colT));
+            g_objs.push_back(makeBoxObject("Brique", Vec3(10, 0.25, 0), Vec3(0.5, 0.5, 0.5), colT));
+            g_selected = -1; g_selMulti.clear(); undoVide();
+            g_collStage = 0; g_collSrc = -1; g_mode = M_None;
+            g_axisHeld[0] = g_axisHeld[1] = g_axisHeld[2] = false;
+        };
+
+        /* 1. B3.9a : faces logiques - le collage ne se fait plus "sur le
+              triangle" : la face de boite = 4 aretes de bord REELLES */
+        resetScene();
+        {
+            std::vector<FaceLogique> fl;
+            facesLogiques(g_objs[0], fl);
+            CHECK(fl.size() == 6, "B3.9a : boite = 6 faces logiques");
+            size_t nb = 0;
+            for (const FaceLogique& f : fl) nb += f.bords.size();
+            CHECK(nb == 24, "B3.9a : 4 aretes de bord par face, 24 au total (diagonales exclues)");
+            bool bouclesOk = true;
+            for (const FaceLogique& f : fl)
+                if (f.boucle.size() != 4) bouclesOk = false;
+            CHECK(bouclesOk, "B3.9a : chaque face = boucle ordonnee de 4 sommets");
+            bool dessus = false;
+            for (const FaceLogique& f : fl)
+                if (std::fabs(f.n.y) > 0.999 && std::fabs(f.d - 1.0) < 1e-9) dessus = true;
+            CHECK(dessus, "B3.9a : la face du dessus (y = 1) est reconnue");
+        }
+
+        /* 2. accroches = sommets + milieux de BORDS logiques (pas de
+              diagonale) : 8 + 12 = 20 pour une boite */
+        {
+            std::vector<CollAcc> acc;
+            collAccroches(g_objs[0], acc);
+            CHECK(acc.size() == 20,
+                  "B3.9a : accroches boite = 8 sommets + 12 milieux d aretes de bord logiques");
+        }
+
+        /* 3. collage arete avec PRE-ROTATION 45 deg : les diagonales du fan
+              ne masquent plus l'alignement (NOTE v1 B3.7 resolvee) */
+        resetScene(); selectOnly(1);
+        {
+            Object& br = g_objs[1];
+            for (Vec3& p : br.v) p = vecRotate(p, Vec3(0, 1, 0), 45.0 * 3.14159265358979 / 180.0);
+            computeObjectDerived(br);
+        }
+        collStart();
+        /* vise pres de l'arete superieure z = 1 : impact (0,1,0.9), snap
+           arete a 0.1 -> cible exacte (0,1,1), arete cible de direction (0,0,1) */
+        pixelDe(Vec3(0, 1, 0.9), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        g_lastClickTime = -100.0;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_collStage == 0, "B3.9a : collage arete pose avec pre-rotation 45 deg");
+        CHECK([&]() {
+            std::vector<CollAcc> acc; collAccroches(g_objs[1], acc);
+            double dm = 1e300;
+            for (const CollAcc& a : acc) dm = std::min(dm, (a.p - Vec3(0, 1, 1)).norm());
+            return dm;
+        }() < 1e-9, "B3.9a : l accroche la plus proche est collee exactement au point d arete (0,1,1)");
+        CHECK(([&]() {
+            const Object& br = g_objs[1];
+            std::vector<std::pair<int, int>> bords;
+            aretesDeBord(br, bords);
+            for (const auto& e : bords) {
+                Vec3 d2 = (br.v[(size_t)e.second] - br.v[(size_t)e.first]) * br.scl;
+                const double L2 = d2.norm();
+                if (L2 < 1e-12) continue;
+                if (std::fabs(dot(d2 * (1.0 / L2), Vec3(0, 0, 1))) > 0.999) return true;
+            }
+            return false;
+        })(), "B3.9a : une arete de bord de la brique est alignee sur l arete cible (45 deg rattrapes)");
+
+        /* 4. B3.9b magnetisme COIN : le drag amene un coin dans la zone de
+              capture -> pose exacte sur le coin du voisin (priorite sommet) */
+        resetScene();
+        {
+            int ivc = -1;
+            for (size_t i = 0; i < g_objs[1].v.size(); ++i)
+                if ((g_objs[1].v[i] - Vec3(-0.5, 0.5, 0.5)).norm() < 1e-9) ivc = (int)i;
+            CHECK(ivc >= 0, "B3.9b : setup - le coin vise de la brique existe");
+            const Vec3 candPos(1.33, 0.33, 0.33);     /* coin a 0.29 du coin (1,1,1) */
+            const Vec3 dperp = g_cam.right() * 12.0;  /* delta DANS le plan camera */
+            const Vec3 startPos = candPos - dperp;
+            g_objs[1].pos = startPos;
+            const Vec3 grab = startPos + Vec3(0, 0.5, 0);
+            pixelDe(grab, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            selectOnly(1);
+            beginDrag(W, 1);
+            CHECK(g_mode == M_Drag && g_dragBaseOk, "B3.9b : drag arme, base du magnetisme capturee");
+            pixelDe(grab + dperp, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            updateDrag(W);
+            CHECK(g_magnet.actif && g_magnet.prio == 0,
+                  "B3.9b : coin dans la zone de capture = magnetisme actif (priorite sommet)");
+            CHECK((g_objs[1].pos + g_objs[1].v[(size_t)ivc] * g_objs[1].scl - Vec3(1, 1, 1)).norm() < 1e-9,
+                  "B3.9b : le coin deplace est colle exactement sur le coin du voisin (1,1,1)");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        }
+
+        /* 5. B3.9b magnetisme ARETE/ARETE avec ORIENTATION (precision
+              utilisateur : "l'orientation n'etait pas maitrisee") */
+        resetScene();
+        {
+            Object& br = g_objs[1];
+            /* brique aplatie a demi-hauteur 0.4 et posee a +0.1 en x du point
+               d'alignement : sinon, des que le milieu d'arete entre dans la
+               zone, un coin de la brique reste a ~0.12 d'un coin de la Cible
+               et la paire SOMMET (prio 0) capterait avant arete/arete */
+            for (Vec3& p : br.v) {
+                p = vecRotate(p, Vec3(0, 1, 0), 30.0 * 3.14159265358979 / 180.0);
+                p.y *= 0.8;
+            }
+            computeObjectDerived(br);
+            /* l'arete de bord arriere (y local +0.4, z local -0.5) doit finir
+               sur l'arete cible (-1,1,1)-(-1,1,-1), milieu (-1,1,0) ; posee a
+               0.1 du milieu cible ; plus proche paire sommet = 0.203 > tol */
+            Vec3 mil = vecRotate(Vec3(0, 0.4, -0.5), Vec3(0, 1, 0), 30.0 * 3.14159265358979 / 180.0);
+            br.pos = Vec3(-1, 1, 0) - mil + Vec3(0.1, 0, 0);
+            g_cam.dist = 5.0;      /* tol 0.15 : paire sommet la plus proche = 0.203 */
+            const Vec3 grab = br.pos + Vec3(0, 0.4, 0);
+            pixelDe(grab, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            selectOnly(1);
+            beginDrag(W, 1);
+            CHECK(g_mode == M_Drag && g_dragBaseOk,
+                  "B3.9b : setup - drag arme pour le magnetisme arete/arete");
+            updateDrag(W);                            /* pose pres = captee au frame suivant */
+            CHECK(g_magnet.actif && g_magnet.prio == 1,
+                  "B3.9b : milieu d arete dans la zone = paire arete/arete captee");
+            CHECK((g_magnet.cible - Vec3(-1, 1, 0)).norm() < 1e-9,
+                  "B3.9b : la cible captee est le milieu de l arete (-1,1,0)");
+            bool milieuColle = false, oriente = false;
+            {
+                std::vector<std::pair<int, int>> bords;
+                aretesDeBord(br, bords);
+                for (const auto& e : bords) {
+                    const Vec3 m = br.pos + (br.v[(size_t)e.first] + br.v[(size_t)e.second]) * (0.5 * br.scl);
+                    if ((m - Vec3(-1, 1, 0)).norm() < 1e-9) {
+                        milieuColle = true;
+                        Vec3 d2 = (br.v[(size_t)e.second] - br.v[(size_t)e.first]) * br.scl;
+                        const double L2 = d2.norm();
+                        if (L2 > 1e-12 && std::fabs(dot(d2 * (1.0 / L2), Vec3(0, 0, 1))) > 0.999)
+                            oriente = true;
+                    }
+                }
+            }
+            CHECK(milieuColle, "B3.9b : le milieu d arete est colle exactement sur la cible");
+            CHECK(oriente, "B3.9b : l arete de la brique est ALIGNEE sur l arete cible (orientation maitrisee)");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        }
+
+        /* 6. non-regression : drag HORS zone de capture = position exacte */
+        resetScene();
+        g_cam.dist = 20.0;
+        {
+            const Vec3 startPos = g_objs[1].pos;
+            const Vec3 grab = startPos + Vec3(0, 0.5, 0);
+            pixelDe(grab, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            selectOnly(1);
+            beginDrag(W, 1);
+            const Vec3 dperp = g_cam.right() * 1.0 + g_cam.up() * 0.25;
+            pixelDe(grab + dperp, px, py); g_stubCursorX = px; g_stubCursorY = py;
+            updateDrag(W);
+            CHECK(!g_magnet.actif, "B3.9b : hors zone de capture = aucun magnetisme");
+            Vec3 org2, dir2;
+            CHECK(rayFromMouse(W, org2, dir2), "B3.9b : rayon disponible dans le stub");
+            const Vec3 nrm = g_cam.forward();
+            const double tP = dot(g_grabPoint - org2, nrm) / dot(dir2, nrm);
+            const Vec3 delta = (org2 + dir2 * tP) - g_grabPoint;
+            CHECK((g_objs[1].pos - startPos - delta).norm() < 1e-9,
+                  "B3.9b : non-regression drag - pos = startPos + delta exactement");
+            onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        }
+
+        /* 7. B3.9c Ctrl+V pres du curseur : la copie est posee au sol sous
+              le curseur (centre X/Z, fond de boite a y = 0), selectionnee */
+        resetScene();
+        {
+            selectOnly(1);
+            copySelected();
+            CHECK(g_clipboard.size() == 1, "B3.9c : Ctrl+C met la selection au presse-papiers");
+            pixelDe(Vec3(5, 0, 3), px, py); g_stubCursorX = px; g_stubCursorY = py;
+            const size_t n0 = g_objs.size();
+            pasteClipboard(W);
+            CHECK(g_objs.size() == n0 + 1, "B3.9c : Ctrl+V colle une copie");
+            const Object& cp = g_objs.back();
+            const Vec3 lo2 = cp.pos + cp.bmin * cp.scl;
+            const Vec3 hi2 = cp.pos + cp.bmax * cp.scl;
+            CHECK(std::fabs((lo2.x + hi2.x) * 0.5 - 5.0) < 1e-9
+                  && std::fabs((lo2.z + hi2.z) * 0.5 - 3.0) < 1e-9,
+                  "B3.9c : la copie est centree sous le curseur (X/Z)");
+            CHECK(std::fabs(lo2.y) < 1e-9, "B3.9c : la copie est posee au sol (fond de boite a y = 0)");
+            CHECK(g_selected == (int)(g_objs.size() - 1),
+                  "B3.9c : la copie est selectionnee (prete au deplacement fin magnetique)");
+            /* serie : un 2e Ctrl+V au meme endroit se decale encore d'un pas */
+            pasteClipboard(W);
+            CHECK(g_objs.size() == n0 + 2, "B3.9c : 2e Ctrl+V = une copie de plus");
+        }
+
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_mode = M_None;
         g_cam = g_camHome;
     }
 
