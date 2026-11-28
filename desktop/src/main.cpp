@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.7b";   /* collage generique 2 objets : menu contextuel Coller sur..., accroche intelligente, alignement arete/arete */
+static const char* BUILD_VERSION = "B3.7c";   /* collage generique 2 objets : menu contextuel Coller sur..., accroche intelligente, alignement arete/arete */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -5566,15 +5566,29 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
+        /* REGLE NAVIGATION (retour test B3.7b, generalisee) : Maj + clic G =
+           PAN, systematiquement dans tous les modes ARMES (ligne, rectangle,
+           cercle, arc, polygone, spline, balayage, collage, push/pull arme,
+           rotation arme). Exception = cas impossibles : un GESTE ACTIF (pp/
+           rot en cours, drag de poignee, roll) ou l'edition (qui a sa regle
+           propre : la poignee d'abord, pan sur clic sans effet B3.6a-ter).
+           La selection simple garde sa regle (Maj+clic sur un objet = le
+           deplacer, Maj+clic dans le vide = pan, plus bas). */
+        const bool modeArme = g_lineMode || g_rectMode || g_cercleMode || g_arcMode
+                           || g_polyMode || g_splMode || (g_sweepStage != 0)
+                           || (g_collStage != 0) || g_ppMode || g_rotMode;
+        if ((mods & GLFW_MOD_SHIFT) && modeArme && g_mode == M_None
+            && !g_ppActive && !g_rotActive && !g_editMode
+            && g_editGrab < 0 && !g_rollDrag) {
+            g_lastClickTime = glfwGetTime();
+            g_mode = M_Pan;
+            flashBand("pan : deplacez la vue ; relachez pour poser");
+            glfwGetCursorPos(w, &g_prevX, &g_prevY);
+            return;
+        }
         if (g_collStage) {   /* B3.7b : navigation libre pendant le collage */
-            if (mods & GLFW_MOD_SHIFT) {   /* Maj+clic = pan (regle de selection) */
-                g_mode = M_Pan;
-                flashBand("pan : deplacez la vue ; relachez pour poser");
-                glfwGetCursorPos(w, &g_prevX, &g_prevY);
-                return;
-            }
             {   /* clic sur une cible = pose ; clic dans le vide = orbite (B3.3c) ;
-                   la molette (zoom) reste globale */
+                   la molette (zoom) reste globale ; Maj+clic = pan (au-dessus) */
                 Vec3 org, dir; int hit; double bestT; int hitFil; double bestTf;
                 if (collVise(w, org, dir, hit, bestT, hitFil, bestTf)) { collClick(w); return; }
             }

@@ -1144,7 +1144,14 @@ globale corrigee par le volume signe (normales exterieures) ;
     navigation libre pendant le collage, regles de l'edition (B3.3c/
     B3.6a-ter) appliquees : Maj+clic = pan, clic dans le vide = orbite,
     molette = zoom (deja globale) ; le collage reste arme pendant la
-    navigation ; +4 verifications = **567, 0 echec** (ASan propre).
+    navigation ; +4 verifications = **567, 0 echec** (ASan propre) ;
+  - **B3.7c (regle navigation GENERALISEE)** : Maj + clic G = PAN dans TOUS
+    les modes armes (ligne, rectangle, cercle, arc, polygone, spline,
+    balayage, collage, push/pull arme, rotation arme) - systematique sauf
+    cas impossibles (geste actif pp/rot/drag de poignee/roll ; edition qui
+    garde sa regle propre poignee d'abord) ; la selection simple garde sa
+    regle (Maj+clic sur un objet = le deplacer, dans le vide = pan) ;
+    +5 verifications = **572, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 

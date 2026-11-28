@@ -695,6 +695,11 @@ Questions ouvertes a trancher avec l'utilisateur :
     orbite, molette = zoom ; le collage reste arme ; la recherche de cible
     est extraite dans `collVise` (un seul chemin de code, partage par le
     press et la pose) ;
+  - **B3.7c FAIT (regle navigation generalisee)** : Maj + clic G = PAN dans
+    TOUS les modes armes, systematique ("sauf si totalement impossible") -
+    exceptions : geste ACTIF (pp/rot en cours, drag de poignee, roll) et
+    edition (regle propre : poignee d'abord, pan sur clic sans effet) ; la
+    selection simple garde sa regle (Maj+clic sur un objet = le deplacer) ;
     - NOTE v1 a confirmer : l'alignement choisit parmi TOUTES les aretes
       derivees incidentes a l'accroche, DIAGONALES DU FAN comprises (une
       boite tournee de 45 deg a une diagonale deja parallele a l'arete

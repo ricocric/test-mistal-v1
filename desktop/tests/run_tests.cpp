@@ -3339,6 +3339,46 @@ int main() {
         }
         collCancel("fin du sous-bloc");
 
+        /* 4c. B3.7c : regle navigation GENERALISEE - Maj + clic G = pan dans
+           tous les modes armes (retour : "a utiliser systematiquement sauf
+           si totalement impossible") */
+        resetScene(); g_cam.dist = 20.0;
+        {
+            auto majPanDansMode = [&]() {
+                onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_MOD_SHIFT);
+                const bool ok = g_mode == M_Pan;
+                onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+                return ok && g_mode == M_None;
+            };
+            runToolCommand(IDM_TOOL_LINE);
+            CHECK(majPanDansMode() && g_lineMode,
+                  "B3.7c : Maj+clic pendant la LIGNE armee = pan, ligne toujours armee");
+            lineCancel("fin");
+            runToolCommand(IDM_TOOL_RECT);
+            CHECK(majPanDansMode() && g_rectMode,
+                  "B3.7c : Maj+clic pendant le RECTANGLE arme = pan, rect toujours arme");
+            rectCancel("fin");
+            runToolCommand(IDM_TOOL_CERCLE);
+            CHECK(majPanDansMode() && g_cercleMode,
+                  "B3.7c : Maj+clic pendant le CERCLE arme = pan, cercle toujours arme");
+            cercleCancel("fin");
+        }
+        /* non-regression selection : Maj+clic SUR un objet = le deplacer (drag),
+           pas un pan ; Maj+clic dans le vide = pan (regle T1.x conservee) */
+        resetScene(); selectOnly(0);
+        pixelDe(Vec3(0, 0.5, 0), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        g_lastClickTime = -100.0;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_mode == M_Drag,
+              "B3.7c : selection - Maj+clic sur un objet = drag de l'objet (pas un pan)");
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        pixelDe(Vec3(50, 5, 50), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        g_lastClickTime = -100.0;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_mode == M_Pan,
+              "B3.7c : selection - Maj+clic dans le vide = pan (regle conservee)");
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+
         /* 5. refus et sorties */
         resetScene();
         collStart();
