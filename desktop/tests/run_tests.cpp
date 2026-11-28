@@ -3316,6 +3316,29 @@ int main() {
         CHECK(distAccrocheCible(Vec3(1, 1, 1)) < 1e-9,
               "B3.7 : coin vise = snap exact sur le sommet");
 
+        /* 4b. B3.7b : navigation libre pendant le collage (retour test :
+           pas de pan/zoom pour choisir la face cible) */
+        resetScene(); selectOnly(1);
+        collStart();
+        pixelDe(Vec3(50, 5, 50), px, py); g_stubCursorX = px; g_stubCursorY = py;
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, GLFW_MOD_SHIFT);
+        CHECK(g_mode == M_Pan && g_collStage == 1,
+              "B3.7b : Maj+clic pendant le collage = pan, collage toujours arme");
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        CHECK(g_mode == M_None, "B3.7b : relachement = fin du pan");
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        CHECK(g_mode == M_Orbit && g_collStage == 1,
+              "B3.7b : clic dans le vide = orbite, collage toujours arme");
+        onMouseButton(W, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+        {
+            const double dAvant = g_cam.dist;
+            onScroll(W, 0, 3.0);
+            CHECK(g_cam.dist < dAvant && g_collStage == 1,
+                  "B3.7b : la molette zoome pendant le collage");
+            g_cam.dist = 20.0;
+        }
+        collCancel("fin du sous-bloc");
+
         /* 5. refus et sorties */
         resetScene();
         collStart();

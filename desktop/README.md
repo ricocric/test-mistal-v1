@@ -1139,7 +1139,12 @@ globale corrigee par le volume signe (normales exterieures) ;
     R(pos-P) - (pos-P) : l'accroche collee sautait hors de la cible) ;
   - +14 verifications = **563, 0 echec** (ASan propre) : toggle x3, face +
     undo/redo, arete avec alignement 30 deg, coin, refus sans selection,
-    clic dans le vide, Echap.
+    clic dans le vide, Echap ;
+  - **B3.7b (retour test : pas de pan/zoom pour choisir la face cible)** :
+    navigation libre pendant le collage, regles de l'edition (B3.3c/
+    B3.6a-ter) appliquees : Maj+clic = pan, clic dans le vide = orbite,
+    molette = zoom (deja globale) ; le collage reste arme pendant la
+    navigation ; +4 verifications = **567, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 

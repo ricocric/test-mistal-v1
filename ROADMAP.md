@@ -689,6 +689,12 @@ Questions ouvertes a trancher avec l'utilisateur :
       R(pos-P) - (pos-P) : l'accroche collee sautait hors de la cible des
       que l'objet source etait loin du pivot (le test l'a attrape avant
       l'utilisateur) ;
+  - **B3.7b FAIT (retour test : "pas de pan/zoom pour choisir la face de
+    l'objet cible")** : navigation libre pendant le collage, memes regles
+    que l'edition (B3.3c/B3.6a-ter) : Maj+clic = pan, clic dans le vide =
+    orbite, molette = zoom ; le collage reste arme ; la recherche de cible
+    est extraite dans `collVise` (un seul chemin de code, partage par le
+    press et la pose) ;
     - NOTE v1 a confirmer : l'alignement choisit parmi TOUTES les aretes
       derivees incidentes a l'accroche, DIAGONALES DU FAN comprises (une
       boite tournee de 45 deg a une diagonale deja parallele a l'arete

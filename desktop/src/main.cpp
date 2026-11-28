@@ -48,7 +48,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.7";   /* collage generique 2 objets : menu contextuel Coller sur..., accroche intelligente, alignement arete/arete */
+static const char* BUILD_VERSION = "B3.7b";   /* collage generique 2 objets : menu contextuel Coller sur..., accroche intelligente, alignement arete/arete */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -4301,24 +4301,33 @@ static void collTourne(Object& o, const Vec3& pivotW, const Vec3& axe, double an
 /* clic de cible : face (rayon/tri) en priorite (les solides gagnent, regle
    de selection B3.6a-bis), sinon fil/arete (point le plus proche du rayon,
    projete sur le segment) ; puis accroche intelligente + alignement 3b */
-static void collClick(GLFWwindow* w) {
-    Vec3 org, dir;
-    if (!rayFromMouse(w, org, dir)) return;
-    if (g_collSrc < 0 || g_collSrc >= (int)g_objs.size()) { collCancel("collage : objet source perdu"); return; }
-    int hit = -1; double bestT = 1e300;
+/* B3.7b (retour test : pas de pan/zoom pour choisir la face cible) :
+   recherche de cible PARTAGEE - le press gauche en a besoin pour distinguer
+   le clic utile (pose) d'un clic de navigation (orbite) ; faux si aucune */
+static bool collVise(GLFWwindow* w, Vec3& org, Vec3& dir, int& hit, double& bestT,
+                     int& hitFil, double& bestTf) {
+    hit = -1; bestT = 1e300; hitFil = -1; bestTf = 1e300;
+    if (!rayFromMouse(w, org, dir)) return false;
+    if (g_collSrc < 0 || g_collSrc >= (int)g_objs.size()) { collCancel("collage : objet source perdu"); return false; }
     for (size_t i = 0; i < g_objs.size(); ++i) {
         if ((int)i == g_collSrc) continue;
         double t; size_t ti;
         if (rayObjectTri(org, dir, g_objs[i], t, &ti) && t < bestT) { bestT = t; hit = (int)i; }
     }
-    int hitFil = -1; double bestTf = 1e300;
     if (hit < 0)
         for (size_t i = 0; i < g_objs.size(); ++i) {
             if ((int)i == g_collSrc) continue;
             const double t = filRayHit(org, dir, g_objs[i], filPickTol());
             if (t >= 0.0 && t < bestTf) { bestTf = t; hitFil = (int)i; }
         }
-    if (hit < 0 && hitFil < 0) { flashBand("collage : aucune cible visee - cliquez un autre objet"); return; }
+    return hit >= 0 || hitFil >= 0;
+}
+static void collClick(GLFWwindow* w) {
+    Vec3 org, dir; int hit; double bestT; int hitFil; double bestTf;
+    if (!collVise(w, org, dir, hit, bestT, hitFil, bestTf)) {
+        flashBand("collage : aucune cible visee - cliquez un autre objet");
+        return;
+    }
     /* point cible + arete cible eventuelle (snap sommet, sinon arete dans la tolerance) */
     Vec3 cible; int cObj; std::pair<int, int> areteB(-1, -1);
     if (hit >= 0) {
@@ -5557,7 +5566,22 @@ static void onMouseButton(GLFWwindow* w, int button, int action, int mods) {
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
-        if (g_collStage) { collClick(w); return; }   /* B3.7 : le clic pose la cible du collage */
+        if (g_collStage) {   /* B3.7b : navigation libre pendant le collage */
+            if (mods & GLFW_MOD_SHIFT) {   /* Maj+clic = pan (regle de selection) */
+                g_mode = M_Pan;
+                flashBand("pan : deplacez la vue ; relachez pour poser");
+                glfwGetCursorPos(w, &g_prevX, &g_prevY);
+                return;
+            }
+            {   /* clic sur une cible = pose ; clic dans le vide = orbite (B3.3c) ;
+                   la molette (zoom) reste globale */
+                Vec3 org, dir; int hit; double bestT; int hitFil; double bestTf;
+                if (collVise(w, org, dir, hit, bestT, hitFil, bestTf)) { collClick(w); return; }
+            }
+            g_mode = M_Orbit;
+            glfwGetCursorPos(w, &g_prevX, &g_prevY);
+            return;
+        }
         if (g_lineMode) { lineTakePoint(w); return; }   /* B2.1 : chaque clic pose un sommet */
         if (g_rectMode) { rectTakePoint(w); return; }   /* B2.2 : clic 1 = coin, clic 2 = coin oppose pose */
         if (g_cercleMode) { cercleTakePoint(w); return; }   /* B2.3 : clic 1 = centre, clic 2 = rayon pose */
