@@ -8,7 +8,8 @@ backlog est revu a chaque franchissement d'etape importante.
 
 - Export cible / multi, suppression multi, compteur, Ctrl+S (T1.6.x)
 - Multi-selection Ctrl+clic + actions multi (T1.7) + durcissement crash
-- Point de vue : pan molette/Shift, recentrage C (T1.8)
+- Point de vue : pan Maj+clic (B3.9d retabli) + zoom molette sur le
+  curseur (B3.8), recentrage C (T1.8)
 - Rotation multi cas 1 : axes propres (T1.9) + correctif gel bandeau (T1.9.1)
 - Rotation multi cas 2 : barycentre du groupe, bascule B a chaud (T1.10)
 - Deplacement de groupe : drag multi (T1.11)
@@ -765,6 +766,13 @@ Questions ouvertes a trancher avec l'utilisateur :
     plus proche gagne ; perf = accroches x cibles recalculees par frame
     (note : a optimiser si grosses scenes) ; verif non-regression : les
     tests de drag T1.x deposent loin de tout voisin (position exacte).
+- **B3.9d PAN RETABLI (retour utilisateur : "le maj + clic n'aurait pas du
+  etre supprime pour la camera") - FAIT (609 verifications, 0 echec, ASan
+  propre)** : revert de la tentative B3.9c (pan supprime) ; la regle
+  navigation B3.7c redevenue celle en vigueur : Maj + clic G = PAN
+  systematique (modes armes, selection dans le vide), Maj + clic droit =
+  pan dans tous les modes (Maj pendant clic droit tenu inclus) ; le zoom
+  sur le curseur (B3.8) reste le complement ; les deux gestes cohabitent.
 - **B3.9 v2 (backlog, apres validation utilisateur)** : face-contre-face
   avec ALIGNEMENT DES NORMALES (v1 = translation seule pour face/face),
   magnetisme multi (v1 = mono seulement), perf facesLogiques sur gros

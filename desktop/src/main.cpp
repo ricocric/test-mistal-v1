@@ -49,7 +49,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.9b";   /* refonte collage : faces logiques, magnetisme au deplacement (position + orientation), Ctrl+V pres du curseur, poignees de la cible allumees pendant le magnetisme */
+static const char* BUILD_VERSION = "B3.9d";   /* refonte collage : faces logiques, magnetisme au deplacement (position + orientation), Ctrl+V pres du curseur, poignees de la cible allumees pendant le magnetisme */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */

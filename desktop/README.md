@@ -1186,6 +1186,13 @@ globale corrigee par le volume signe (normales exterieures) ;
   porte/chambranle valide (l'arete se colle sans rotation
   face-contre-face, pivot sur l'arete) ; zoom sur le curseur valide
   "parfait, systematique". Dessin seul : 609, 0 echec.
+- **B3.9d (retour de test)** : PAN RETABLI - la suppression Maj+clic de
+  l'etape B3.9c etait revolue ("le maj + clic n'aurait pas du etre
+  supprime pour la camera") ; revert complet de B3.9c : Maj+clic G = pan
+  (modes armes + selection dans le vide), Maj+clic droit = pan partout,
+  Maj pendant clic droit tenu inclus ; le zoom sur le curseur (B3.8)
+  reste le complement ; les deux gestes cohabitent ; **609, 0 echec**
+  (ASan propre).
 
 ## Organiseur des prochains lots
 
