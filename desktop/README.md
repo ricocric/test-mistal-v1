@@ -1226,6 +1226,14 @@ globale corrigee par le volume signe (normales exterieures) ;
   pose passe en MAGENTA (plus grande) - MEME choix que le pincement via le
   helper unique sweepAccrocheProfilProche (pose + dessin, UN SEUL CHEMIN
   DE CODE) ; **643, 0 echec** (ASan propre).
+- **B3.10b (orientation 3 axes maitrisee, retour de test "resultat
+  folklorique")** : l'ANNEAU 0 = le profil EXACTEMENT tel que pose (frame
+  de la station 0 = base du plan du profil, AUCUNE rotation initiale -
+  l'ancienne frame normale-projetee + rotation minimale Nv->tangente
+  laissait le 3e axe non contraint) ; stations suivantes = transport
+  parallele inchange (pas de torsion) ; poignee de roll projetee sur le
+  plan perpendiculaire a l'axe (cercle du drag) ; roll B3.6b reste le
+  reglage fin ; **651, 0 echec** (ASan propre).
 
 ## Organiseur des prochains lots
 

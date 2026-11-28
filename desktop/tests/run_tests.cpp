@@ -2405,6 +2405,9 @@ int main() {
             /* profil = polygone 4x4 pose, chemin = fil ligne droite (pose a la main) */
             g_polyPts = { Vec3(60,0,0), Vec3(64,0,0), Vec3(64,0,4), Vec3(60,0,4) };
             polyPose();
+            std::vector<Vec3> profW;               /* sommets MONDE du profil AVANT conversion */
+            for (const Vec3& pv : g_objs.back().v)
+                profW.push_back(g_objs.back().pos + pv * g_objs.back().scl);
             Object chemin;
             chemin.name = "Ligne";
             chemin.traceType = 1; chemin.traceFerme = 0;
@@ -2420,15 +2423,40 @@ int main() {
             CHECK(g_objs[ip].v.size() == 8, "B3 : 2 anneaux de 4 sommets");
             CHECK(g_objs[ip].tri.size() == (size_t)(3 * 12),
                   "B3 : prisme balaye = 12 tris (8 murs + 4 caps)");
-            CHECK(std::fabs(signedVolume(g_objs[ip]) - 160.0) < 1e-6,
-                  "B3 : volume = aire 16 x longueur 10");
-            /* profil perpendiculaire au chemin : anneaux a z = 10 et 20 exactement (monde) */
-            bool perp = true;
-            for (const Vec3& p : g_objs[ip].v) {
-                const Vec3 pw = g_objs[ip].pos + p * g_objs[ip].scl;
-                if (std::fabs(pw.z - 10.0) > 1e-9 && std::fabs(pw.z - 20.0) > 1e-9) perp = false;
+            /* B3.10b : l'anneau 0 = profil tel que pose (eventuellement OBLIQUE
+               au chemin) -> le volume exact aire x longueur n'est plus garanti ;
+               invariant retenu : l'aire de la section PERPENDICULAIRE (anneau 1,
+               transport rigide du profil) = aire du profil = 16 */
+            {
+                Vec3 acc2(0, 0, 0);
+                for (size_t k = 0; k < 4; ++k) {
+                    const Vec3 a = g_objs[ip].pos + g_objs[ip].v[4 + k] * g_objs[ip].scl;
+                    const Vec3 b = g_objs[ip].pos + g_objs[ip].v[4 + (k + 1) % 4] * g_objs[ip].scl;
+                    acc2 = acc2 + cross(a, b);
+                }
+                CHECK(std::fabs(0.5 * acc2.norm() - 16.0) < 1e-9,
+                      "B3.10b : aire de l'anneau 1 (section perpendiculaire) = aire du profil = 16");
             }
-            CHECK(perp, "B3 : anneaux PERPENDICULAIRES au chemin (z constant par anneau)");
+            /* B3.10b : ANNEAU 0 = le profil EXACTEMENT tel que pose (translation
+               seule : chaque arete de l'anneau 0 a le MEME vecteur que l'arete
+               du profil trace - aucune re-orientation au lancement) ; l'anneau
+               1 (transport parallele) est perpendiculaire au chemin (z = 20) */
+            {
+                bool telQuePose = true;
+                for (size_t k = 0; k < 4 && telQuePose; ++k) {
+                    const Vec3 a = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                    const Vec3 b = g_objs[ip].pos + g_objs[ip].v[(k + 1) % 4] * g_objs[ip].scl;
+                    if ((b - a - (profW[(k + 1) % 4] - profW[k])).norm() > 1e-9) telQuePose = false;
+                }
+                CHECK(telQuePose,
+                      "B3.10b : anneau 0 = profil EXACTEMENT tel que pose (aretes identiques, translation seule)");
+                bool z20 = true;
+                for (size_t k = 4; k < 8 && z20; ++k) {
+                    const Vec3 pw = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                    if (std::fabs(pw.z - 20.0) > 1e-9) z20 = false;
+                }
+                CHECK(z20, "B3.10b : anneau 1 (transport parallele) perpendiculaire au chemin (z = 20)");
+            }
             CHECK(signedVolume(g_objs[ip]) > 0.0, "B3 : normales exterieures (volume signe positif)");
             /* B3.1b : le point de la face le plus proche du depart du fil se
                connecte EXACTEMENT au depart du chemin (maitrise Follow Me) */
@@ -2440,9 +2468,9 @@ int main() {
                 }
                 CHECK(connexe, "B3 : connexion - le point de la face le plus proche du fil est pose sur le depart");
             }
-            /* B3.5 : ROLL par defaut = COLLER PLAT - la section a la station 0
-               garde les directions tracees : ses aretes suivent x OU y (le
-               losange incline d avant ne satisfaisait ni l un ni l autre) */
+            /* B3.10b : l'anneau 0 etant le profil tel que pose, la section a la
+               station 0 garde les directions tracees : ses aretes suivent x OU y
+               (le losange incline d avant ne satisfaisait ni l un ni l autre) */
             {
                 bool aligne = true;
                 for (size_t k = 0; k < 4 && aligne; ++k) {
@@ -2451,7 +2479,7 @@ int main() {
                     if (std::fabs(a.x - b.x) > 1e-9 && std::fabs(a.y - b.y) > 1e-9)
                         aligne = false;
                 }
-                CHECK(aligne, "B3.5 : coller plat - section alignee aux axes (pas de losange incline)");
+                CHECK(aligne, "B3.10b : anneau 0 tel que pose = aretes alignees comme tracees (pas de losange incline)");
             }
             /* chemin ferme = solide torique (sans caps) */
             g_polyPts = { Vec3(70,0,0), Vec3(74,0,0), Vec3(74,0,4), Vec3(70,0,4) };
@@ -2921,6 +2949,78 @@ int main() {
               "B3.10a-quater : avec capture, l'accroche pincee du profil est determinee (magenta)");
         g_sweepStage = 0; g_sweepProfil = -1; g_sweepConnOk = false; g_sweepConnFil = -1;
         g_cam.dist = distSauve;
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
+    }
+
+    /* ===== B3.10b : ORIENTATION 3 AXES - anneau 0 = profil tel que pose ===== */
+    {
+        g_objs.clear(); g_selMulti.clear(); g_selected = -1;
+        /* profil NON aligne aux axes (triangle quelconque, plan y = 0),
+           chemin = ligne droite le long de z : l'ancien code (B3.5) tournait
+           le profil de 90 deg (rotation minimale normale -> tangente) =
+           aretes modifiees, orientation "folklorique" ; B3.10b = AUCUNE
+           re-orientation au lancement */
+        g_polyPts = { Vec3(0,0,0), Vec3(4,0,1), Vec3(2,0,5) };
+        polyPose();
+        std::vector<Vec3> profW;
+        for (const Vec3& pv : g_objs.back().v)
+            profW.push_back(g_objs.back().pos + pv * g_objs.back().scl);
+        {
+            Object ch; ch.name = "Ligne";
+            ch.pos = Vec3(0, 0, 0); ch.scl = 1.0;
+            ch.traceType = 1; ch.traceFerme = 0;
+            ch.tracePts = { Vec3(0,0,10), Vec3(0,0,20) };
+            ch.v = ch.tracePts;
+            computeObjectDerived(ch);
+            g_objs.push_back(ch);
+        }
+        const size_t ip = g_objs.size() - 2, ic = g_objs.size() - 1;
+        CHECK(sweepConvertTo(g_objs[ip], g_objs[ic]),
+              "B3.10b : balayage triangle quelconque + ligne accepte");
+        CHECK(g_objs[ip].v.size() == 6, "B3.10b : 2 anneaux de 3 sommets");
+        bool telQuePose = true;
+        for (size_t k = 0; k < 3 && telQuePose; ++k) {
+            const Vec3 a = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+            const Vec3 b = g_objs[ip].pos + g_objs[ip].v[(k + 1) % 3] * g_objs[ip].scl;
+            if ((b - a - (profW[(k + 1) % 3] - profW[k])).norm() > 1e-9) telQuePose = false;
+        }
+        CHECK(telQuePose,
+              "B3.10b : profil NON aligne aux axes = aretes de l'anneau 0 IDENTIQUES au trace (aucune rotation imposee)");
+        bool planY = true;
+        for (size_t k = 0; k < 3 && planY; ++k) {
+            const Vec3 pw = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+            if (std::fabs(pw.y) > 1e-9) planY = false;
+        }
+        CHECK(planY, "B3.10b : anneau 0 DANS le plan du profil trace (y = 0, pas releve vers le chemin)");
+        bool z20 = true;
+        for (size_t k = 3; k < 6 && z20; ++k) {
+            const Vec3 pw = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+            if (std::fabs(pw.z - 20.0) > 1e-9) z20 = false;
+        }
+        CHECK(z20, "B3.10b : anneau 1 (transport parallele) perpendiculaire au chemin (z = 20)");
+        CHECK(signedVolume(g_objs[ip]) > 0.0,
+              "B3.10b : normales exterieures conservees (volume signe > 0)");
+        /* roll (B3.6b) = reglage fin autour du chemin : aretes de l'anneau 0
+           invariantes sous roll (rotation dans le plan du profil) */
+        {
+            std::vector<double> aretes;
+            for (size_t k = 0; k < 3; ++k) {
+                const Vec3 a = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                const Vec3 b = g_objs[ip].pos + g_objs[ip].v[(k + 1) % 3] * g_objs[ip].scl;
+                aretes.push_back((b - a).norm());
+            }
+            g_objs[ip].traceRoll = 33.0;
+            traceRegen(g_objs[ip]);
+            bool inv = true;
+            for (size_t k = 0; k < 3 && inv; ++k) {
+                const Vec3 a = g_objs[ip].pos + g_objs[ip].v[k] * g_objs[ip].scl;
+                const Vec3 b = g_objs[ip].pos + g_objs[ip].v[(k + 1) % 3] * g_objs[ip].scl;
+                if (std::fabs((b - a).norm() - aretes[k]) > 1e-9) inv = false;
+            }
+            CHECK(inv, "B3.10b : roll 33 deg = aretes de l'anneau 0 invariantes (rotation dans le plan)");
+            g_objs[ip].traceRoll = 0.0;
+            traceRegen(g_objs[ip]);
+        }
         g_objs.clear(); g_selMulti.clear(); g_selected = -1; g_polyPts.clear();
     }
 
@@ -4010,9 +4110,29 @@ int main() {
         const int ich = traceAddPoint(sw, milieuCh);
         CHECK(ich == (int)(npts0 + 1) && sw.traceChemin.size() == nch0 + 1,
               "B3.3 : ajout d un point au CHEMIN (index = npts + i)");
-        CHECK(sw.v.size() == 12 && sw.tri.size() == (size_t)(3 * 20)
-              && std::fabs(signedVolume(sw) - 160.0) < 1e-6,
-              "B3.3 : 3 anneaux (12 sommets, 20 tris), volume conserve 160");
+        /* B3.10b : anneau 0 oblique (profil tel que pose) -> volume exact non
+           garanti ; invariants : 12 sommets / 20 tris, anneaux 1..2
+           perpendiculaires au chemin (z constant par anneau), aire de
+           section = 16, volume signe > 0 */
+        {
+            bool zOk = true;
+            for (size_t r = 1; r < sw.traceChemin.size() && zOk; ++r) {
+                const double zr = sw.pos.z + sw.traceChemin[r].z * sw.scl;
+                for (size_t k = 0; k < 4 && zOk; ++k) {
+                    const Vec3 pw = sw.pos + sw.v[r * 4 + k] * sw.scl;
+                    if (std::fabs(pw.z - zr) > 1e-9) zOk = false;
+                }
+            }
+            Vec3 acc2(0, 0, 0);
+            for (size_t k = 0; k < 4; ++k) {
+                const Vec3 a = sw.pos + sw.v[4 + k] * sw.scl;
+                const Vec3 b = sw.pos + sw.v[4 + (k + 1) % 4] * sw.scl;
+                acc2 = acc2 + cross(a, b);
+            }
+            CHECK(sw.v.size() == 12 && sw.tri.size() == (size_t)(3 * 20) && zOk
+                  && std::fabs(0.5 * acc2.norm() - 16.0) < 1e-9 && signedVolume(sw) > 0.0,
+                  "B3.3 : 3 anneaux (12 sommets, 20 tris), anneaux 1+ perpendiculaires, aire 16, volume > 0 (B3.10b)");
+        }
         CHECK(traceAddPoint(sw, sw.pos + Vec3(100, 0, 100), true) < 0,
               "B3.3 : refus - clic-sol LOIN du chemin (avec garde)");
         CHECK(traceDelPoint(sw, ich), "B3.3 : suppression de la poignee du chemin");
@@ -4089,8 +4209,26 @@ int main() {
         sw.tracePts = { Vec3(80,0,0), Vec3(84,0,0), Vec3(84,0,4), Vec3(80,0,4) };
         sw.traceChemin[1] = sw.traceChemin[0] + Vec3(0, 0, 20);
         traceRegen(sw);
-        CHECK(sw.v.size() == 8 && std::fabs(signedVolume(sw) - 320.0) < 1e-6,
-              "B3.3 : drag du chemin (z 20 -> 30) = regen, volume 16 x 20 = 320");
+        /* B3.10b : anneau 0 oblique (profil tel que pose) -> volume exact non
+           garanti ; invariants : 8 sommets, anneau 1 perpendiculaire au chemin
+           (z monde = traceChemin[1]), aire de section = 16, volume signe > 0 */
+        {
+            const double z1 = sw.pos.z + sw.traceChemin[1].z * sw.scl;
+            bool zOk = true;
+            for (size_t k = 4; k < 8 && zOk; ++k) {
+                const Vec3 pw = sw.pos + sw.v[k] * sw.scl;
+                if (std::fabs(pw.z - z1) > 1e-9) zOk = false;
+            }
+            Vec3 acc2(0, 0, 0);
+            for (size_t k = 0; k < 4; ++k) {
+                const Vec3 a = sw.pos + sw.v[4 + k] * sw.scl;
+                const Vec3 b = sw.pos + sw.v[4 + (k + 1) % 4] * sw.scl;
+                acc2 = acc2 + cross(a, b);
+            }
+            CHECK(sw.v.size() == 8 && zOk && std::fabs(0.5 * acc2.norm() - 16.0) < 1e-9
+                  && signedVolume(sw) > 0.0,
+                  "B3.3 : drag du chemin (z 20 -> 30) = regen, anneau 1 perpendiculaire + aire 16 + volume > 0 (B3.10b)");
+        }
         g_sweepEditChemin = false;
         g_objs.clear(); g_selMulti.clear(); g_selected = -1;
         g_polyPts.clear(); g_lineMode = false; lineReset();

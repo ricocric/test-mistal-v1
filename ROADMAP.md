@@ -844,7 +844,17 @@ Questions ouvertes a trancher avec l'utilisateur :
     pas de rotation initiale par traceVec), les stations suivantes =
     transport parallele le long du chemin (deja en place, pas de
     torsion) ; le roll (B3.6b) reste le reglage fin de l'orientation
-    autour du chemin, editable apres coup ;
+    autour du chemin, editable apres coup. **FAIT (B3.10b, 651
+    verifications, 0 echec, ASan propre)** : frame de la station 0 = base
+    DU PLAN DU PROFIL (U0 = sommet le plus loin de l'accroche A, Bb0 =
+    Nv x U0, (U0,Bb0,Nv) direct = pas de miroir) ; coordonnees aa/bb lues
+    directement dans cette frame -> anneau 0 = chem[0] + prof[k] - A
+    EXACTEMENT (translation seule) ; transport parallele inchange pour les
+    stations suivantes ; poignee de roll PROJETEE sur le plan
+    perpendiculaire a l'axe (cercle du drag, rayon non nul) ; tests
+    volume-exact B3/B3.3 remplaces par invariants de section
+    perpendiculaire (aire = aire du profil, z constant par anneau,
+    volume signe > 0) ;
   - **B3.10c DEPLOIEMENT CONTROLE A LA MAIN (option complementaire,
     indispensable aux objets evolues : routes, couloirs, tuyauteries,
     jonctions)** : pouvoir ARRETER le deploiement EN COURS DE ROUTE sur
