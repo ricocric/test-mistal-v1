@@ -1179,7 +1179,13 @@ globale corrigee par le volume signe (normales exterieures) ;
     sous le curseur (centre X/Z au sol, fond de boite a y = 0),
     selectionne, pret au deplacement fin magnetique ; sans curseur =
     decalage +X historique (tests) ;
-  +27 verifications = **609, 0 echec** (ASan propre).
+  +27 verifications = **609, 0 echec** (ASan propre) ;
+- **B3.9b suite (retour de test)** : des que le magnetisme s'exerce, les
+  accroches de l'objet CIBLE s'allument aussi (orange) - precision maxi
+  sur le point d'arrivee ; le point capte reste magenta ; comportement
+  porte/chambranle valide (l'arete se colle sans rotation
+  face-contre-face, pivot sur l'arete) ; zoom sur le curseur valide
+  "parfait, systematique". Dessin seul : 609, 0 echec.
 
 ## Organiseur des prochains lots
 

@@ -745,6 +745,12 @@ Questions ouvertes a trancher avec l'utilisateur :
     pendant le drag mono, les accroches de l'objet deplace sont DESSINEES
     (orange) et la cible captee (magenta, plus grande) - l'utilisateur
     voit quel accroche va se coller et choisit face/arete/coin ;
+    B3.9b suite (retour test valide : "les poignees de la cible s'allument
+    aussi, cela permet la precision maxi") : des que le magnetisme
+    s'exerce, les accroches de l'objet CIBLE s'allument aussi (orange) ;
+    le zoom molette reste actif pendant le drag ; le pan Maj+clic G
+    pendant un drag ACTIF est impossible par nature (bouton deja enfonce)
+    - geste de repli a definir si l'usage le demande (note) ;
   - **B3.9c Ctrl+V pres du curseur** (copie-collage, "placement a
     proximite selon localisation du curseur") : le groupe colle est
     repositionne au point du sol projete sous le curseur
@@ -762,7 +768,12 @@ Questions ouvertes a trancher avec l'utilisateur :
 - **B3.9 v2 (backlog, apres validation utilisateur)** : face-contre-face
   avec ALIGNEMENT DES NORMALES (v1 = translation seule pour face/face),
   magnetisme multi (v1 = mono seulement), perf facesLogiques sur gros
-  imports (recalcul par frame) ;
+  imports (recalcul par frame) ; collage tres sensible aux effets de
+  perspective (retour test - piste : tolerance en espace ecran plutôt
+  que monde) ; collage par COINS a soigner (faces rarement de meme
+  taille) ; comportement porte/chambranle VALIDE (l'arete se colle sans
+  rotation face-contre-face, pivot sur l'arete - a completer avec la
+  maitrise des points de pivot, cf B8) ;
 - B8 pivot intelligent : ETUDE DE CONCEPTION avant code (nombreux cas de
   figure : sommet, face, point clique, coordonnees, centre du monde...)
 

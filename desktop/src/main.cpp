@@ -49,7 +49,7 @@
 
 /* Version affichee dans la console et le titre de fenetre : maj a chaque
    lot ou correctif (ex. T1.3) pour verifier la build utilisee.            */
-static const char* BUILD_VERSION = "B3.9";   /* refonte collage : faces logiques, magnetisme au deplacement (position + orientation, poignees visibles), Ctrl+V pres du curseur */
+static const char* BUILD_VERSION = "B3.9b";   /* refonte collage : faces logiques, magnetisme au deplacement (position + orientation), Ctrl+V pres du curseur, poignees de la cible allumees pendant le magnetisme */
 
 /* ------------------------------------------------------------------ */
 /* Petits outils mathematiques (double precision)                      */
@@ -5761,6 +5761,24 @@ static void drawDragHandles() {
         glEnd();
     }
     if (g_magnet.actif) {
+        /* B3.9b suite (retour test : "les poignees de la cible s'allument
+           aussi, cela permet la precision maxi") : des que le magnetisme
+           s'exerce, les accroches de l'objet CIBLE s'allument (orange) -
+           on voit tous les points d'arrivee possibles sur le voisin ; le
+           point capte reste magenta ; pan/zoom restent operatifs */
+        if (g_magnet.objB >= 0 && g_magnet.objB < (int)g_objs.size()) {
+            std::vector<CollAcc> accB;
+            collAccroches(g_objs[(size_t)g_magnet.objB], accB);
+            glColor3d(1.0, 0.55, 0.1);
+            for (const CollAcc& a : accB) {
+                glBegin(GL_QUADS);
+                glVertex3d(a.p.x - s, a.p.y, a.p.z - s);
+                glVertex3d(a.p.x + s, a.p.y, a.p.z - s);
+                glVertex3d(a.p.x + s, a.p.y, a.p.z + s);
+                glVertex3d(a.p.x - s, a.p.y, a.p.z + s);
+                glEnd();
+            }
+        }
         glColor3d(0.95, 0.2, 0.85);
         const double s2 = s * 1.8;
         glBegin(GL_QUADS);
